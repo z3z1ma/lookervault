@@ -1,7 +1,6 @@
 """Custom exception classes for LookerVault."""
 
 
-
 class LookerVaultError(Exception):
     """Base exception for all LookerVault errors."""
 

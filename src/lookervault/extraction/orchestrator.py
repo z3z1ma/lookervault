@@ -29,6 +29,7 @@ class ExtractionConfig:
     batch_size: int = 100
     fields: str | None = None
     resume: bool = True
+    incremental: bool = False
     verify: bool = False
     output_mode: str = "table"
 
@@ -43,6 +44,9 @@ class ExtractionResult:
     errors: int = 0
     duration_seconds: float = 0.0
     checkpoints_created: int = 0
+    new_items: int = 0
+    updated_items: int = 0
+    deleted_items: int = 0
 
 
 class ExtractionOrchestrator:
@@ -161,18 +165,36 @@ class ExtractionOrchestrator:
             checkpoint_data={
                 "content_type": content_type_name,
                 "batch_size": self.config.batch_size,
+                "incremental": self.config.incremental,
             },
         )
         # Save initial checkpoint
         self.repository.save_checkpoint(checkpoint)
 
         try:
+            # Determine timestamp for incremental extraction
+            updated_after = None
+            if self.config.incremental:
+                updated_after = self.repository.get_last_sync_timestamp(content_type)
+                if updated_after:
+                    logger.info(
+                        f"Incremental mode: extracting {content_type_name} "
+                        f"updated after {updated_after.isoformat()}"
+                    )
+
             # Extract items from Looker API
             items_iterator = self.extractor.extract_all(
                 ContentType(content_type),
                 fields=self.config.fields,
                 batch_size=self.config.batch_size,
+                updated_after=updated_after,
             )
+
+            # For incremental mode, get existing IDs for soft delete detection
+            existing_ids = set()
+            extracted_ids = set()
+            if self.config.incremental:
+                existing_ids = self.repository.get_content_ids(content_type)
 
             # Count items first to show progress (if we can)
             # For now, start with unknown total
@@ -183,6 +205,10 @@ class ExtractionOrchestrator:
                 # Create ContentItem
                 content_item = self._dict_to_content_item(item_dict, content_type)
 
+                # Track extracted IDs for soft delete detection
+                if self.config.incremental:
+                    extracted_ids.add(content_item.id)
+
                 # Save to repository
                 self.repository.save_content(content_item)
 
@@ -190,10 +216,22 @@ class ExtractionOrchestrator:
                 items_count += 1
                 self.progress.update_task(task_id, advance=1)
 
+            # Handle soft deletes in incremental mode
+            deleted_count = 0
+            if self.config.incremental and updated_after:
+                deleted_ids = existing_ids - extracted_ids
+                for deleted_id in deleted_ids:
+                    self.repository.delete_content(deleted_id, soft=True)
+                    deleted_count += 1
+
+                if deleted_count > 0:
+                    logger.info(f"Marked {deleted_count} {content_type_name} as deleted")
+
             # Complete checkpoint
             checkpoint.completed_at = datetime.now()
             checkpoint.item_count = items_count
             checkpoint.checkpoint_data["total_processed"] = items_count
+            checkpoint.checkpoint_data["deleted_items"] = deleted_count
 
             # Update checkpoint in DB (using the ID we got earlier)
             # Note: Repository needs update_checkpoint method, but for MVP we'll skip

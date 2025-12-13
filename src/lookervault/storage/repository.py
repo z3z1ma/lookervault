@@ -105,6 +105,28 @@ class ContentRepository(Protocol):
         """Update existing extraction session."""
         ...
 
+    def get_last_sync_timestamp(self, content_type: int) -> datetime | None:
+        """Get the timestamp of the last successful extraction for a content type.
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            Datetime of last sync, or None if never synced
+        """
+        ...
+
+    def get_content_ids(self, content_type: int) -> set[str]:
+        """Get all content IDs for a content type (excluding deleted).
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            Set of content IDs
+        """
+        ...
+
 
 class SQLiteContentRepository:
     """SQLite-based content repository implementation."""
@@ -502,3 +524,58 @@ class SQLiteContentRepository:
             conn.commit()
         except sqlite3.Error as e:
             raise StorageError(f"Failed to update session: {e}") from e
+
+    def get_last_sync_timestamp(self, content_type: int) -> datetime | None:
+        """Get the timestamp of the last successful extraction for a content type.
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            Datetime of last sync, or None if never synced
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT MAX(synced_at)
+                FROM content_items
+                WHERE content_type = ? AND deleted_at IS NULL
+            """,
+                (content_type,),
+            )
+
+            row = cursor.fetchone()
+            if row and row[0]:
+                return datetime.fromisoformat(row[0])
+            return None
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get last sync timestamp: {e}") from e
+
+    def get_content_ids(self, content_type: int) -> set[str]:
+        """Get all content IDs for a content type (excluding deleted).
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            Set of content IDs
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT id
+                FROM content_items
+                WHERE content_type = ? AND deleted_at IS NULL
+            """,
+                (content_type,),
+            )
+
+            return {row["id"] for row in cursor.fetchall()}
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get content IDs: {e}") from e

@@ -29,6 +29,7 @@ def run(
     types: str | None = None,
     batch_size: int = 100,
     resume: bool = True,
+    incremental: bool = False,
     verbose: bool = False,
     debug: bool = False,
 ) -> None:
@@ -41,6 +42,7 @@ def run(
         types: Comma-separated content types to extract (default: all)
         batch_size: Items per batch for memory management
         resume: Resume incomplete extraction
+        incremental: Extract only new/changed content since last extraction
         verbose: Enable verbose logging
         debug: Enable debug logging
     """
@@ -90,6 +92,7 @@ def run(
             content_types=content_types,
             batch_size=batch_size,
             resume=resume,
+            incremental=incremental,
             output_mode=output,
         )
 
@@ -115,6 +118,17 @@ def run(
             for content_type, count in result.items_by_type.items():
                 type_name = ContentType(content_type).name.lower()
                 console.print(f"  {type_name}: {count} items")
+
+            # Show incremental stats if available
+            if incremental and (result.new_items or result.updated_items or result.deleted_items):
+                console.print("\n[cyan]Incremental summary:[/cyan]")
+                if result.new_items:
+                    console.print(f"  New items: {result.new_items}")
+                if result.updated_items:
+                    console.print(f"  Updated items: {result.updated_items}")
+                if result.deleted_items:
+                    console.print(f"  Deleted items: {result.deleted_items}")
+
             console.print(f"\nStorage: {db}")
 
         # Clean exit

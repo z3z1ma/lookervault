@@ -1,6 +1,7 @@
 """Content extraction from Looker API."""
 
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any, Protocol
 
 from looker_sdk import error as looker_error
@@ -19,6 +20,7 @@ class ContentExtractor(Protocol):
         content_type: ContentType,
         fields: str | None = None,
         batch_size: int = 100,
+        updated_after: datetime | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Extract all content of given type.
 
@@ -26,6 +28,7 @@ class ContentExtractor(Protocol):
             content_type: Type of content to extract
             fields: Comma-separated field list (Looker API format)
             batch_size: Items per batch for paginated endpoints
+            updated_after: Only return items updated after this timestamp (for incremental)
 
         Yields:
             Individual content items as dicts
@@ -102,6 +105,7 @@ class LookerContentExtractor:
         content_type: ContentType,
         fields: str | None = None,
         batch_size: int = 100,
+        updated_after: datetime | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Extract all content of given type.
 
@@ -109,6 +113,7 @@ class LookerContentExtractor:
             content_type: Type of content to extract
             fields: Comma-separated field list
             batch_size: Items per batch for paginated endpoints
+            updated_after: Only return items updated after this timestamp (for incremental)
 
         Yields:
             Individual content items as dicts
@@ -121,54 +126,70 @@ class LookerContentExtractor:
             if content_type == ContentType.DASHBOARD:
                 dashboards = self._call_api("all_dashboards", fields=fields)
                 for dashboard in dashboards:
-                    yield self._sdk_object_to_dict(dashboard)
+                    item_dict = self._sdk_object_to_dict(dashboard)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.LOOK:
                 looks = self._call_api("all_looks", fields=fields)
                 for look in looks:
-                    yield self._sdk_object_to_dict(look)
+                    item_dict = self._sdk_object_to_dict(look)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.LOOKML_MODEL:
                 models = self._call_api("all_lookml_models", fields=fields)
                 for model in models:
-                    yield self._sdk_object_to_dict(model)
+                    item_dict = self._sdk_object_to_dict(model)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.FOLDER:
                 folders = self._call_api("all_folders", fields=fields)
                 for folder in folders:
-                    yield self._sdk_object_to_dict(folder)
+                    item_dict = self._sdk_object_to_dict(folder)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.BOARD:
                 boards = self._call_api("all_boards", fields=fields)
                 for board in boards:
-                    yield self._sdk_object_to_dict(board)
+                    item_dict = self._sdk_object_to_dict(board)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.USER:
                 # Users require pagination
-                yield from self._paginate_users(fields, batch_size)
+                yield from self._paginate_users(fields, batch_size, updated_after)
 
             elif content_type == ContentType.GROUP:
                 # Groups require pagination
-                yield from self._paginate_groups(fields, batch_size)
+                yield from self._paginate_groups(fields, batch_size, updated_after)
 
             elif content_type == ContentType.ROLE:
                 # Roles require pagination
-                yield from self._paginate_roles(fields, batch_size)
+                yield from self._paginate_roles(fields, batch_size, updated_after)
 
             elif content_type == ContentType.PERMISSION_SET:
                 permission_sets = self._call_api("all_permission_sets", fields=fields)
                 for perm_set in permission_sets:
-                    yield self._sdk_object_to_dict(perm_set)
+                    item_dict = self._sdk_object_to_dict(perm_set)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.MODEL_SET:
                 model_sets = self._call_api("all_model_sets", fields=fields)
                 for model_set in model_sets:
-                    yield self._sdk_object_to_dict(model_set)
+                    item_dict = self._sdk_object_to_dict(model_set)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             elif content_type == ContentType.SCHEDULED_PLAN:
                 schedules = self._call_api("all_scheduled_plans", all_users=True)
                 for schedule in schedules:
-                    yield self._sdk_object_to_dict(schedule)
+                    item_dict = self._sdk_object_to_dict(schedule)
+                    if self._should_include(item_dict, updated_after):
+                        yield item_dict
 
             else:
                 raise ExtractionError(f"Unsupported content type: {content_type}")
@@ -178,12 +199,15 @@ class LookerContentExtractor:
         except Exception as e:
             raise ExtractionError(f"Failed to extract content type {content_type}: {e}") from e
 
-    def _paginate_users(self, fields: str | None, batch_size: int) -> Iterator[dict[str, Any]]:
+    def _paginate_users(
+        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+    ) -> Iterator[dict[str, Any]]:
         """Paginate through all users.
 
         Args:
             fields: Field filter
             batch_size: Items per page
+            updated_after: Only return items updated after this timestamp
 
         Yields:
             User dicts
@@ -195,19 +219,24 @@ class LookerContentExtractor:
                 break
 
             for user in users:
-                yield self._sdk_object_to_dict(user)
+                item_dict = self._sdk_object_to_dict(user)
+                if self._should_include(item_dict, updated_after):
+                    yield item_dict
 
             if len(users) < batch_size:
                 break
 
             offset += batch_size
 
-    def _paginate_groups(self, fields: str | None, batch_size: int) -> Iterator[dict[str, Any]]:
+    def _paginate_groups(
+        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+    ) -> Iterator[dict[str, Any]]:
         """Paginate through all groups.
 
         Args:
             fields: Field filter
             batch_size: Items per page
+            updated_after: Only return items updated after this timestamp
 
         Yields:
             Group dicts
@@ -219,19 +248,24 @@ class LookerContentExtractor:
                 break
 
             for group in groups:
-                yield self._sdk_object_to_dict(group)
+                item_dict = self._sdk_object_to_dict(group)
+                if self._should_include(item_dict, updated_after):
+                    yield item_dict
 
             if len(groups) < batch_size:
                 break
 
             offset += batch_size
 
-    def _paginate_roles(self, fields: str | None, batch_size: int) -> Iterator[dict[str, Any]]:
+    def _paginate_roles(
+        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+    ) -> Iterator[dict[str, Any]]:
         """Paginate through all roles.
 
         Args:
             fields: Field filter
             batch_size: Items per page
+            updated_after: Only return items updated after this timestamp
 
         Yields:
             Role dicts
@@ -243,7 +277,9 @@ class LookerContentExtractor:
                 break
 
             for role in roles:
-                yield self._sdk_object_to_dict(role)
+                item_dict = self._sdk_object_to_dict(role)
+                if self._should_include(item_dict, updated_after):
+                    yield item_dict
 
             if len(roles) < batch_size:
                 break
@@ -308,3 +344,30 @@ class LookerContentExtractor:
         # Looker SDK objects have __dict__ attribute
         # Filter out None values and private attributes
         return {k: v for k, v in obj.__dict__.items() if v is not None and not k.startswith("_")}
+
+    @staticmethod
+    def _should_include(item_dict: dict[str, Any], updated_after: datetime | None) -> bool:
+        """Check if item should be included based on updated_after timestamp.
+
+        Args:
+            item_dict: Item dictionary from Looker API
+            updated_after: Timestamp filter (None means include all)
+
+        Returns:
+            True if item should be included, False otherwise
+        """
+        if updated_after is None:
+            return True
+
+        # Check if item has updated_at field
+        updated_at_str = item_dict.get("updated_at")
+        if not updated_at_str:
+            # If no updated_at, include the item
+            return True
+
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+            return updated_at > updated_after
+        except (ValueError, AttributeError):
+            # If parsing fails, include the item to be safe
+            return True
