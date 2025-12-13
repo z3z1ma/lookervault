@@ -2,12 +2,12 @@
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from lookervault.exceptions import OrchestrationError
 from lookervault.extraction.batch_processor import MemoryAwareBatchProcessor
 from lookervault.extraction.progress import ProgressTracker
-from lookervault.looker.extractor import ContentExtractor
 from lookervault.storage.models import (
     Checkpoint,
     ContentItem,
@@ -17,6 +17,9 @@ from lookervault.storage.models import (
 )
 from lookervault.storage.repository import ContentRepository
 from lookervault.storage.serializer import ContentSerializer
+
+if TYPE_CHECKING:
+    from lookervault.looker.extractor import ContentExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ class ExtractionOrchestrator:
 
     def __init__(
         self,
-        extractor: ContentExtractor,
+        extractor: "ContentExtractor",
         repository: ContentRepository,
         serializer: ContentSerializer,
         progress: ProgressTracker,
@@ -351,20 +354,20 @@ class ExtractionOrchestrator:
             def parse_timestamp(value: str | datetime | None) -> datetime:
                 """Parse timestamp from various formats, returns timezone-aware datetime."""
                 if value is None:
-                    return datetime.now(timezone.utc)
+                    return datetime.now(UTC)
                 if isinstance(value, datetime):
                     # Add UTC timezone if naive
                     if value.tzinfo is None:
-                        return value.replace(tzinfo=timezone.utc)
+                        return value.replace(tzinfo=UTC)
                     return value
                 if isinstance(value, str):
                     # Parse ISO format, handle 'Z' suffix
                     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
                     # Add UTC timezone if naive
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.replace(tzinfo=UTC)
                     return dt
-                return datetime.now(timezone.utc)
+                return datetime.now(UTC)
 
             created_at = parse_timestamp(item_dict.get("created_at"))
             updated_at = parse_timestamp(item_dict.get("updated_at"))

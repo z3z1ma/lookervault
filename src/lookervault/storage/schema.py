@@ -1,4 +1,14 @@
-"""SQLite schema creation and management."""
+"""SQLite schema creation and management.
+
+Query Performance Analysis (EXPLAIN QUERY PLAN verified):
+- list_content: Uses idx_content_type (partial index for active records)
+- get_deleted_items_before: Uses idx_deleted_at (soft-deleted items)
+- get_last_sync_timestamp: Uses idx_updated_at DESC (latest updates)
+- get_latest_checkpoint: Uses idx_checkpoint_type_completed (composite index)
+
+All indexes are partial (WHERE deleted_at IS/IS NOT NULL) to reduce index size
+and improve performance for common queries on active records.
+"""
 
 import sqlite3
 from datetime import datetime

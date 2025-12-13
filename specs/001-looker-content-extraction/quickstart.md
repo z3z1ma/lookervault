@@ -74,12 +74,12 @@ lookervault extract
 
 ```bash
 # List all dashboards
-lookervault info --type dashboards
+lookervault list dashboards
 
 # Output (table format):
-# ID               Name              Owner           Updated
-# dashboard::123   Sales Overview    john@ex.com     2025-12-10
-# dashboard::456   Marketing Dash    jane@ex.com     2025-12-12
+# ID               Name              Owner           Updated     Size
+# 123              Sales Overview    john@ex.com     2d ago      45.2 KB
+# 456              Marketing Dash    jane@ex.com     Today       123.5 KB
 ```
 
 ### 3. Verify Integrity
@@ -246,6 +246,143 @@ lookervault extract --verbose
 # Ctrl+C to cancel, then resume
 lookervault extract --resume
 ```
+
+### Timeout Errors
+
+**Symptom**: `HTTPSConnectionPool... Read timed out. (read timeout=30)`
+
+**Cause**: Large instances with 10,000+ items timing out on API calls
+
+**Solution 1 - Increase Timeout**:
+```bash
+# Set 5-minute timeout for large instances
+export LOOKERVAULT_TIMEOUT=300
+lookervault extract --types dashboards
+```
+
+**Solution 2 - Use Pagination**:
+```bash
+# Reduce batch size for smaller API calls
+lookervault extract --batch-size 50
+```
+
+**Permanent Fix** (in config file):
+```toml
+[lookervault.looker]
+timeout = 300  # 5 minutes
+```
+
+### Interrupted Extraction
+
+**Symptom**: Extraction stopped mid-process (Ctrl+C, crash, network failure)
+
+**Recovery**: Resume automatically picks up where it left off
+```bash
+# Resume from last checkpoint
+lookervault extract --resume
+
+# Output:
+# ✓ Resuming from checkpoint...
+#   Dashboards: Already complete (1250 items)
+#   Looks: Resuming from item 450/800
+```
+
+**How Resume Works**:
+- Checkpoints created after each content type
+- Safe to interrupt at any time
+- No duplicate items (uses UPSERT)
+- Can switch between content types
+
+**Force Fresh Start**:
+```bash
+# Disable resume to start over
+lookervault extract --no-resume
+
+# Or delete checkpoints manually
+rm looker.db  # Start completely fresh
+```
+
+### Datetime/Timezone Errors
+
+**Symptom**: `TypeError: can't subtract offset-naive and offset-aware datetimes`
+
+**Status**: Fixed in latest version (uses UTC timestamps consistently)
+
+**Workaround** (if on older version):
+```bash
+# Update to latest version
+uv sync
+```
+
+### API Rate Limiting
+
+**Symptom**: Frequent `429 Too Many Requests` errors
+
+**Automatic Handling**: Built-in exponential backoff with tenacity
+
+**Manual Adjustment**:
+```bash
+# Reduce batch size to slow down requests
+lookervault extract --batch-size 25
+
+# Extract one type at a time to space out requests
+lookervault extract --types dashboards
+sleep 60
+lookervault extract --types looks
+```
+
+**Monitor Progress**:
+```bash
+# Watch retry behavior
+lookervault extract --verbose
+
+# Output shows retries:
+# WARNING: Rate limit exceeded, retrying in 30s...
+# INFO: Retry attempt 1/5
+```
+
+### Database Corruption
+
+**Symptom**: `SQLITE_CORRUPT` or verification failures
+
+**Recovery Steps**:
+```bash
+# 1. Verify the issue
+lookervault verify
+
+# 2. If corruption confirmed, re-extract affected types
+mv looker.db looker.db.backup
+lookervault extract --types dashboards,looks
+
+# 3. Compare with backup to see what was lost
+sqlite3 looker.db.backup "SELECT content_type, COUNT(*) FROM content_items GROUP BY content_type"
+```
+
+**Prevention**:
+- Use `--resume` for safe interruption
+- Don't kill process with `kill -9`
+- Ensure disk space available
+- Regular backups with `cleanup` command
+
+### Memory Warnings
+
+**Symptom**: `Memory usage is elevated: 500.0 MB`
+
+**Automatic Handling**: Warnings at 500MB and 1GB thresholds
+
+**If Critical Warning Appears**:
+```bash
+# Reduce batch size immediately
+lookervault extract --batch-size 25
+
+# Extract smaller content types first
+lookervault extract --types users,groups
+```
+
+**Long-term Fix**:
+- Increase system RAM
+- Extract content types individually
+- Use smaller batch sizes
 
 ---
 
@@ -591,16 +728,29 @@ Options:
   --help               Show help
 ```
 
-### Info Commands
+### Info and List Commands
 
 ```bash
+# Show Looker instance information
 lookervault info [OPTIONS]
 
 Options:
-  --type TEXT          Content type to list
+  --config PATH        Config file path
   --output TEXT        Output format: table|json
+
+# List extracted content
+lookervault list CONTENT_TYPE [OPTIONS]
+
+Arguments:
+  CONTENT_TYPE         Type to list (dashboards, looks, users, etc.)
+
+Options:
+  --db PATH            Database path (default: looker.db)
+  --owner TEXT         Filter by owner email
+  --created-after TEXT Filter by creation date (ISO format)
   --limit INT          Limit results
   --offset INT         Pagination offset
+  --output TEXT        Output format: table|json
   --help               Show help
 ```
 
@@ -653,7 +803,8 @@ tail -f ~/.lookervault/logs/extract.log
 1. `lookervault check` - Verify connection
 2. `lookervault extract` - Extract all content
 3. `lookervault verify` - Verify integrity
-4. `lookervault info` - Query extracted content
+4. `lookervault list` - Query extracted content
+5. `lookervault cleanup` - Remove old soft-deleted items
 
 **For Production:**
 - Use `--incremental` for regular backups

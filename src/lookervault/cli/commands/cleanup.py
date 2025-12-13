@@ -1,7 +1,7 @@
 """Cleanup command implementation for retention policy management."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -55,7 +55,7 @@ def run(
         repository = SQLiteContentRepository(db_path=db)
 
         # Calculate cutoff date
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=retention_days)
 
         console.print("[cyan]Cleanup Policy:[/cyan]")
         console.print(f"  Retention period: {retention_days} days")
@@ -93,11 +93,11 @@ def run(
                 console.print(f"\n{type_name}:")
                 for item in items[:3]:  # Show first 3 items
                     if item.deleted_at:
-                        now = datetime.now(timezone.utc)
+                        now = datetime.now(UTC)
                         deleted = item.deleted_at
                         # Add UTC timezone if naive
                         if deleted.tzinfo is None:
-                            deleted = deleted.replace(tzinfo=timezone.utc)
+                            deleted = deleted.replace(tzinfo=UTC)
                         deleted_age = (now - deleted).days
                     else:
                         deleted_age = 0
