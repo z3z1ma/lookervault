@@ -1,0 +1,84 @@
+[project]
+name = "lookervault"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "z3z1ma", email = "butler.alex2010@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "looker-sdk>=24.0.0",
+    "pydantic>=2.0.0",
+    "tomli-w>=1.0.0",
+    "typer[all]>=0.9.0",
+]
+
+[project.scripts]
+lookervault = "lookervault:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --cov=lookervault --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Enable common linting rules
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "S",   # flake8-bandit (security)
+    "C4",  # flake8-comprehensions
+    "PTH", # flake8-use-pathlib
+]
+ignore = [
+    "E501",  # line-too-long (handled by formatter)
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+skip-magic-trailing-comma = false
+
+[tool.ty]
+[tool.ty.environment]
+python-version = "3.13"
+python = ".venv"
+root = ["./src"]
+
+[tool.ty.rules]
+# Core type safety - strict enforcement
+possibly-unresolved-reference = "error"
+invalid-argument-type = "error"
+incompatible-assignment = "error"
+missing-argument = "error"
+unsupported-operator = "error"
+division-by-zero = "error"
+
+# Code quality - warnings
+unused-ignore-comment = "warn"
+redundant-cast = "warn"
+
+[dependency-groups]
+dev = [
+    "ty>=0.1.0",
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.8.0",
+]
