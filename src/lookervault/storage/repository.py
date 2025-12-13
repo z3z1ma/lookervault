@@ -64,6 +64,22 @@ class ContentRepository(Protocol):
         """
         ...
 
+    def count_content(
+        self,
+        content_type: int,
+        include_deleted: bool = False,
+    ) -> int:
+        """Count content items by type.
+
+        Args:
+            content_type: ContentType enum value
+            include_deleted: Include soft-deleted items
+
+        Returns:
+            Total count of matching items
+        """
+        ...
+
     def delete_content(self, content_id: str, soft: bool = True) -> None:
         """Delete content item.
 
@@ -456,6 +472,42 @@ class SQLiteContentRepository:
             return items
         except sqlite3.Error as e:
             raise StorageError(f"Failed to list content: {e}") from e
+
+    def count_content(
+        self,
+        content_type: int,
+        include_deleted: bool = False,
+    ) -> int:
+        """Count content items by type.
+
+        Args:
+            content_type: ContentType enum value
+            include_deleted: Include soft-deleted items
+
+        Returns:
+            Total count of matching items
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT COUNT(*) as total
+                FROM content_items
+                WHERE content_type = ?
+            """
+
+            params: list[int | str] = [content_type]
+
+            if not include_deleted:
+                query += " AND deleted_at IS NULL"
+
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+
+            return row["total"] if row else 0
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to count content: {e}") from e
 
     def delete_content(self, content_id: str, soft: bool = True) -> None:
         """Delete content item.

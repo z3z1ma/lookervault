@@ -208,7 +208,7 @@ def list_content(
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", help="Maximum items to return"),
+        typer.Option("--limit", help="Maximum items to return (default: 50 for table, 0 for all)"),
     ] = None,
     offset: Annotated[
         int,

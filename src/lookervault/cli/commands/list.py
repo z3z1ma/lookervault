@@ -35,7 +35,7 @@ def run(
         owner: Filter by owner email
         folder: Filter by folder name
         created_after: Filter by creation date (ISO format)
-        limit: Maximum items to return
+        limit: Maximum items to return (default: 50 for table, unlimited for JSON)
         offset: Pagination offset
         output: Output format ("table" or "json")
         verbose: Enable verbose logging
@@ -44,6 +44,9 @@ def run(
     # Configure rich logging
     log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
     configure_rich_logging(level=log_level, show_time=debug, show_path=debug)
+
+    # Default limits for table output to prevent overwhelming display
+    default_table_limit = 50
 
     try:
         # Check if database exists
@@ -59,11 +62,23 @@ def run(
         # Parse content type
         ct = _parse_content_type(content_type)
 
+        # Get total count before applying limit (for display purposes)
+        total_count = repository.count_content(content_type=ct, include_deleted=False)
+
+        # Apply default limit for table output if not specified
+        # limit=None means use default, limit=0 means show all
+        effective_limit = limit
+        if output == "table" and limit is None:
+            effective_limit = default_table_limit
+        elif limit == 0:
+            # --limit 0 means show all items
+            effective_limit = None
+
         # Get items
         items = repository.list_content(
             content_type=ct,
             include_deleted=False,
-            limit=limit,
+            limit=effective_limit,
             offset=offset,
         )
 
@@ -86,6 +101,9 @@ def run(
             cutoff = datetime.fromisoformat(created_after)
             items = [item for item in items if item.created_at >= cutoff]
 
+        # Apply additional filters (affects displayed count but not total count)
+        filtered_count = len(items)
+
         # Display results
         if output == "json":
             import json
@@ -105,7 +123,8 @@ def run(
             console.print_json(json.dumps(items_data, indent=2))
         else:
             # Table format
-            table = Table(title=f"{ContentType(ct).name.lower().capitalize()} ({len(items)} items)")
+            content_type_name = ContentType(ct).name.lower().capitalize()
+            table = Table(title=f"{content_type_name}")
             table.add_column("ID", style="cyan")
             table.add_column("Name", style="white")
             table.add_column("Owner", style="yellow")
@@ -151,11 +170,25 @@ def run(
 
             console.print(table)
 
-            # Show pagination info if applicable
-            if limit and len(items) == limit:
+            # Show count summary
+            if filtered_count < total_count:
+                # Truncated or paginated
                 console.print(
-                    f"\n[dim]Showing {limit} items (offset {offset}). Use --offset and --limit to paginate.[/dim]"
+                    f"\n[bold]Showing {filtered_count} of {total_count:,} total items[/bold]"
                 )
+                if output == "table" and limit is None:
+                    # Default truncation applied
+                    console.print(
+                        "[dim]Use --limit to show more (e.g., --limit 100) or --limit 0 to show all[/dim]"
+                    )
+                elif effective_limit:
+                    # User-specified limit
+                    console.print(
+                        f"[dim]Use --offset {offset + filtered_count} to see next page[/dim]"
+                    )
+            else:
+                # All items shown
+                console.print(f"\n[bold]Total: {total_count:,} items[/bold]")
 
         # Clean exit
         repository.close()

@@ -222,6 +222,81 @@ class LookerContentExtractor:
         except Exception as e:
             raise ExtractionError(f"Failed to extract content type {content_type}: {e}") from e
 
+    def extract_range(
+        self,
+        content_type: ContentType,
+        offset: int,
+        limit: int,
+        fields: str | None = None,
+        updated_after: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Extract a specific offset range of content.
+
+        Used by parallel workers to fetch specific offset ranges concurrently.
+        Only supports paginated content types (dashboards, looks, users, groups, roles).
+
+        Args:
+            content_type: Type of content to extract
+            offset: Starting offset (0-based)
+            limit: Number of items to fetch
+            fields: Fields to retrieve (optional)
+            updated_after: Only items updated after this timestamp (optional)
+
+        Returns:
+            List of content items (may be fewer than limit if at end)
+
+        Raises:
+            ValueError: If content type not supported for range extraction
+            ExtractionError: If API call fails
+            RateLimitError: If rate limit exceeded
+        """
+        try:
+            # Map content type to appropriate API method
+            if content_type == ContentType.DASHBOARD:
+                api_method = "search_dashboards"
+            elif content_type == ContentType.LOOK:
+                api_method = "search_looks"
+            elif content_type == ContentType.USER:
+                # Use all_users to get both regular and embed users
+                api_method = "all_users"
+            elif content_type == ContentType.GROUP:
+                # Use all_groups to get all groups without search filters
+                api_method = "all_groups"
+            elif content_type == ContentType.ROLE:
+                # Keep using search_roles (all_roles doesn't support pagination)
+                api_method = "search_roles"
+            else:
+                raise ValueError(
+                    f"Content type {content_type.name} does not support range extraction. "
+                    f"Only paginated types (DASHBOARD, LOOK, USER, GROUP, ROLE) are supported."
+                )
+
+            # Fetch data from API
+            results = self._call_api(
+                api_method,
+                fields=fields,
+                limit=limit,
+                offset=offset,
+            )
+
+            # Convert SDK objects to dicts and filter by timestamp if needed
+            filtered_results = []
+            if results:
+                for item in results:
+                    item_dict = self._sdk_object_to_dict(item)
+                    if self._should_include(item_dict, updated_after):
+                        filtered_results.append(item_dict)
+
+            return filtered_results
+
+        except (ExtractionError, RateLimitError):
+            raise
+        except Exception as e:
+            raise ExtractionError(
+                f"Failed to extract range for {content_type.name} "
+                f"(offset={offset}, limit={limit}): {e}"
+            ) from e
+
     def _paginate_dashboards(
         self, fields: str | None, batch_size: int, updated_after: datetime | None = None
     ) -> Iterator[dict[str, Any]]:
@@ -285,7 +360,7 @@ class LookerContentExtractor:
     def _paginate_users(
         self, fields: str | None, batch_size: int, updated_after: datetime | None = None
     ) -> Iterator[dict[str, Any]]:
-        """Paginate through all users.
+        """Paginate through all users (including embed users).
 
         Args:
             fields: Field filter
@@ -297,7 +372,8 @@ class LookerContentExtractor:
         """
         offset = 0
         while True:
-            users = self._call_api("search_users", fields=fields, limit=batch_size, offset=offset)
+            # Use all_users to get both regular and embed users
+            users = self._call_api("all_users", fields=fields, limit=batch_size, offset=offset)
             if not users or len(users) == 0:
                 break
 
@@ -326,7 +402,8 @@ class LookerContentExtractor:
         """
         offset = 0
         while True:
-            groups = self._call_api("search_groups", fields=fields, limit=batch_size, offset=offset)
+            # Use all_groups to get all groups without requiring search filters
+            groups = self._call_api("all_groups", fields=fields, limit=batch_size, offset=offset)
             if not groups or len(groups) == 0:
                 break
 

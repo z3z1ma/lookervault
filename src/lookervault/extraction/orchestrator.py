@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lookervault.exceptions import OrchestrationError
 from lookervault.extraction.batch_processor import MemoryAwareBatchProcessor
@@ -319,6 +319,24 @@ class ExtractionOrchestrator:
             self.repository.update_checkpoint(checkpoint)
             return self._extract_content_type(content_type, checkpoint.session_id)
 
+    @staticmethod
+    def _get_item_id(item_dict: dict[str, Any], content_type: int) -> str | None:
+        """Get the identifier field for an item based on content type.
+
+        Args:
+            item_dict: Raw API response dictionary
+            content_type: ContentType enum value
+
+        Returns:
+            Item identifier or None if not found
+        """
+        # LookML Models use 'name' as their identifier, not 'id'
+        if content_type == ContentType.LOOKML_MODEL:
+            return item_dict.get("name")
+
+        # All other content types use 'id'
+        return item_dict.get("id")
+
     def _dict_to_content_item(self, item_dict: dict, content_type: int) -> ContentItem:
         """Convert API response dict to ContentItem.
 
@@ -336,8 +354,15 @@ class ExtractionOrchestrator:
             # Serialize content
             content_data = self.serializer.serialize(item_dict)
 
-            # Extract common fields
-            item_id = str(item_dict.get("id", "unknown"))
+            # Extract common fields - some content types use 'name' instead of 'id'
+            item_id = self._get_item_id(item_dict, content_type)
+            if not item_id:
+                item_id = "unknown"
+                logger.warning(
+                    f"Item missing identifier field for {ContentType(content_type).name}"
+                )
+
+            item_id = str(item_id)
             name = item_dict.get("title") or item_dict.get("name") or item_id
 
             # Handle owner fields

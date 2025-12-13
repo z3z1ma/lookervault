@@ -3,7 +3,7 @@
 import logging
 import queue
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +11,7 @@ from lookervault.config.models import ParallelConfig
 from lookervault.exceptions import OrchestrationError
 from lookervault.extraction.batch_processor import MemoryAwareBatchProcessor
 from lookervault.extraction.metrics import ThreadSafeMetrics
+from lookervault.extraction.offset_coordinator import OffsetCoordinator
 from lookervault.extraction.orchestrator import ExtractionConfig, ExtractionResult
 from lookervault.extraction.progress import ProgressTracker
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
@@ -102,6 +103,10 @@ class ParallelOrchestrator:
     def extract(self) -> ExtractionResult:
         """Execute parallel extraction workflow.
 
+        Routes content types to appropriate extraction strategy:
+        - Paginated types with multiple workers: Parallel fetch (workers fetch directly from API)
+        - Non-paginated types or single worker: Sequential extraction
+
         Returns:
             ExtractionResult with summary statistics
 
@@ -124,47 +129,85 @@ class ParallelOrchestrator:
         self.repository.create_session(session)
 
         logger.info(
-            f"Starting parallel extraction session {session.id} "
-            f"with {self.parallel_config.workers} workers"
+            f"Starting extraction session {session.id} with {self.parallel_config.workers} workers"
         )
 
         result = ExtractionResult(session_id=session.id, total_items=0)
 
         try:
-            # Launch consumer workers in thread pool
-            logger.info(f"Launching {self.parallel_config.workers} consumer worker threads")
-            with ThreadPoolExecutor(max_workers=self.parallel_config.workers) as executor:
-                # Submit consumer workers
-                consumer_futures: list[Future[int]] = [
-                    executor.submit(self._consumer_worker, i)
-                    for i in range(self.parallel_config.workers)
-                ]
-                logger.info(f"All {self.parallel_config.workers} workers submitted to thread pool")
+            # Process each content type with appropriate strategy
+            for content_type in self.config.content_types:
+                content_type_name = ContentType(content_type).name.lower()
+                logger.info(f"Processing {content_type_name}")
 
-                # Run producer in main thread (API fetching)
-                logger.info("Starting producer worker in main thread")
-                self._producer_worker(session.id)
-                logger.info("Producer worker completed - all work queued")
-
-                # Wait for all consumers to complete and collect results
-                logger.info(f"Waiting for {len(consumer_futures)} consumer workers to complete")
-                completed_count = 0
-                for future in as_completed(consumer_futures):
-                    try:
-                        items_processed = future.result()
-                        completed_count += 1
+                # Check for existing checkpoint if resume enabled
+                if self.config.resume:
+                    existing_checkpoint = self.repository.get_latest_checkpoint(
+                        content_type, session.id
+                    )
+                    if existing_checkpoint and existing_checkpoint.completed_at:
+                        # Checkpoint already complete - skip this content type
                         logger.info(
-                            f"Worker {completed_count}/{len(consumer_futures)} completed: "
-                            f"{items_processed} items processed"
+                            f"Skipping {content_type_name} - "
+                            f"found complete checkpoint from {existing_checkpoint.completed_at.isoformat()} "
+                            f"({existing_checkpoint.item_count} items)"
                         )
-                    except Exception as e:
-                        # Worker failure - log but continue with others
-                        worker_error = str(e)
-                        logger.error(f"Worker thread failed: {worker_error}")
-                        result.errors += 1
-                        self.metrics.record_error("main", worker_error)
+                        continue
+                    elif existing_checkpoint and not existing_checkpoint.completed_at:
+                        # Partial checkpoint exists - warn and re-extract
+                        logger.warning(
+                            f"Found incomplete checkpoint for {content_type_name} "
+                            f"from {existing_checkpoint.started_at.isoformat()}. "
+                            f"Re-extracting (upserts will handle duplicates)."
+                        )
 
-                logger.info(f"All {len(consumer_futures)} workers completed")
+                # Determine extraction strategy based on content type
+                is_paginated = content_type in [
+                    ContentType.DASHBOARD.value,
+                    ContentType.LOOK.value,
+                    ContentType.USER.value,
+                    ContentType.GROUP.value,
+                    ContentType.ROLE.value,
+                ]
+
+                # Determine timestamp for incremental extraction
+                updated_after = None
+                if self.config.incremental:
+                    updated_after = self.repository.get_last_sync_timestamp(content_type)
+                    if updated_after:
+                        logger.info(
+                            f"Incremental mode: {content_type_name} "
+                            f"updated after {updated_after.isoformat()}"
+                        )
+
+                # Route to appropriate strategy
+                if is_paginated and self.parallel_config.workers > 1:
+                    # Use parallel fetch workers for paginated content types
+                    logger.info(
+                        f"Using parallel fetch strategy for {content_type_name} "
+                        f"({self.parallel_config.workers} workers)"
+                    )
+                    self._extract_parallel(
+                        content_type=content_type,
+                        session_id=session.id,
+                        fields=self.config.fields,
+                        updated_after=updated_after,
+                    )
+                else:
+                    # Use sequential extraction for non-paginated content types
+                    # or single-worker mode
+                    strategy_reason = (
+                        "non-paginated type" if not is_paginated else "single-worker mode"
+                    )
+                    logger.info(
+                        f"Using sequential strategy for {content_type_name} ({strategy_reason})"
+                    )
+                    self._extract_sequential(
+                        content_type=content_type,
+                        session_id=session.id,
+                        fields=self.config.fields,
+                        updated_after=updated_after,
+                    )
 
             # Get final metrics snapshot
             final_metrics = self.metrics.snapshot()
@@ -210,6 +253,179 @@ class ParallelOrchestrator:
 
             logger.error(f"Parallel extraction failed: {e}")
             raise OrchestrationError(f"Parallel extraction failed: {e}") from e
+
+    def _extract_parallel(
+        self,
+        content_type: int,
+        session_id: str,
+        fields: str | None,
+        updated_after: datetime | None,
+    ) -> None:
+        """Extract content type using parallel fetch workers.
+
+        Uses dynamic work stealing pattern where workers atomically claim
+        offset ranges and fetch directly from the Looker API in parallel.
+
+        Args:
+            content_type: ContentType enum value
+            session_id: Extraction session ID for checkpoint
+            fields: Fields to retrieve (optional)
+            updated_after: Only items updated after this timestamp (optional)
+        """
+        content_type_name = ContentType(content_type).name.lower()
+
+        # Create checkpoint
+        checkpoint = Checkpoint(
+            session_id=session_id,
+            content_type=content_type,
+            checkpoint_data={
+                "content_type": content_type_name,
+                "batch_size": self.config.batch_size,
+                "incremental": self.config.incremental,
+                "parallel": True,
+                "workers": self.parallel_config.workers,
+                "strategy": "parallel_fetch",
+            },
+        )
+        checkpoint_id = self.repository.save_checkpoint(checkpoint)
+
+        # Create offset coordinator
+        coordinator = OffsetCoordinator(stride=self.config.batch_size)
+        coordinator.set_total_workers(self.parallel_config.workers)
+
+        # Launch parallel fetch workers
+        logger.info(
+            f"Launching {self.parallel_config.workers} parallel fetch workers "
+            f"for {content_type_name}"
+        )
+
+        with ThreadPoolExecutor(max_workers=self.parallel_config.workers) as executor:
+            # Submit parallel fetch workers
+            futures = [
+                executor.submit(
+                    self._parallel_fetch_worker,
+                    worker_id=i,
+                    content_type=content_type,
+                    coordinator=coordinator,
+                    fields=fields,
+                    updated_after=updated_after,
+                )
+                for i in range(self.parallel_config.workers)
+            ]
+
+            # Wait for all workers to complete
+            total_items = 0
+            for i, future in enumerate(as_completed(futures)):
+                try:
+                    items_processed = future.result()
+                    total_items += items_processed
+                    logger.info(f"Parallel fetch worker {i} completed: {items_processed} items")
+                except Exception as e:
+                    logger.error(f"Parallel fetch worker {i} failed: {e}")
+                    self.metrics.record_error("main", f"Worker {i} error: {e}")
+
+        # Mark checkpoint complete
+        checkpoint.id = checkpoint_id
+        checkpoint.completed_at = datetime.now()
+        checkpoint.item_count = total_items
+        checkpoint.checkpoint_data["total_items"] = total_items
+        self.repository.update_checkpoint(checkpoint)
+
+        logger.info(f"Parallel extraction of {content_type_name} complete: {total_items} items")
+
+    def _extract_sequential(
+        self,
+        content_type: int,
+        session_id: str,
+        fields: str | None,
+        updated_after: datetime | None,
+    ) -> None:
+        """Extract content type using sequential producer-consumer pattern.
+
+        Uses the existing producer-consumer pattern where the producer fetches
+        sequentially from the API and queues work items for consumer workers.
+        This is used for non-paginated content types or single-worker mode.
+
+        Args:
+            content_type: ContentType enum value
+            session_id: Extraction session ID for checkpoint
+            fields: Fields to retrieve (optional)
+            updated_after: Only items updated after this timestamp (optional)
+        """
+        content_type_name = ContentType(content_type).name.lower()
+        logger.info(f"Producer: Processing {content_type_name} (sequential strategy)")
+
+        # Create checkpoint for this content type
+        checkpoint = Checkpoint(
+            session_id=session_id,
+            content_type=content_type,
+            checkpoint_data={
+                "content_type": content_type_name,
+                "batch_size": self.config.batch_size,
+                "incremental": self.config.incremental,
+                "parallel": False,  # Sequential extraction
+                "workers": 1,
+                "strategy": "sequential",
+            },
+        )
+        checkpoint_id = self.repository.save_checkpoint(checkpoint)
+
+        # Update progress tracker
+        try:
+            self.progress.update_status(f"Extracting {content_type_name}...")
+        except AttributeError:
+            pass  # Progress tracker may not have update_status method
+
+        # Extract items from Looker API (sequential iterator)
+        items_iterator = self.extractor.extract_all(
+            ContentType(content_type),
+            fields=fields,
+            batch_size=self.config.batch_size,
+            updated_after=updated_after,
+        )
+
+        # Process items directly (no worker queue for sequential mode)
+        items_processed = 0
+        for item_dict in items_iterator:
+            try:
+                # Convert to ContentItem
+                content_item = self._dict_to_content_item(item_dict, content_type)
+
+                # Save to database
+                self.repository.save_content(content_item)
+
+                # Update metrics
+                self.metrics.increment_processed(content_type, count=1)
+                items_processed += 1
+
+            except Exception as e:
+                # Item-level error - log and continue
+                import traceback
+
+                item_id = item_dict.get("id", "UNKNOWN")
+                error_msg = f"Failed to process item {item_id}: {e}"
+                logger.warning(f"Sequential: {error_msg}")
+
+                tb = traceback.format_exc()
+                logger.debug(
+                    f"Sequential: Detailed error context\n"
+                    f"  Item ID: {item_id}\n"
+                    f"  Content Type: {content_type}\n"
+                    f"  Exception: {type(e).__name__}: {e}\n"
+                    f"  Traceback:\n{tb}"
+                )
+                self.metrics.record_error("sequential", error_msg)
+
+        # Mark checkpoint complete with item count
+        checkpoint.id = checkpoint_id
+        checkpoint.completed_at = datetime.now()
+        checkpoint.item_count = items_processed
+        checkpoint.checkpoint_data["items_processed"] = items_processed
+        self.repository.update_checkpoint(checkpoint)
+
+        logger.info(
+            f"Producer completed {content_type_name}: {items_processed} items (sequential strategy)"
+        )
 
     def _producer_worker(self, session_id: str) -> None:
         """Producer thread: Fetch from API and queue work batches.
@@ -499,6 +715,157 @@ class ParallelOrchestrator:
 
         return items_processed
 
+    def _parallel_fetch_worker(
+        self,
+        worker_id: int,
+        content_type: int,
+        coordinator: "OffsetCoordinator",
+        fields: str | None,
+        updated_after: datetime | None,
+    ) -> int:
+        """Parallel fetch worker: Claim offset ranges and fetch from API.
+
+        Runs in worker thread. Responsible for:
+        - Claiming offset ranges from coordinator
+        - Fetching data from Looker API (rate-limited)
+        - Converting dicts to ContentItems
+        - Saving to database (thread-local connection)
+        - Updating thread-safe metrics
+
+        Args:
+            worker_id: Worker thread identifier (0-based index)
+            content_type: ContentType enum value
+            coordinator: Shared offset coordinator
+            fields: Fields to retrieve (optional)
+            updated_after: Only items updated after this timestamp (optional)
+
+        Returns:
+            Number of items processed by this worker
+
+        Raises:
+            Exception: If worker encounters fatal error
+        """
+        thread_name = threading.current_thread().name
+        content_type_name = ContentType(content_type).name.lower()
+        logger.info(
+            f"Parallel fetch worker {worker_id} ({thread_name}) starting for {content_type_name}"
+        )
+
+        items_processed = 0
+
+        try:
+            while True:
+                # Atomically claim next offset range
+                offset, limit = coordinator.claim_range()
+
+                logger.debug(f"Worker {worker_id} claimed range: offset={offset}, limit={limit}")
+
+                # Fetch data from Looker API
+                try:
+                    items = self.extractor.extract_range(
+                        ContentType(content_type),
+                        offset=offset,
+                        limit=limit,
+                        fields=fields,
+                        updated_after=updated_after,
+                    )
+                except Exception as e:
+                    logger.error(f"Worker {worker_id} API fetch failed at offset {offset}: {e}")
+                    self.metrics.record_error(thread_name, f"API fetch error: {e}")
+                    continue  # Skip this range, try next
+
+                # Check if we hit end of data
+                if not items or len(items) == 0:
+                    logger.info(
+                        f"Worker {worker_id} hit end-of-data at offset {offset}, marking complete"
+                    )
+                    coordinator.mark_worker_complete()
+                    break
+
+                # Process items: convert and save to database
+                for item_dict in items:
+                    try:
+                        # Convert to ContentItem
+                        content_item = self._dict_to_content_item(item_dict, content_type)
+
+                        # Save to database (uses thread-local connection)
+                        self.repository.save_content(content_item)
+
+                        # Update metrics
+                        self.metrics.increment_processed(content_type, count=1)
+                        items_processed += 1
+
+                    except Exception as e:
+                        # Item-level error - log and continue
+                        import traceback
+
+                        item_id = item_dict.get("id", "UNKNOWN")
+                        error_msg = f"Failed to process item {item_id}: {e}"
+                        logger.warning(f"Worker {worker_id}: {error_msg}")
+
+                        tb = traceback.format_exc()
+                        logger.debug(
+                            f"Worker {worker_id}: Detailed error context\n"
+                            f"  Item ID: {item_id}\n"
+                            f"  Content Type: {content_type}\n"
+                            f"  Exception: {type(e).__name__}: {e}\n"
+                            f"  Traceback:\n{tb}"
+                        )
+                        self.metrics.record_error(thread_name, error_msg)
+
+                # Check if we got fewer items than requested (end of data)
+                if len(items) < limit:
+                    logger.info(
+                        f"Worker {worker_id} received {len(items)} < {limit} items at offset {offset}, "
+                        f"marking complete"
+                    )
+                    coordinator.mark_worker_complete()
+                    break
+
+                # Periodic progress update
+                if items_processed > 0 and items_processed % 500 == 0:
+                    snapshot = self.metrics.snapshot()
+                    logger.info(
+                        f"Worker {worker_id}: {items_processed} items processed, "
+                        f"total: {snapshot['total']} ({snapshot['items_per_second']:.1f} items/sec)"
+                    )
+
+            logger.info(f"Worker {worker_id} completed: {items_processed} items processed")
+
+        except Exception as e:
+            # Worker-level error - log and propagate
+            logger.error(f"Worker {worker_id} fatal error: {e}")
+            self.metrics.record_error(thread_name, f"Fatal worker error: {e}")
+            raise
+
+        finally:
+            # CRITICAL: Close thread-local database connection
+            self.repository.close_thread_connection()
+            logger.info(
+                f"Worker {worker_id} shutting down: {items_processed} items processed, "
+                "thread-local connection closed"
+            )
+
+        return items_processed
+
+    @staticmethod
+    def _get_item_id(item_dict: dict[str, Any], content_type: int) -> str | None:
+        """Get the identifier field for an item based on content type.
+
+        Args:
+            item_dict: Raw API response dictionary
+            content_type: ContentType enum value
+
+        Returns:
+            Item identifier or None if not found
+        """
+        # LookML Models use 'name' as their identifier, not 'id'
+        if content_type == ContentType.LOOKML_MODEL:
+            return item_dict.get("name")
+
+        # All other content types use 'id'
+        return item_dict.get("id")
+
     def _dict_to_content_item(self, item_dict: dict[str, Any], content_type: int) -> ContentItem:
         """Convert API response dict to ContentItem.
 
@@ -512,10 +879,14 @@ class ParallelOrchestrator:
         Raises:
             ValueError: If required fields missing
         """
-        # Extract required fields
-        item_id = item_dict.get("id")
+        # Extract required fields - some content types use 'name' instead of 'id'
+        item_id = self._get_item_id(item_dict, content_type)
         if not item_id:
-            raise ValueError("Item missing required 'id' field")
+            # Fallback to "unknown" like orchestrator.py does
+            item_id = "unknown"
+            logger.warning(
+                f"Item missing identifier field for {ContentType(content_type).name}: {item_dict}"
+            )
 
         item_id = str(item_id)  # Ensure string
         name = item_dict.get("title") or item_dict.get("name") or f"Untitled {item_id}"
