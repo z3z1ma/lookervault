@@ -98,6 +98,10 @@ def extract(
         bool,
         typer.Option("--resume", help="Resume incomplete extraction"),
     ] = True,
+    incremental: Annotated[
+        bool,
+        typer.Option("--incremental", "-i", help="Extract only new/changed content"),
+    ] = False,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -110,7 +114,36 @@ def extract(
     """Extract all content from Looker instance to local database."""
     from .commands import extract as extract_module
 
-    extract_module.run(config, output, db, types, batch_size, resume, verbose, debug)
+    extract_module.run(config, output, db, types, batch_size, resume, incremental, verbose, debug)
+
+
+@app.command()
+def verify(
+    db: Annotated[
+        str,
+        typer.Option("--db", help="Database path to verify"),
+    ] = "looker.db",
+    content_type: Annotated[
+        str | None,
+        typer.Option("--type", "-t", help="Specific content type to verify"),
+    ] = None,
+    compare_live: Annotated[
+        bool,
+        typer.Option("--compare-live", help="Compare with current Looker state"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Verify integrity of extracted content."""
+    from .commands import verify as verify_module
+
+    verify_module.run(db, content_type, compare_live, verbose, debug)
 
 
 if __name__ == "__main__":

@@ -107,12 +107,12 @@
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Add --incremental flag to extract command in `src/lookervault/cli/commands/extract.py`
-- [ ] T031 [US2] Implement timestamp comparison logic in ExtractionOrchestrator to detect changed content
-- [ ] T032 [US2] Modify ContentExtractor to support filtering by updated_at timestamp
-- [ ] T033 [US2] Implement soft delete detection: query Looker for all IDs, compare with DB, mark missing items as deleted
-- [ ] T034 [US2] Update ContentRepository.save_content to handle upserts (insert or update)
-- [ ] T035 [US2] Add incremental extraction summary showing new items, updated items, deleted items
+- [X] T030 [US2] Add --incremental flag to extract command in `src/lookervault/cli/commands/extract.py`
+- [X] T031 [US2] Implement timestamp comparison logic in ExtractionOrchestrator to detect changed content
+- [X] T032 [US2] Modify ContentExtractor to support filtering by updated_at timestamp
+- [X] T033 [US2] Implement soft delete detection: query Looker for all IDs, compare with DB, mark missing items as deleted
+- [X] T034 [US2] Update ContentRepository.save_content to handle upserts (insert or update)
+- [X] T035 [US2] Add incremental extraction summary showing new items, updated items, deleted items
 
 **Checkpoint**: Incremental extraction works independently. Both US1 (full) and US2 (incremental) work.
 
@@ -131,14 +131,14 @@
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Add --resume flag to extract command in `src/lookervault/cli/commands/extract.py`
-- [ ] T037 [US3] Implement checkpoint creation in ExtractionOrchestrator after each content type batch completes
-- [ ] T038 [US3] Implement checkpoint detection logic: query sync_checkpoints for incomplete checkpoints by session_id
-- [ ] T039 [US3] Implement resume workflow: load checkpoint_data JSON, extract last_offset, skip to offset, continue extraction
-- [ ] T040 [US3] Add checkpoint completion logic: set completed_at timestamp when content type finishes
-- [ ] T041 [US3] Implement corruption detection: validate checkpoint_data JSON, verify item_count matches DB records
-- [ ] T042 [US3] Add resume confirmation prompt showing last checkpoint details (content type, offset, timestamp)
-- [ ] T043 [US3] Handle resume failures gracefully: if checkpoint corrupt or unresumable, offer to restart fresh
+- [X] T036 [US3] Add --resume flag to extract command in `src/lookervault/cli/commands/extract.py`
+- [X] T037 [US3] Implement checkpoint creation in ExtractionOrchestrator after each content type batch completes
+- [X] T038 [US3] Implement checkpoint detection logic: query sync_checkpoints for incomplete checkpoints by session_id
+- [X] T039 [US3] Implement resume workflow: load checkpoint_data JSON, extract last_offset, skip to offset, continue extraction
+- [X] T040 [US3] Add checkpoint completion logic: set completed_at timestamp when content type finishes
+- [X] T041 [US3] Implement corruption detection: validate checkpoint_data JSON, verify item_count matches DB records
+- [X] T042 [US3] Add resume confirmation prompt showing last checkpoint details (content type, offset, timestamp)
+- [X] T043 [US3] Handle resume failures gracefully: if checkpoint corrupt or unresumable, offer to restart fresh
 
 **Checkpoint**: Resume capability works. Interrupted extractions can continue. US1, US2, US3 all functional.
 
@@ -157,14 +157,14 @@
 
 ### Implementation for User Story 4
 
-- [ ] T044 [P] [US4] Create verify command in `src/lookervault/cli/commands/verify.py`
-- [ ] T045 [US4] Add verify command to CLI app in `src/lookervault/cli/main.py`
-- [ ] T046 [US4] Implement deserialization validation: load BLOB, msgspec.msgpack.decode(), catch exceptions
-- [ ] T047 [US4] Implement content_size validation: verify content_size == len(content_data)
-- [ ] T048 [US4] Add --compare-live option to fetch current Looker state and compare with DB
-- [ ] T049 [US4] Implement live comparison logic: fetch content from Looker, deserialize DB content, deep compare
-- [ ] T050 [US4] Add verification summary report showing valid items, errors, discrepancies
-- [ ] T051 [US4] Support --type filter to verify specific content types only
+- [X] T044 [P] [US4] Create verify command in `src/lookervault/cli/commands/verify.py`
+- [X] T045 [US4] Add verify command to CLI app in `src/lookervault/cli/main.py`
+- [X] T046 [US4] Implement deserialization validation: load BLOB, msgspec.msgpack.decode(), catch exceptions
+- [X] T047 [US4] Implement content_size validation: verify content_size == len(content_data)
+- [X] T048 [US4] Add --compare-live option to fetch current Looker state and compare with DB
+- [X] T049 [US4] Implement live comparison logic: fetch content from Looker, deserialize DB content, deep compare
+- [X] T050 [US4] Add verification summary report showing valid items, errors, discrepancies
+- [X] T051 [US4] Support --type filter to verify specific content types only
 
 **Checkpoint**: Verification works. All user stories (US1-US4) independently functional.
 

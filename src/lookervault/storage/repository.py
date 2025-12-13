@@ -97,6 +97,17 @@ class ContentRepository(Protocol):
         """
         ...
 
+    def update_checkpoint(self, checkpoint: Checkpoint) -> None:
+        """Update existing checkpoint.
+
+        Args:
+            checkpoint: Checkpoint object with updated values
+
+        Raises:
+            StorageError: If update fails
+        """
+        ...
+
     def create_session(self, session: ExtractionSession) -> None:
         """Create new extraction session."""
         ...
@@ -453,6 +464,39 @@ class SQLiteContentRepository:
             )
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get checkpoint: {e}") from e
+
+    def update_checkpoint(self, checkpoint: Checkpoint) -> None:
+        """Update existing checkpoint.
+
+        Args:
+            checkpoint: Checkpoint object with updated values
+
+        Raises:
+            StorageError: If update fails
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                UPDATE sync_checkpoints
+                SET checkpoint_data = ?, completed_at = ?,
+                    item_count = ?, error_message = ?
+                WHERE id = ?
+            """,
+                (
+                    json.dumps(checkpoint.checkpoint_data),
+                    checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
+                    checkpoint.item_count,
+                    checkpoint.error_message,
+                    checkpoint.id,
+                ),
+            )
+
+            conn.commit()
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to update checkpoint: {e}") from e
 
     def create_session(self, session: ExtractionSession) -> None:
         """Create new extraction session.

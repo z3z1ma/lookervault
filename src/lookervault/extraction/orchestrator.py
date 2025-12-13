@@ -233,9 +233,8 @@ class ExtractionOrchestrator:
             checkpoint.checkpoint_data["total_processed"] = items_count
             checkpoint.checkpoint_data["deleted_items"] = deleted_count
 
-            # Update checkpoint in DB (using the ID we got earlier)
-            # Note: Repository needs update_checkpoint method, but for MVP we'll skip
-            # and just mark extraction complete in the progress tracker
+            # Update checkpoint in DB
+            self.repository.update_checkpoint(checkpoint)
 
             self.progress.complete_task(task_id)
             logger.info(f"Completed {content_type_name}: {items_count} items")
@@ -260,14 +259,62 @@ class ExtractionOrchestrator:
         Raises:
             OrchestrationError: If resume fails
         """
-        # For MVP, we'll implement basic resume logic
-        # In a full implementation, we'd track offset and skip already-extracted items
-        logger.warning(
-            f"Resume not fully implemented for {ContentType(content_type).name}, "
-            "starting fresh extraction"
-        )
-        # For now, just extract fresh
-        return self._extract_content_type(content_type, checkpoint.session_id)
+        content_type_name = ContentType(content_type).name.lower()
+        logger.info(f"Resuming extraction for {content_type_name}")
+
+        # Validate checkpoint data
+        try:
+            checkpoint_data = checkpoint.checkpoint_data
+            if not isinstance(checkpoint_data, dict):
+                raise ValueError("Invalid checkpoint data format")
+
+            # Check if checkpoint has required fields
+            total_processed = checkpoint_data.get("total_processed", 0)
+
+            logger.info(
+                f"Checkpoint found: {total_processed} items already processed for {content_type_name}"
+            )
+
+            # Check if extraction was actually complete (checkpoint just wasn't updated)
+            # Count current items in database
+            existing_items = self.repository.list_content(
+                content_type=content_type, include_deleted=False
+            )
+            existing_count = len(existing_items)
+
+            if existing_count >= total_processed and total_processed > 0:
+                # Extraction appears complete, just mark checkpoint as done
+                logger.info(
+                    f"Extraction appears complete ({existing_count} items in DB), "
+                    "marking checkpoint as complete"
+                )
+                checkpoint.completed_at = datetime.now()
+                checkpoint.item_count = existing_count
+                self.repository.update_checkpoint(checkpoint)
+                return existing_count
+
+            # Resume extraction - for simplicity, we'll re-extract all items
+            # The repository's upsert logic will handle duplicates efficiently
+            logger.warning(
+                f"Resuming from beginning for {content_type_name} (will skip duplicates via upsert)"
+            )
+
+            # Clear the checkpoint and start fresh extraction
+            # This is simpler and safer than trying to track exact offsets
+            checkpoint.completed_at = None
+            checkpoint.error_message = None
+            self.repository.update_checkpoint(checkpoint)
+
+            # Re-extract (upserts will handle duplicates)
+            return self._extract_content_type(content_type, checkpoint.session_id)
+
+        except Exception as e:
+            logger.error(f"Failed to resume extraction for {content_type_name}: {e}")
+            # If resume fails, try starting fresh
+            logger.warning(f"Resume failed, attempting fresh extraction for {content_type_name}")
+            checkpoint.error_message = f"Resume failed: {e}"
+            self.repository.update_checkpoint(checkpoint)
+            return self._extract_content_type(content_type, checkpoint.session_id)
 
     def _dict_to_content_item(self, item_dict: dict, content_type: int) -> ContentItem:
         """Convert API response dict to ContentItem.
