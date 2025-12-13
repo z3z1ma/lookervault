@@ -165,9 +165,6 @@ class ParallelConfig(BaseModel):
         Raises:
             ValueError: If rate_limit_per_second > rate_limit_per_minute
         """
-        # Convert to per-second rates for comparison
-        max_per_second_from_minute = self.rate_limit_per_minute / 60.0
-
         if self.rate_limit_per_second > self.rate_limit_per_minute:
             raise ValueError(
                 f"rate_limit_per_second ({self.rate_limit_per_second}) cannot exceed "

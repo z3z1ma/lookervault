@@ -12,6 +12,7 @@ from lookervault.config.models import ParallelConfig
 from lookervault.exceptions import ConfigError, OrchestrationError
 from lookervault.extraction.orchestrator import ExtractionConfig, ExtractionOrchestrator
 from lookervault.extraction.parallel_orchestrator import ParallelOrchestrator
+from lookervault.extraction.performance import PerformanceTuner
 from lookervault.extraction.progress import (
     JsonProgressTracker,
     RichProgressTracker,
@@ -124,6 +125,28 @@ def run(
                 "Recommended: 8-16 workers for optimal throughput.[/yellow]"
             )
 
+        # Validate configuration and provide performance recommendations
+        if workers > 1:
+            tuner = PerformanceTuner()
+            config_warnings = tuner.validate_configuration(
+                workers=workers,
+                queue_size=workers * 100,  # Default queue size
+                batch_size=batch_size,
+            )
+
+            for warning in config_warnings:
+                if verbose or "WARNING" in warning.upper():
+                    console.print(f"[yellow]⚠ {warning}[/yellow]")
+
+            # Suggest optimal configuration in verbose mode
+            if verbose:
+                profile = tuner.recommend_for_dataset(total_items=None, avg_item_size_kb=5.0)
+                if profile.workers != workers:
+                    console.print(
+                        f"[dim]💡 Recommended: {profile.workers} workers "
+                        f"(expected throughput: {profile.expected_throughput:.0f} items/sec)[/dim]"
+                    )
+
         # Create extraction config
         extraction_config = ExtractionConfig(
             content_types=content_types,
@@ -199,7 +222,7 @@ def run(
 
             # Show parallel execution stats
             if workers > 1:
-                console.print(f"\n[cyan]Parallel execution:[/cyan]")
+                console.print("\n[cyan]Parallel execution:[/cyan]")
                 console.print(f"  Workers: {workers}")
                 console.print(f"  Throughput: {throughput:.1f} items/sec")
                 if result.errors > 0:

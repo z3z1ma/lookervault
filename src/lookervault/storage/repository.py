@@ -1,16 +1,22 @@
 """Content repository for SQLite storage operations."""
 
 import json
+import logging
 import sqlite3
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from lookervault.exceptions import NotFoundError, StorageError
 from lookervault.storage.models import Checkpoint, ContentItem, ExtractionSession
 from lookervault.storage.schema import create_schema, optimize_database
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class ContentRepository(Protocol):
@@ -216,6 +222,60 @@ class SQLiteContentRepository:
         """
         self.close_thread_connection()
 
+    def _retry_on_busy(
+        self,
+        operation: Callable[[], T],
+        max_retries: int = 5,
+        initial_delay: float = 0.1,
+    ) -> T:
+        """Retry database operation on SQLITE_BUSY error.
+
+        Implements exponential backoff for write contention in parallel execution.
+        SQLite can return SQLITE_BUSY even with BEGIN IMMEDIATE if multiple writers
+        are contending for the database lock.
+
+        Args:
+            operation: Callable that performs the database operation
+            max_retries: Maximum retry attempts (default: 5)
+            initial_delay: Initial retry delay in seconds (default: 0.1)
+
+        Returns:
+            Result of operation() call
+
+        Raises:
+            StorageError: If operation fails after max_retries
+        """
+        last_error = None
+        delay = initial_delay
+
+        for attempt in range(max_retries):
+            try:
+                return operation()
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if "database is locked" in str(e).lower() or "busy" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        # Exponential backoff with jitter
+                        jitter = delay * 0.1 * (hash(threading.current_thread().name) % 10) / 10
+                        sleep_time = delay + jitter
+                        logger.debug(
+                            f"SQLITE_BUSY detected (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying in {sleep_time:.3f}s"
+                        )
+                        time.sleep(sleep_time)
+                        delay *= 2  # Exponential backoff
+                    else:
+                        logger.warning(f"SQLITE_BUSY retry exhausted after {max_retries} attempts")
+                        raise StorageError(
+                            f"Database locked after {max_retries} retries: {e}"
+                        ) from e
+                else:
+                    # Not a busy error - re-raise immediately
+                    raise
+
+        # Should never reach here, but for type safety
+        raise StorageError(f"Database operation failed: {last_error}") from last_error
+
     def save_content(self, item: ContentItem) -> None:
         """Save or update a content item with thread-safe transaction control.
 
@@ -223,59 +283,66 @@ class SQLiteContentRepository:
         This acquires a write lock immediately, allowing concurrent reads but blocking
         other writers until the transaction completes.
 
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
         Args:
             item: ContentItem to persist
 
         Raises:
-            StorageError: If save fails
+            StorageError: If save fails after retries
         """
-        try:
-            conn = self._get_connection()
-            # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
-            conn.execute("BEGIN IMMEDIATE")
 
+        def _save_operation() -> None:
             try:
-                cursor = conn.cursor()
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
+                conn.execute("BEGIN IMMEDIATE")
 
-                cursor.execute(
-                    """
-                    INSERT INTO content_items (
-                        id, content_type, name, owner_id, owner_email,
-                        created_at, updated_at, synced_at, deleted_at,
-                        content_size, content_data
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        content_type = excluded.content_type,
-                        name = excluded.name,
-                        owner_id = excluded.owner_id,
-                        owner_email = excluded.owner_email,
-                        created_at = excluded.created_at,
-                        updated_at = excluded.updated_at,
-                        synced_at = excluded.synced_at,
-                        deleted_at = excluded.deleted_at,
-                        content_size = excluded.content_size,
-                        content_data = excluded.content_data
-                """,
-                    (
-                        item.id,
-                        item.content_type,
-                        item.name,
-                        item.owner_id,
-                        item.owner_email,
-                        item.created_at.isoformat(),
-                        item.updated_at.isoformat(),
-                        item.synced_at.isoformat() if item.synced_at else None,
-                        item.deleted_at.isoformat() if item.deleted_at else None,
-                        item.content_size,
-                        item.content_data,
-                    ),
-                )
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-        except sqlite3.Error as e:
-            raise StorageError(f"Failed to save content: {e}") from e
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO content_items (
+                            id, content_type, name, owner_id, owner_email,
+                            created_at, updated_at, synced_at, deleted_at,
+                            content_size, content_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            content_type = excluded.content_type,
+                            name = excluded.name,
+                            owner_id = excluded.owner_id,
+                            owner_email = excluded.owner_email,
+                            created_at = excluded.created_at,
+                            updated_at = excluded.updated_at,
+                            synced_at = excluded.synced_at,
+                            deleted_at = excluded.deleted_at,
+                            content_size = excluded.content_size,
+                            content_data = excluded.content_data
+                    """,
+                        (
+                            item.id,
+                            item.content_type,
+                            item.name,
+                            item.owner_id,
+                            item.owner_email,
+                            item.created_at.isoformat(),
+                            item.updated_at.isoformat(),
+                            item.synced_at.isoformat() if item.synced_at else None,
+                            item.deleted_at.isoformat() if item.deleted_at else None,
+                            item.content_size,
+                            item.content_data,
+                        ),
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to save content: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_save_operation)
 
     def get_content(self, content_id: str) -> ContentItem | None:
         """Retrieve content by ID.
@@ -426,6 +493,8 @@ class SQLiteContentRepository:
     def save_checkpoint(self, checkpoint: Checkpoint) -> int:
         """Save extraction checkpoint with thread-safe transaction control.
 
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
         Args:
             checkpoint: Checkpoint object
 
@@ -433,42 +502,49 @@ class SQLiteContentRepository:
             Checkpoint ID
 
         Raises:
-            StorageError: If save fails
+            StorageError: If save fails after retries
         """
-        try:
-            conn = self._get_connection()
-            # BEGIN IMMEDIATE: Thread-safe checkpoint writes
-            conn.execute("BEGIN IMMEDIATE")
 
+        def _save_operation() -> int:
             try:
-                cursor = conn.cursor()
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe checkpoint writes
+                conn.execute("BEGIN IMMEDIATE")
 
-                cursor.execute(
-                    """
-                    INSERT INTO sync_checkpoints (
-                        session_id, content_type, checkpoint_data, started_at,
-                        completed_at, item_count, error_message
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        checkpoint.session_id,
-                        checkpoint.content_type,
-                        json.dumps(checkpoint.checkpoint_data),
-                        checkpoint.started_at.isoformat(),
-                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
-                        checkpoint.item_count,
-                        checkpoint.error_message,
-                    ),
-                )
+                try:
+                    cursor = conn.cursor()
 
-                checkpoint_id = cursor.lastrowid
-                conn.commit()
-                return checkpoint_id
-            except Exception:
-                conn.rollback()
-                raise
-        except sqlite3.Error as e:
-            raise StorageError(f"Failed to save checkpoint: {e}") from e
+                    cursor.execute(
+                        """
+                        INSERT INTO sync_checkpoints (
+                            session_id, content_type, checkpoint_data, started_at,
+                            completed_at, item_count, error_message
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            checkpoint.session_id,
+                            checkpoint.content_type,
+                            json.dumps(checkpoint.checkpoint_data),
+                            checkpoint.started_at.isoformat(),
+                            checkpoint.completed_at.isoformat()
+                            if checkpoint.completed_at
+                            else None,
+                            checkpoint.item_count,
+                            checkpoint.error_message,
+                        ),
+                    )
+
+                    checkpoint_id = cursor.lastrowid
+                    conn.commit()
+                    return checkpoint_id
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to save checkpoint: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        return self._retry_on_busy(_save_operation)
 
     def get_latest_checkpoint(
         self, content_type: int, session_id: str | None = None
@@ -525,42 +601,51 @@ class SQLiteContentRepository:
     def update_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Update existing checkpoint with thread-safe transaction control.
 
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
         Args:
             checkpoint: Checkpoint object with updated values
 
         Raises:
-            StorageError: If update fails
+            StorageError: If update fails after retries
         """
-        try:
-            conn = self._get_connection()
-            # BEGIN IMMEDIATE: Thread-safe checkpoint updates
-            conn.execute("BEGIN IMMEDIATE")
 
+        def _update_operation() -> None:
             try:
-                cursor = conn.cursor()
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe checkpoint updates
+                conn.execute("BEGIN IMMEDIATE")
 
-                cursor.execute(
-                    """
-                    UPDATE sync_checkpoints
-                    SET checkpoint_data = ?, completed_at = ?,
-                        item_count = ?, error_message = ?
-                    WHERE id = ?
-                """,
-                    (
-                        json.dumps(checkpoint.checkpoint_data),
-                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
-                        checkpoint.item_count,
-                        checkpoint.error_message,
-                        checkpoint.id,
-                    ),
-                )
+                try:
+                    cursor = conn.cursor()
 
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-        except sqlite3.Error as e:
-            raise StorageError(f"Failed to update checkpoint: {e}") from e
+                    cursor.execute(
+                        """
+                        UPDATE sync_checkpoints
+                        SET checkpoint_data = ?, completed_at = ?,
+                            item_count = ?, error_message = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            json.dumps(checkpoint.checkpoint_data),
+                            checkpoint.completed_at.isoformat()
+                            if checkpoint.completed_at
+                            else None,
+                            checkpoint.item_count,
+                            checkpoint.error_message,
+                            checkpoint.id,
+                        ),
+                    )
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to update checkpoint: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_update_operation)
 
     def create_session(self, session: ExtractionSession) -> None:
         """Create new extraction session.

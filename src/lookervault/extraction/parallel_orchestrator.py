@@ -4,7 +4,6 @@ import logging
 import queue
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -132,27 +131,39 @@ class ParallelOrchestrator:
 
         try:
             # Launch consumer workers in thread pool
+            logger.info(f"Launching {self.parallel_config.workers} consumer worker threads")
             with ThreadPoolExecutor(max_workers=self.parallel_config.workers) as executor:
                 # Submit consumer workers
                 consumer_futures: list[Future[int]] = [
                     executor.submit(self._consumer_worker, i)
                     for i in range(self.parallel_config.workers)
                 ]
+                logger.info(f"All {self.parallel_config.workers} workers submitted to thread pool")
 
                 # Run producer in main thread (API fetching)
+                logger.info("Starting producer worker in main thread")
                 self._producer_worker(session.id)
+                logger.info("Producer worker completed - all work queued")
 
                 # Wait for all consumers to complete and collect results
+                logger.info(f"Waiting for {len(consumer_futures)} consumer workers to complete")
+                completed_count = 0
                 for future in as_completed(consumer_futures):
                     try:
                         items_processed = future.result()
-                        logger.debug(f"Worker completed: {items_processed} items processed")
+                        completed_count += 1
+                        logger.info(
+                            f"Worker {completed_count}/{len(consumer_futures)} completed: "
+                            f"{items_processed} items processed"
+                        )
                     except Exception as e:
                         # Worker failure - log but continue with others
                         worker_error = str(e)
                         logger.error(f"Worker thread failed: {worker_error}")
                         result.errors += 1
                         self.metrics.record_error("main", worker_error)
+
+                logger.info(f"All {len(consumer_futures)} workers completed")
 
             # Get final metrics snapshot
             final_metrics = self.metrics.snapshot()
@@ -170,11 +181,23 @@ class ParallelOrchestrator:
             # Calculate duration
             result.duration_seconds = (datetime.now() - start_time).total_seconds()
 
+            # Log final memory usage
+            current_mem, peak_mem = self.batch_processor.get_memory_usage()
+            current_mb = current_mem / (1024 * 1024)
+            peak_mb = peak_mem / (1024 * 1024)
+
             logger.info(
                 f"Parallel extraction complete: {result.total_items} items "
                 f"in {result.duration_seconds:.1f}s "
                 f"({final_metrics['items_per_second']:.1f} items/sec)"
             )
+
+            if self.batch_processor.enable_monitoring and current_mem > 0:
+                logger.info(
+                    f"Memory usage: {current_mb:.1f} MB current, {peak_mb:.1f} MB peak "
+                    f"({self.parallel_config.workers} workers, "
+                    f"queue_size={self.parallel_config.queue_size})"
+                )
 
             return result
 
@@ -206,6 +229,29 @@ class ParallelOrchestrator:
         try:
             for content_type in self.config.content_types:
                 content_type_name = ContentType(content_type).name.lower()
+                logger.info(f"Producer: Processing {content_type_name}")
+
+                # Check for existing checkpoint if resume enabled
+                if self.config.resume:
+                    existing_checkpoint = self.repository.get_latest_checkpoint(
+                        content_type, session_id
+                    )
+                    if existing_checkpoint and existing_checkpoint.completed_at:
+                        # Checkpoint already complete - skip this content type
+                        logger.info(
+                            f"Producer: Skipping {content_type_name} - "
+                            f"found complete checkpoint from {existing_checkpoint.completed_at.isoformat()} "
+                            f"({existing_checkpoint.item_count} items)"
+                        )
+                        continue
+                    elif existing_checkpoint and not existing_checkpoint.completed_at:
+                        # Partial checkpoint exists - warn and re-extract
+                        logger.warning(
+                            f"Producer: Found incomplete checkpoint for {content_type_name} "
+                            f"from {existing_checkpoint.started_at.isoformat()}. "
+                            f"Re-extracting (upserts will handle duplicates)."
+                        )
+
                 logger.info(f"Producer: Fetching {content_type_name}")
 
                 # Create checkpoint for this content type
@@ -216,6 +262,8 @@ class ParallelOrchestrator:
                         "content_type": content_type_name,
                         "batch_size": self.config.batch_size,
                         "incremental": self.config.incremental,
+                        "parallel": True,  # Mark as parallel extraction
+                        "workers": self.parallel_config.workers,
                     },
                 )
                 checkpoint_id = self.repository.save_checkpoint(checkpoint)
@@ -241,6 +289,7 @@ class ParallelOrchestrator:
                 # Batch items and queue them
                 batch: list[dict[str, Any]] = []
                 batch_number = 0
+                items_queued = 0  # Track total items queued for checkpoint
 
                 for item_dict in items_iterator:
                     batch.append(item_dict)
@@ -254,10 +303,26 @@ class ParallelOrchestrator:
                             is_final_batch=False,
                         )
                         self.work_queue.put_work(work_item)  # Blocks if queue full
-                        logger.debug(
-                            f"Producer queued batch {batch_number} "
-                            f"({len(batch)} {content_type_name})"
-                        )
+                        items_queued += len(batch)
+
+                        # Log queue depth every 10 batches for monitoring
+                        if batch_number % 10 == 0:
+                            queue_depth = self.work_queue.qsize()
+                            queue_pct = (
+                                (queue_depth / self.parallel_config.queue_size * 100)
+                                if self.parallel_config.queue_size > 0
+                                else 0
+                            )
+                            logger.debug(
+                                f"Producer queued batch {batch_number} "
+                                f"({len(batch)} {content_type_name}, total: {items_queued}), "
+                                f"queue depth: {queue_depth}/{self.parallel_config.queue_size} ({queue_pct:.1f}%)"
+                            )
+                        else:
+                            logger.debug(
+                                f"Producer queued batch {batch_number} "
+                                f"({len(batch)} {content_type_name}, total: {items_queued})"
+                            )
 
                         batch = []
                         batch_number += 1
@@ -271,19 +336,23 @@ class ParallelOrchestrator:
                         is_final_batch=True,
                     )
                     self.work_queue.put_work(work_item)
+                    items_queued += len(batch)
                     logger.debug(
                         f"Producer queued final batch {batch_number} "
-                        f"({len(batch)} {content_type_name})"
+                        f"({len(batch)} {content_type_name}, total: {items_queued})"
                     )
 
-                # Mark checkpoint complete
+                # Mark checkpoint complete with item count
                 checkpoint.id = checkpoint_id
                 checkpoint.completed_at = datetime.now()
+                checkpoint.item_count = items_queued
                 checkpoint.checkpoint_data["total_batches"] = batch_number + 1
+                checkpoint.checkpoint_data["items_queued"] = items_queued
                 self.repository.update_checkpoint(checkpoint)
 
                 logger.info(
-                    f"Producer completed {content_type_name}: {batch_number + 1} batches queued"
+                    f"Producer completed {content_type_name}: "
+                    f"{items_queued} items in {batch_number + 1} batches queued"
                 )
 
         finally:
@@ -376,6 +445,18 @@ class ParallelOrchestrator:
                         f"({len(work_item.items)} items, "
                         f"total batches: {self.metrics.batches_completed})"
                     )
+
+                    # Periodic memory check (every 100 batches across all workers)
+                    if (
+                        self.batch_processor.enable_monitoring
+                        and self.metrics.batches_completed % 100 == 0
+                    ):
+                        current_mem, peak_mem = self.batch_processor.get_memory_usage()
+                        current_mb = current_mem / (1024 * 1024)
+                        logger.debug(
+                            f"Memory check at batch {self.metrics.batches_completed}: "
+                            f"{current_mb:.1f} MB, {items_processed} items processed by worker {worker_id}"
+                        )
 
                 except queue.Empty:
                     # Timeout waiting for work - check if producer is done
