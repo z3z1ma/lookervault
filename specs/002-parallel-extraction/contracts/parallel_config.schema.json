@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lookervault.io/schemas/parallel_config.json",
+  "title": "Parallel Extraction Configuration",
+  "description": "Configuration schema for parallel content extraction in LookerVault",
+  "type": "object",
+  "properties": {
+    "workers": {
+      "type": "integer",
+      "description": "Number of worker threads in the thread pool",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 8,
+      "examples": [1, 4, 8, 16]
+    },
+    "queue_size": {
+      "type": "integer",
+      "description": "Maximum depth of the work queue (bounded queue for backpressure)",
+      "minimum": 10,
+      "default": 800,
+      "examples": [100, 500, 1000]
+    },
+    "batch_size": {
+      "type": "integer",
+      "description": "Number of items per work batch",
+      "minimum": 10,
+      "maximum": 1000,
+      "default": 100,
+      "examples": [50, 100, 200]
+    },
+    "rate_limit_per_minute": {
+      "type": "integer",
+      "description": "Maximum API requests per minute across all workers",
+      "minimum": 1,
+      "default": 100,
+      "examples": [60, 100, 200]
+    },
+    "rate_limit_per_second": {
+      "type": "integer",
+      "description": "Maximum API requests per second (burst allowance)",
+      "minimum": 1,
+      "default": 10,
+      "examples": [5, 10, 20]
+    },
+    "adaptive_rate_limiting": {
+      "type": "boolean",
+      "description": "Enable adaptive backoff when HTTP 429 detected",
+      "default": true
+    },
+    "enable_monitoring": {
+      "type": "boolean",
+      "description": "Enable memory usage monitoring during extraction",
+      "default": true
+    }
+  },
+  "required": ["workers"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "workers": 8,
+      "queue_size": 800,
+      "batch_size": 100,
+      "rate_limit_per_minute": 100,
+      "rate_limit_per_second": 10,
+      "adaptive_rate_limiting": true,
+      "enable_monitoring": true
+    },
+    {
+      "workers": 1,
+      "batch_size": 100
+    },
+    {
+      "workers": 16,
+      "queue_size": 1600,
+      "batch_size": 200,
+      "rate_limit_per_minute": 200,
+      "rate_limit_per_second": 20
+    }
+  ],
+  "definitions": {
+    "worker_validation": {
+      "description": "Worker count must be between 1 and 50",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "queue_size_validation": {
+      "description": "Queue size should be at least workers * 10 to prevent starvation",
+      "type": "integer",
+      "minimum": 10
+    },
+    "rate_limit_consistency": {
+      "description": "Rate limit per second should not exceed rate limit per minute",
+      "type": "object",
+      "properties": {
+        "rate_limit_per_second": {"type": "integer"},
+        "rate_limit_per_minute": {"type": "integer"}
+      },
+      "if": {
+        "properties": {
+          "rate_limit_per_second": {"type": "integer"},
+          "rate_limit_per_minute": {"type": "integer"}
+        },
+        "required": ["rate_limit_per_second", "rate_limit_per_minute"]
+      },
+      "then": {
+        "properties": {
+          "rate_limit_per_second": {
+            "type": "integer",
+            "maximum": {"$data": "1/rate_limit_per_minute"}
+          }
+        }
+      }
+    }
+  }
+}
