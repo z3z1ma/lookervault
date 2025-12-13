@@ -12,7 +12,7 @@ class LookerConfig(BaseModel):
     api_url: HttpUrl
     client_id: str | None = ""
     client_secret: str | None = ""
-    timeout: int = Field(default=30, ge=5, le=300)
+    timeout: int = Field(default=120, ge=5, le=600)  # Increased to 120s for large instances
     verify_ssl: bool = True
 
 

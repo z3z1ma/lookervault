@@ -59,12 +59,20 @@ def run(
         # Load configuration
         cfg = load_config(config)
 
+        # Validate credentials
+        if not cfg.looker.client_id or not cfg.looker.client_secret:
+            console.print("[red]✗ Missing credentials[/red]")
+            console.print(
+                "Set LOOKERVAULT_CLIENT_ID and LOOKERVAULT_CLIENT_SECRET environment variables"
+            )
+            raise typer.Exit(2)
+
         # Parse content types
         content_types = _parse_content_types(types)
 
         # Create components
         looker_client = LookerClient(
-            api_url=cfg.looker.api_url,
+            api_url=str(cfg.looker.api_url),
             client_id=cfg.looker.client_id,
             client_secret=cfg.looker.client_secret,
             timeout=cfg.looker.timeout,

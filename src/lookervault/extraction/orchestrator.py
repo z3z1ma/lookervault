@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from lookervault.exceptions import OrchestrationError
 from lookervault.extraction.batch_processor import MemoryAwareBatchProcessor
@@ -347,13 +347,27 @@ class ExtractionOrchestrator:
             if "email" in item_dict:
                 owner_email = item_dict["email"]
 
-            # Handle timestamps
-            created_at = datetime.fromisoformat(
-                item_dict.get("created_at", datetime.now().isoformat())
-            )
-            updated_at = datetime.fromisoformat(
-                item_dict.get("updated_at", datetime.now().isoformat())
-            )
+            # Handle timestamps - API can return None or datetime objects
+            def parse_timestamp(value: str | datetime | None) -> datetime:
+                """Parse timestamp from various formats, returns timezone-aware datetime."""
+                if value is None:
+                    return datetime.now(timezone.utc)
+                if isinstance(value, datetime):
+                    # Add UTC timezone if naive
+                    if value.tzinfo is None:
+                        return value.replace(tzinfo=timezone.utc)
+                    return value
+                if isinstance(value, str):
+                    # Parse ISO format, handle 'Z' suffix
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    # Add UTC timezone if naive
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                return datetime.now(timezone.utc)
+
+            created_at = parse_timestamp(item_dict.get("created_at"))
+            updated_at = parse_timestamp(item_dict.get("updated_at"))
 
             # Create composite ID
             content_type_name = ContentType(content_type).name.lower()

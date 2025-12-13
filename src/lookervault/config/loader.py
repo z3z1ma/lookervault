@@ -58,6 +58,7 @@ def load_config(config_path: Path | None = None) -> Configuration:
     - LOOKERVAULT_CLIENT_ID
     - LOOKERVAULT_CLIENT_SECRET
     - LOOKERVAULT_API_URL
+    - LOOKERVAULT_TIMEOUT (optional, default: 120 seconds)
 
     Args:
         config_path: Optional path to config file
@@ -97,6 +98,11 @@ def load_config(config_path: Path | None = None) -> Configuration:
                 looker_config["client_secret"] = client_secret
             if api_url := os.getenv("LOOKERVAULT_API_URL"):
                 looker_config["api_url"] = api_url
+            if timeout_str := os.getenv("LOOKERVAULT_TIMEOUT"):
+                try:
+                    looker_config["timeout"] = int(timeout_str)
+                except ValueError:
+                    raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
     else:
         # No config file, build entirely from env vars
         api_url = os.getenv("LOOKERVAULT_API_URL")
@@ -107,13 +113,20 @@ def load_config(config_path: Path | None = None) -> Configuration:
                 "LOOKERVAULT_API_URL, LOOKERVAULT_CLIENT_ID, LOOKERVAULT_CLIENT_SECRET"
             )
 
-        config_data = {
-            "looker": {
-                "api_url": api_url,
-                "client_id": os.getenv("LOOKERVAULT_CLIENT_ID", ""),
-                "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET", ""),
-            }
+        looker_config = {
+            "api_url": api_url,
+            "client_id": os.getenv("LOOKERVAULT_CLIENT_ID", ""),
+            "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET", ""),
         }
+
+        # Add timeout if specified
+        if timeout_str := os.getenv("LOOKERVAULT_TIMEOUT"):
+            try:
+                looker_config["timeout"] = int(timeout_str)
+            except ValueError:
+                raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
+
+        config_data = {"looker": looker_config}
 
     try:
         return Configuration(**config_data)  # type: ignore[missing-argument]

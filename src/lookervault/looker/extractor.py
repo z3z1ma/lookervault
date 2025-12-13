@@ -124,18 +124,12 @@ class LookerContentExtractor:
         """
         try:
             if content_type == ContentType.DASHBOARD:
-                dashboards = self._call_api("all_dashboards", fields=fields)
-                for dashboard in dashboards:
-                    item_dict = self._sdk_object_to_dict(dashboard)
-                    if self._should_include(item_dict, updated_after):
-                        yield item_dict
+                # Dashboards require pagination for large instances
+                yield from self._paginate_dashboards(fields, batch_size, updated_after)
 
             elif content_type == ContentType.LOOK:
-                looks = self._call_api("all_looks", fields=fields)
-                for look in looks:
-                    item_dict = self._sdk_object_to_dict(look)
-                    if self._should_include(item_dict, updated_after):
-                        yield item_dict
+                # Looks require pagination for large instances
+                yield from self._paginate_looks(fields, batch_size, updated_after)
 
             elif content_type == ContentType.LOOKML_MODEL:
                 models = self._call_api("all_lookml_models", fields=fields)
@@ -198,6 +192,66 @@ class LookerContentExtractor:
             raise
         except Exception as e:
             raise ExtractionError(f"Failed to extract content type {content_type}: {e}") from e
+
+    def _paginate_dashboards(
+        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+    ) -> Iterator[dict[str, Any]]:
+        """Paginate through all dashboards.
+
+        Args:
+            fields: Field filter
+            batch_size: Items per page
+            updated_after: Only return items updated after this timestamp
+
+        Yields:
+            Dashboard dicts
+        """
+        offset = 0
+        while True:
+            dashboards = self._call_api(
+                "search_dashboards", fields=fields, limit=batch_size, offset=offset
+            )
+            if not dashboards or len(dashboards) == 0:
+                break
+
+            for dashboard in dashboards:
+                item_dict = self._sdk_object_to_dict(dashboard)
+                if self._should_include(item_dict, updated_after):
+                    yield item_dict
+
+            if len(dashboards) < batch_size:
+                break
+
+            offset += batch_size
+
+    def _paginate_looks(
+        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+    ) -> Iterator[dict[str, Any]]:
+        """Paginate through all looks.
+
+        Args:
+            fields: Field filter
+            batch_size: Items per page
+            updated_after: Only return items updated after this timestamp
+
+        Yields:
+            Look dicts
+        """
+        offset = 0
+        while True:
+            looks = self._call_api("search_looks", fields=fields, limit=batch_size, offset=offset)
+            if not looks or len(looks) == 0:
+                break
+
+            for look in looks:
+                item_dict = self._sdk_object_to_dict(look)
+                if self._should_include(item_dict, updated_after):
+                    yield item_dict
+
+            if len(looks) < batch_size:
+                break
+
+            offset += batch_size
 
     def _paginate_users(
         self, fields: str | None, batch_size: int, updated_after: datetime | None = None

@@ -1,7 +1,7 @@
 """List command implementation for querying extracted content metadata."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -120,7 +120,15 @@ def run(
             for item in items:
                 # Format updated_at as relative time if recent
                 if item.updated_at:
-                    delta = datetime.now() - item.updated_at
+                    # Use timezone-aware datetime for comparison
+                    now = datetime.now(timezone.utc)
+                    updated = item.updated_at
+
+                    # Add UTC timezone if naive
+                    if updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=timezone.utc)
+
+                    delta = now - updated
                     if delta.days == 0:
                         updated_str = "Today"
                     elif delta.days == 1:
