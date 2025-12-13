@@ -10,6 +10,7 @@ from lookervault import __version__
 app = typer.Typer(
     help="LookerVault - Backup and restore tool for Looker instances",
     add_completion=False,
+    no_args_is_help=True,
 )
 
 
@@ -144,6 +145,86 @@ def verify(
     from .commands import verify as verify_module
 
     verify_module.run(db, content_type, compare_live, verbose, debug)
+
+
+@app.command(name="list")
+def list_content(
+    content_type: Annotated[
+        str,
+        typer.Argument(help="Content type to list (e.g., 'dashboards', 'looks')"),
+    ],
+    db: Annotated[
+        str,
+        typer.Option("--db", help="Database path to query"),
+    ] = "looker.db",
+    owner: Annotated[
+        str | None,
+        typer.Option("--owner", help="Filter by owner email"),
+    ] = None,
+    folder: Annotated[
+        str | None,
+        typer.Option("--folder", help="Filter by folder name"),
+    ] = None,
+    created_after: Annotated[
+        str | None,
+        typer.Option("--created-after", help="Filter by creation date (ISO format)"),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Maximum items to return"),
+    ] = None,
+    offset: Annotated[
+        int,
+        typer.Option("--offset", help="Pagination offset"),
+    ] = 0,
+    output: Annotated[
+        str,
+        typer.Option("--output", "-o", help='Output format: "table" or "json"'),
+    ] = "table",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """List extracted content items with optional filters."""
+    from .commands import list as list_module
+
+    list_module.run(
+        content_type, db, owner, folder, created_after, limit, offset, output, verbose, debug
+    )
+
+
+@app.command()
+def cleanup(
+    retention_days: Annotated[
+        int,
+        typer.Option("--retention-days", help="Days to keep soft-deleted items"),
+    ] = 30,
+    db: Annotated[
+        str,
+        typer.Option("--db", help="Database path to clean up"),
+    ] = "looker.db",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview changes without applying them"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Clean up soft-deleted items past retention period."""
+    from .commands import cleanup as cleanup_module
+
+    cleanup_module.run(retention_days, db, dry_run, verbose, debug)
 
 
 if __name__ == "__main__":

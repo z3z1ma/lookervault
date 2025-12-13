@@ -179,17 +179,17 @@
 
 **Purpose**: Improvements across all user stories and production readiness
 
-- [ ] T052 [P] Add comprehensive logging throughout extraction workflow using Python logging module
-- [ ] T053 [P] Add --verbose and --debug flags to all commands for detailed logging
-- [ ] T054 [P] Implement proper exit codes: 0=success, 1=general error, 2=config error, 3=API error
-- [ ] T055 [P] Add --config option to all commands for custom config file path
-- [ ] T056 [P] Add --db option to all commands for custom database path
-- [ ] T057 [P] Create info command in `src/lookervault/cli/commands/info.py` to query extracted content metadata
-- [ ] T058 [P] Implement retention policy cleanup command: `lookervault cleanup --retention-days N`
-- [ ] T059 [P] Add JSON output mode validation: ensure all progress events emit valid JSON
+- [X] T052 [P] Add comprehensive logging throughout extraction workflow using Python logging module
+- [X] T053 [P] Add --verbose and --debug flags to all commands for detailed logging
+- [X] T054 [P] Implement proper exit codes: 0=success, 1=general error, 2=config error, 3=API error
+- [X] T055 [P] Add --config option to all commands for custom config file path
+- [X] T056 [P] Add --db option to all commands for custom database path
+- [X] T057 [P] Create list command in `src/lookervault/cli/commands/list.py` to query extracted content metadata
+- [X] T058 [P] Implement retention policy cleanup command: `lookervault cleanup --retention-days N`
+- [X] T059 [P] Add JSON output mode validation: ensure all progress events emit valid JSON
 - [ ] T060 [P] Optimize SQLite queries with EXPLAIN QUERY PLAN analysis
-- [ ] T061 [P] Add memory usage warnings when approaching configured limits
-- [ ] T062 [P] Document CLI commands in `--help` output with rich formatting
+- [X] T061 [P] Add memory usage warnings when approaching configured limits
+- [X] T062 [P] Document CLI commands in `--help` output with rich formatting
 - [ ] T063 [P] Add error recovery documentation to quickstart.md based on implementation
 - [ ] T064 Validate quickstart.md examples match actual CLI interface
 - [ ] T065 Run full extraction on test Looker instance to validate performance targets (1000 items <30min)

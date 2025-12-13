@@ -623,3 +623,82 @@ class SQLiteContentRepository:
             return {row["id"] for row in cursor.fetchall()}
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get content IDs: {e}") from e
+
+    def get_deleted_items_before(self, cutoff_date: datetime) -> Sequence[ContentItem]:
+        """Get soft-deleted items before cutoff date.
+
+        Args:
+            cutoff_date: Cutoff datetime for deletion
+
+        Returns:
+            Sequence of ContentItem objects that are soft-deleted before cutoff
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT id, content_type, name, owner_id, owner_email,
+                       created_at, updated_at, synced_at, deleted_at,
+                       content_size, content_data
+                FROM content_items
+                WHERE deleted_at IS NOT NULL AND deleted_at < ?
+                ORDER BY deleted_at ASC
+            """,
+                (cutoff_date.isoformat(),),
+            )
+
+            items = []
+            for row in cursor.fetchall():
+                items.append(
+                    ContentItem(
+                        id=row["id"],
+                        content_type=row["content_type"],
+                        name=row["name"],
+                        owner_id=row["owner_id"],
+                        owner_email=row["owner_email"],
+                        created_at=datetime.fromisoformat(row["created_at"]),
+                        updated_at=datetime.fromisoformat(row["updated_at"]),
+                        synced_at=datetime.fromisoformat(row["synced_at"])
+                        if row["synced_at"]
+                        else None,
+                        deleted_at=datetime.fromisoformat(row["deleted_at"])
+                        if row["deleted_at"]
+                        else None,
+                        content_size=row["content_size"],
+                        content_data=row["content_data"],
+                    )
+                )
+
+            return items
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get deleted items: {e}") from e
+
+    def hard_delete_before(self, cutoff_date: datetime) -> int:
+        """Permanently delete soft-deleted items before cutoff date.
+
+        Args:
+            cutoff_date: Cutoff datetime for deletion
+
+        Returns:
+            Number of items deleted
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                DELETE FROM content_items
+                WHERE deleted_at IS NOT NULL AND deleted_at < ?
+            """,
+                (cutoff_date.isoformat(),),
+            )
+
+            deleted_count = cursor.rowcount
+            conn.commit()
+
+            return deleted_count
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to hard delete items: {e}") from e
