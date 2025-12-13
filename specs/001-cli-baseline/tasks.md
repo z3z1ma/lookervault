@@ -24,12 +24,12 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project directory structure: src/lookervault/{cli/commands,config,looker}/ and tests/{unit,integration,fixtures}/
-- [ ] T002 [P] Create all __init__.py files in src/lookervault/, src/lookervault/cli/, src/lookervault/cli/commands/, src/lookervault/config/, src/lookervault/looker/
-- [ ] T003 [P] Add tool configurations (pytest, mypy, ruff) to pyproject.toml
-- [ ] T004 [P] Create .env.example file with LOOKERVAULT_CLIENT_ID, LOOKERVAULT_CLIENT_SECRET, LOOKERVAULT_API_URL
-- [ ] T005 Add production dependencies using uv: typer[all]>=0.9.0, looker-sdk>=24.0.0, pydantic>=2.0.0, tomli-w>=1.0.0
-- [ ] T006 Add development dependencies using uv: pytest>=7.4.0, pytest-mock>=3.12.0, pytest-cov>=4.1.0, mypy>=1.8.0, ruff>=0.1.0
+- [X] T001 Create project directory structure: src/lookervault/{cli/commands,config,looker}/ and tests/{unit,integration,fixtures}/
+- [X] T002 [P] Create all __init__.py files in src/lookervault/, src/lookervault/cli/, src/lookervault/cli/commands/, src/lookervault/config/, src/lookervault/looker/
+- [X] T003 [P] Add tool configurations (pytest, mypy, ruff) to pyproject.toml
+- [X] T004 [P] Create .env.example file with LOOKERVAULT_CLIENT_ID, LOOKERVAULT_CLIENT_SECRET, LOOKERVAULT_API_URL
+- [X] T005 Add production dependencies using uv: typer[all]>=0.9.0, looker-sdk>=24.0.0, pydantic>=2.0.0, tomli-w>=1.0.0
+- [X] T006 Add development dependencies using uv: pytest>=7.4.0, pytest-mock>=3.12.0, pytest-cov>=4.1.0, mypy>=1.8.0, ruff>=0.1.0
 
 ---
 
@@ -39,13 +39,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 [P] Create Pydantic models in src/lookervault/config/models.py: LookerConfig, OutputConfig, Configuration
-- [ ] T008 [P] Create additional Pydantic models in src/lookervault/config/models.py: ConnectionStatus, LookerInstance, ReadinessCheckResult, CheckItem
-- [ ] T009 [P] Create custom exception classes in src/lookervault/exceptions.py: ConfigError, ConnectionError
-- [ ] T010 Implement config path resolution in src/lookervault/config/loader.py: get_config_path() function
-- [ ] T011 Implement config loading with env var merging in src/lookervault/config/loader.py: load_config() function
-- [ ] T012 [P] Implement Looker SDK client wrapper in src/lookervault/looker/client.py: LookerClient class with _init_sdk(), sdk property, test_connection()
-- [ ] T013 [P] Create output formatting utilities in src/lookervault/cli/output.py: format_table() and format_json() functions
+- [X] T007 [P] Create Pydantic models in src/lookervault/config/models.py: LookerConfig, OutputConfig, Configuration
+- [X] T008 [P] Create additional Pydantic models in src/lookervault/config/models.py: ConnectionStatus, LookerInstance, ReadinessCheckResult, CheckItem
+- [X] T009 [P] Create custom exception classes in src/lookervault/exceptions.py: ConfigError, ConnectionError
+- [X] T010 Implement config path resolution in src/lookervault/config/loader.py: get_config_path() function
+- [X] T011 Implement config loading with env var merging in src/lookervault/config/loader.py: load_config() function
+- [X] T012 [P] Implement Looker SDK client wrapper in src/lookervault/looker/client.py: LookerClient class with _init_sdk(), sdk property, test_connection()
+- [X] T013 [P] Create output formatting utilities in src/lookervault/cli/output.py: format_table() and format_json() functions
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -59,14 +59,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Create main Typer app in src/lookervault/cli/main.py with help text, version callback, and global options
-- [ ] T015 [P] [US1] Create __main__.py entry point in src/lookervault/__main__.py that imports and runs the Typer app
-- [ ] T016 [US1] Implement readiness check logic in src/lookervault/config/validator.py: check_config_file(), check_config_valid(), check_credentials(), check_python_version(), check_dependencies()
-- [ ] T017 [US1] Create check command implementation in src/lookervault/cli/commands/check.py: run() function with readiness checks
-- [ ] T018 [US1] Integrate check command into main Typer app in src/lookervault/cli/main.py
-- [ ] T019 [US1] Add table output formatting for readiness check in src/lookervault/cli/output.py: format_readiness_check_table()
-- [ ] T020 [US1] Add JSON output formatting for readiness check in src/lookervault/cli/output.py: format_readiness_check_json()
-- [ ] T021 [US1] Implement exit code handling in check command (0 for ready, 1 for not ready, 2 for config errors)
+- [X] T014 [P] [US1] Create main Typer app in src/lookervault/cli/main.py with help text, version callback, and global options
+- [X] T015 [P] [US1] Create __main__.py entry point in src/lookervault/__main__.py that imports and runs the Typer app
+- [X] T016 [US1] Implement readiness check logic in src/lookervault/config/validator.py: check_config_file(), check_config_valid(), check_credentials(), check_python_version(), check_dependencies()
+- [X] T017 [US1] Create check command implementation in src/lookervault/cli/commands/check.py: run() function with readiness checks
+- [X] T018 [US1] Integrate check command into main Typer app in src/lookervault/cli/main.py
+- [X] T019 [US1] Add table output formatting for readiness check in src/lookervault/cli/output.py: format_readiness_check_table()
+- [X] T020 [US1] Add JSON output formatting for readiness check in src/lookervault/cli/output.py: format_readiness_check_json()
+- [X] T021 [US1] Implement exit code handling in check command (0 for ready, 1 for not ready, 2 for config errors)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - users can verify installation and configuration status
 
@@ -80,14 +80,14 @@
 
 ### Implementation for User Story 2
 
-- [ ] T022 [P] [US2] Implement connection testing in src/lookervault/looker/connection.py: connect_and_get_info() function
-- [ ] T023 [P] [US2] Create info command implementation in src/lookervault/cli/commands/info.py: run() function that calls LookerClient
-- [ ] T024 [US2] Integrate info command into main Typer app in src/lookervault/cli/main.py
-- [ ] T025 [US2] Add table output formatting for instance info in src/lookervault/cli/output.py: format_instance_info_table()
-- [ ] T026 [US2] Add JSON output formatting for instance info in src/lookervault/cli/output.py: format_instance_info_json()
-- [ ] T027 [US2] Add error handling for authentication failures in src/lookervault/cli/commands/info.py with exit code 3
-- [ ] T028 [US2] Add error handling for network/connection failures in src/lookervault/cli/commands/info.py with exit code 3
-- [ ] T029 [US2] Add actionable error messages for common failure scenarios in src/lookervault/cli/commands/info.py
+- [X] T022 [P] [US2] Implement connection testing in src/lookervault/looker/connection.py: connect_and_get_info() function
+- [X] T023 [P] [US2] Create info command implementation in src/lookervault/cli/commands/info.py: run() function that calls LookerClient
+- [X] T024 [US2] Integrate info command into main Typer app in src/lookervault/cli/main.py
+- [X] T025 [US2] Add table output formatting for instance info in src/lookervault/cli/output.py: format_instance_info_table()
+- [X] T026 [US2] Add JSON output formatting for instance info in src/lookervault/cli/output.py: format_instance_info_json()
+- [X] T027 [US2] Add error handling for authentication failures in src/lookervault/cli/commands/info.py with exit code 3
+- [X] T028 [US2] Add error handling for network/connection failures in src/lookervault/cli/commands/info.py with exit code 3
+- [X] T029 [US2] Add actionable error messages for common failure scenarios in src/lookervault/cli/commands/info.py
 
 **Checkpoint**: All user stories should now be independently functional - users can verify installation AND connect to Looker
 
@@ -97,18 +97,18 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T030 [P] Create sample configuration file in tests/fixtures/sample_config.toml
-- [ ] T031 [P] Create unit test for config loader in tests/unit/test_config_loader.py
-- [ ] T032 [P] Create unit test for config validator in tests/unit/test_config_validator.py
-- [ ] T033 [P] Create unit test for output formatting in tests/unit/test_output_formatting.py
-- [ ] T034 [P] Create unit test for Looker client in tests/unit/test_looker_client.py (with mocked SDK)
-- [ ] T035 [P] Create integration test for CLI commands in tests/integration/test_cli_commands.py (using CliRunner)
-- [ ] T036 [P] Create integration test for Looker connection in tests/integration/test_looker_connection.py (may require real credentials or mocking)
-- [ ] T037 [P] Update README.md with installation instructions, usage examples, and configuration guide
-- [ ] T038 Run pytest test suite and verify all tests pass
-- [ ] T039 Run mypy type checking on src/lookervault and fix any type errors
-- [ ] T040 Run ruff linting on src/ and tests/ and fix any issues
-- [ ] T041 Validate against quickstart.md manual testing scenarios
+- [X] T030 [P] Create sample configuration file in tests/fixtures/sample_config.toml
+- [X] T031 [P] Create unit test for config loader in tests/unit/test_config_loader.py
+- [X] T032 [P] Create unit test for config validator in tests/unit/test_config_validator.py
+- [X] T033 [P] Create unit test for output formatting in tests/unit/test_output_formatting.py
+- [X] T034 [P] Create unit test for Looker client in tests/unit/test_looker_client.py (with mocked SDK)
+- [X] T035 [P] Create integration test for CLI commands in tests/integration/test_cli_commands.py (using CliRunner)
+- [X] T036 [P] Create integration test for Looker connection in tests/integration/test_looker_connection.py (may require real credentials or mocking)
+- [X] T037 [P] Update README.md with installation instructions, usage examples, and configuration guide
+- [X] T038 Run pytest test suite and verify all tests pass
+- [X] T039 Run mypy type checking on src/lookervault and fix any type errors
+- [X] T040 Run ruff linting on src/ and tests/ and fix any issues
+- [X] T041 Validate against quickstart.md manual testing scenarios
 
 ---
 
