@@ -3,15 +3,14 @@
 import os
 import tomllib
 from pathlib import Path
-from typing import Optional
 
 import typer
 
-from .models import Configuration
 from ..exceptions import ConfigError
+from .models import Configuration
 
 
-def get_config_path(config_arg: Optional[Path] = None) -> Path:
+def get_config_path(config_arg: Path | None = None) -> Path:
     """
     Get configuration file path with priority order.
 
@@ -51,11 +50,11 @@ def get_config_path(config_arg: Optional[Path] = None) -> Path:
     return user_config
 
 
-def load_config(config_path: Optional[Path] = None) -> Configuration:
+def load_config(config_path: Path | None = None) -> Configuration:
     """
     Load and validate configuration from TOML file and environment variables.
 
-    Environment variables override config file values:
+    Environment variables override config file values (or provide all values if no file exists):
     - LOOKERVAULT_CLIENT_ID
     - LOOKERVAULT_CLIENT_SECRET
     - LOOKERVAULT_API_URL
@@ -67,35 +66,56 @@ def load_config(config_path: Optional[Path] = None) -> Configuration:
         Validated Configuration object
 
     Raises:
-        ConfigError: If config file not found or invalid
+        ConfigError: If config file invalid or required values missing
     """
     path = get_config_path(config_path)
 
-    if not path.exists():
-        raise ConfigError(f"Configuration file not found: {path}")
+    # Try to load from file if it exists
+    data = {}
+    if path.exists():
+        try:
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigError(f"Invalid TOML syntax in {path}: {e}")
+
+        if "lookervault" not in data:
+            raise ConfigError(f"Missing 'lookervault' section in {path}")
+
+    # Build or merge environment variables
+    if data and "lookervault" in data:
+        # Config file exists, merge env vars
+        config_data = data["lookervault"]
+
+        if "looker" in config_data:
+            looker_config = config_data["looker"]
+
+            # Override with env vars if present
+            if client_id := os.getenv("LOOKERVAULT_CLIENT_ID"):
+                looker_config["client_id"] = client_id
+            if client_secret := os.getenv("LOOKERVAULT_CLIENT_SECRET"):
+                looker_config["client_secret"] = client_secret
+            if api_url := os.getenv("LOOKERVAULT_API_URL"):
+                looker_config["api_url"] = api_url
+    else:
+        # No config file, build entirely from env vars
+        api_url = os.getenv("LOOKERVAULT_API_URL")
+        if not api_url:
+            raise ConfigError(
+                "No config file found and LOOKERVAULT_API_URL environment variable not set. "
+                "Either create a config file or set environment variables: "
+                "LOOKERVAULT_API_URL, LOOKERVAULT_CLIENT_ID, LOOKERVAULT_CLIENT_SECRET"
+            )
+
+        config_data = {
+            "looker": {
+                "api_url": api_url,
+                "client_id": os.getenv("LOOKERVAULT_CLIENT_ID", ""),
+                "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET", ""),
+            }
+        }
 
     try:
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        raise ConfigError(f"Invalid TOML syntax in {path}: {e}")
-
-    if "lookervault" not in data:
-        raise ConfigError(f"Missing 'lookervault' section in {path}")
-
-    # Merge environment variables
-    if "looker" in data["lookervault"]:
-        looker_config = data["lookervault"]["looker"]
-
-        # Override with env vars if present
-        if client_id := os.getenv("LOOKERVAULT_CLIENT_ID"):
-            looker_config["client_id"] = client_id
-        if client_secret := os.getenv("LOOKERVAULT_CLIENT_SECRET"):
-            looker_config["client_secret"] = client_secret
-        if api_url := os.getenv("LOOKERVAULT_API_URL"):
-            looker_config["api_url"] = api_url
-
-    try:
-        return Configuration(**data["lookervault"])
+        return Configuration(**config_data)
     except Exception as e:
         raise ConfigError(f"Invalid configuration: {e}")

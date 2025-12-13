@@ -1,7 +1,6 @@
 """Info command implementation for Looker instance information."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -11,7 +10,7 @@ from ...looker.connection import connect_and_get_info
 from ..output import format_instance_info_json, format_instance_info_table
 
 
-def run(config: Optional[Path], output: str) -> None:
+def run(config: Path | None, output: str) -> None:
     """
     Connect to Looker instance and display information.
 

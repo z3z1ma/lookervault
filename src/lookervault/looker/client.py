@@ -1,7 +1,6 @@
 """Wrapper for Looker SDK with custom configuration."""
 
 import os
-from typing import Optional
 
 import looker_sdk
 from looker_sdk import error as looker_error
@@ -36,7 +35,7 @@ class LookerClient:
         self.client_secret = client_secret
         self.timeout = timeout
         self.verify_ssl = verify_ssl
-        self._sdk: Optional[Looker40SDK] = None
+        self._sdk: Looker40SDK | None = None
 
     def _init_sdk(self) -> None:
         """Initialize Looker SDK with custom settings."""

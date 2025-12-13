@@ -1,10 +1,9 @@
 """Main Typer application for LookerVault CLI."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 
 import typer
-from typing_extensions import Annotated
 
 from .. import __version__
 
@@ -40,7 +39,7 @@ def main(
 @app.command()
 def check(
     config: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--config", "-c", help="Path to configuration file"),
     ] = None,
     output: Annotated[
@@ -57,7 +56,7 @@ def check(
 @app.command()
 def info(
     config: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--config", "-c", help="Path to configuration file"),
     ] = None,
     output: Annotated[

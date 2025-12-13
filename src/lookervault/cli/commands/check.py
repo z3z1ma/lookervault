@@ -1,7 +1,6 @@
 """Check command implementation for readiness checks."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -10,7 +9,7 @@ from ...exceptions import ConfigError
 from ..output import format_readiness_check_json, format_readiness_check_table
 
 
-def run(config: Optional[Path], output: str) -> None:
+def run(config: Path | None, output: str) -> None:
     """
     Run readiness checks and display results.
 
@@ -44,6 +43,9 @@ def run(config: Optional[Path], output: str) -> None:
             # General not ready
             raise typer.Exit(1)
 
+    except typer.Exit:
+        # Re-raise typer exits
+        raise
     except ConfigError as e:
         typer.echo(f"Configuration error: {e}", err=True)
         raise typer.Exit(2)

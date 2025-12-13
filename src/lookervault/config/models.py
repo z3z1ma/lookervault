@@ -1,7 +1,7 @@
 """Pydantic models for configuration and data structures."""
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -10,8 +10,8 @@ class LookerConfig(BaseModel):
     """Looker API connection configuration."""
 
     api_url: HttpUrl
-    client_id: Optional[str] = ""
-    client_secret: Optional[str] = ""
+    client_id: str | None = ""
+    client_secret: str | None = ""
     timeout: int = Field(default=30, ge=5, le=300)
     verify_ssl: bool = True
 
@@ -26,7 +26,7 @@ class OutputConfig(BaseModel):
 class Configuration(BaseModel):
     """Complete LookerVault configuration."""
 
-    config_version: str
+    config_version: str = "1.0"
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
 
@@ -36,12 +36,12 @@ class ConnectionStatus(BaseModel):
 
     connected: bool
     authenticated: bool
-    instance_url: Optional[str] = None
-    looker_version: Optional[str] = None
-    api_version: Optional[str] = None
-    user_id: Optional[int] = None
-    user_email: Optional[str] = None
-    error_message: Optional[str] = None
+    instance_url: str | None = None
+    looker_version: str | None = None
+    api_version: str | None = None
+    user_id: int | None = None
+    user_email: str | None = None
+    error_message: str | None = None
 
 
 class LookerInstance(BaseModel):

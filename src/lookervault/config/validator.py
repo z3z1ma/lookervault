@@ -1,16 +1,16 @@
 """Configuration validation and readiness checks."""
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from ..config.loader import get_config_path, load_config
 from ..config.models import CheckItem, ReadinessCheckResult
 from ..exceptions import ConfigError
 
 
-def check_config_file(config_path: Optional[Path] = None) -> CheckItem:
+def check_config_file(config_path: Path | None = None) -> CheckItem:
     """
     Check if configuration file exists.
 
@@ -29,11 +29,20 @@ def check_config_file(config_path: Optional[Path] = None) -> CheckItem:
                 message=f"Found at {path}",
             )
         else:
-            return CheckItem(
-                name="Configuration File Found",
-                status="fail",
-                message=f"Not found at {path}",
-            )
+            # Check if environment variables are set as alternative
+            has_api_url = bool(os.getenv("LOOKERVAULT_API_URL"))
+            if has_api_url:
+                return CheckItem(
+                    name="Configuration File Found",
+                    status="warning",
+                    message=f"Not found at {path}, using environment variables",
+                )
+            else:
+                return CheckItem(
+                    name="Configuration File Found",
+                    status="fail",
+                    message=f"Not found at {path} and LOOKERVAULT_API_URL not set",
+                )
     except Exception as e:
         return CheckItem(
             name="Configuration File Found",
@@ -42,7 +51,7 @@ def check_config_file(config_path: Optional[Path] = None) -> CheckItem:
         )
 
 
-def check_config_valid(config_path: Optional[Path] = None) -> CheckItem:
+def check_config_valid(config_path: Path | None = None) -> CheckItem:
     """
     Check if configuration is valid.
 
@@ -54,11 +63,22 @@ def check_config_valid(config_path: Optional[Path] = None) -> CheckItem:
     """
     try:
         load_config(config_path)
-        return CheckItem(
-            name="Configuration Valid",
-            status="pass",
-            message="TOML syntax and schema valid",
-        )
+        path = get_config_path(config_path)
+
+        # Check if config was loaded from file or env vars
+        if path.exists():
+            return CheckItem(
+                name="Configuration Valid",
+                status="pass",
+                message="TOML syntax and schema valid",
+            )
+        else:
+            # Config loaded from environment variables
+            return CheckItem(
+                name="Configuration Valid",
+                status="pass",
+                message="Configuration built from environment variables",
+            )
     except ConfigError as e:
         return CheckItem(
             name="Configuration Valid",
@@ -73,7 +93,7 @@ def check_config_valid(config_path: Optional[Path] = None) -> CheckItem:
         )
 
 
-def check_credentials(config_path: Optional[Path] = None) -> CheckItem:
+def check_credentials(config_path: Path | None = None) -> CheckItem:
     """
     Check if credentials are configured.
 
@@ -191,7 +211,7 @@ def check_dependencies() -> CheckItem:
         )
 
 
-def perform_readiness_check(config_path: Optional[Path] = None) -> ReadinessCheckResult:
+def perform_readiness_check(config_path: Path | None = None) -> ReadinessCheckResult:
     """
     Perform all readiness checks.
 
