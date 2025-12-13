@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
+from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
 from lookervault.config.loader import load_config
 from lookervault.config.models import ParallelConfig
 from lookervault.exceptions import ConfigError, OrchestrationError
@@ -59,14 +59,14 @@ def run(
         verbose: Enable verbose logging
         debug: Enable debug logging
     """
-    # Configure logging
-    log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
-    logging.basicConfig(
+    # Configure rich logging - default to INFO for extraction to show progress
+    log_level = logging.DEBUG if debug else logging.INFO
+    configure_rich_logging(
         level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        show_time=debug,  # Only show timestamps in debug mode
+        show_path=debug,  # Only show file paths in debug mode
+        enable_link_path=debug,  # Only enable clickable paths in debug mode
     )
-
-    console = Console()
 
     try:
         # Auto-detect workers if not specified (workers=0)
@@ -196,10 +196,16 @@ def run(
             if output != "json":
                 console.print(
                     f"[cyan]Running parallel extraction with {workers} workers "
-                    f"(queue_size={parallel_config.queue_size})[/cyan]"
+                    f"(queue_size={parallel_config.queue_size}, batch_size={batch_size})[/cyan]"
+                )
+                console.print(
+                    f"[dim]Extracting: {', '.join([ContentType(ct).name.lower() for ct in content_types])}[/dim]"
                 )
 
         # Run extraction
+        if output != "json":
+            console.print("[cyan]Starting extraction...[/cyan]")
+
         with progress_tracker:
             result = orchestrator.extract()
 
@@ -248,23 +254,23 @@ def run(
         raise
     except ConfigError as e:
         if output != "json":
-            typer.echo(f"Configuration error: {e}", err=True)
+            print_error(f"Configuration error: {e}")
         logger.error(f"Configuration error: {e}")
         raise typer.Exit(2) from None
     except OrchestrationError as e:
         if output != "json":
-            typer.echo(f"Extraction error: {e}", err=True)
+            print_error(f"Extraction error: {e}")
         logger.error(f"Extraction error: {e}")
         raise typer.Exit(1) from None
     except KeyboardInterrupt:
         if output != "json":
-            typer.echo("\nExtraction interrupted by user", err=True)
-            typer.echo("Run 'lookervault extract --resume' to continue")
+            print_error("Extraction interrupted by user")
+            console.print("[dim]Run 'lookervault extract --resume' to continue[/dim]")
         logger.info("Extraction interrupted by user")
         raise typer.Exit(130) from None
     except Exception as e:
         if output != "json":
-            typer.echo(f"Unexpected error: {e}", err=True)
+            print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during extraction")
         raise typer.Exit(1) from None
 

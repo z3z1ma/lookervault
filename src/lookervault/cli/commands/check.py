@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from lookervault.cli.output import format_readiness_check_json, format_readiness_check_table
+from lookervault.cli.rich_logging import console, print_error
 from lookervault.config.validator import perform_readiness_check
 from lookervault.exceptions import ConfigError
 
@@ -23,7 +24,8 @@ def run(config: Path | None, output: str) -> None:
 
         # Format output
         if output == "json":
-            typer.echo(format_readiness_check_json(result))
+            # Use print() for JSON to ensure it goes to stdout
+            print(format_readiness_check_json(result))
         else:
             format_readiness_check_table(result)
 
@@ -47,11 +49,11 @@ def run(config: Path | None, output: str) -> None:
         # Re-raise typer exits
         raise
     except ConfigError as e:
-        typer.echo(f"Configuration error: {e}", err=True)
+        print_error(f"Configuration error: {e}")
         raise typer.Exit(2) from None
     except KeyboardInterrupt:
-        typer.echo("\nInterrupted by user", err=True)
+        print_error("Interrupted by user")
         raise typer.Exit(130) from None
     except Exception as e:
-        typer.echo(f"Unexpected error: {e}", err=True)
+        print_error(f"Unexpected error: {e}")
         raise typer.Exit(1) from None

@@ -75,6 +75,7 @@ class ParallelOrchestrator:
         # Parallel execution state
         self.work_queue = WorkQueue(maxsize=parallel_config.queue_size)
         self.metrics = ThreadSafeMetrics()
+        self._last_progress_print = 0  # Track when we last printed progress
 
         # Create shared rate limiter for all workers
         if parallel_config.adaptive_rate_limiting:
@@ -253,6 +254,12 @@ class ParallelOrchestrator:
                         )
 
                 logger.info(f"Producer: Fetching {content_type_name}")
+
+                # Update progress tracker
+                try:
+                    self.progress.update_status(f"Extracting {content_type_name}...")
+                except AttributeError:
+                    pass  # Progress tracker may not have update_status method
 
                 # Create checkpoint for this content type
                 checkpoint = Checkpoint(
@@ -445,6 +452,18 @@ class ParallelOrchestrator:
                         f"({len(work_item.items)} items, "
                         f"total batches: {self.metrics.batches_completed})"
                     )
+
+                    # Periodic progress update (every 50 batches across all workers)
+                    batches = self.metrics.batches_completed
+                    if batches > 0 and batches % 50 == 0 and batches != self._last_progress_print:
+                        self._last_progress_print = batches
+                        snapshot = self.metrics.snapshot()
+                        elapsed = snapshot["duration_seconds"]
+                        rate = snapshot["items_per_second"]
+                        logger.info(
+                            f"Progress: {snapshot['total']} items processed "
+                            f"({rate:.1f} items/sec, {elapsed:.1f}s elapsed)"
+                        )
 
                     # Periodic memory check (every 100 batches across all workers)
                     if (

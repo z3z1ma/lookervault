@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from lookervault.cli.output import format_instance_info_json, format_instance_info_table
+from lookervault.cli.rich_logging import console, print_error
 from lookervault.config.loader import load_config
 from lookervault.exceptions import ConfigError
 from lookervault.looker.connection import connect_and_get_info
@@ -23,10 +24,10 @@ def run(config: Path | None, output: str) -> None:
         try:
             cfg = load_config(config)
         except ConfigError as e:
-            typer.echo(f"Configuration error: {e}", err=True)
-            typer.echo("\nTroubleshooting:", err=True)
-            typer.echo("  - Check that config file exists and is valid TOML", err=True)
-            typer.echo("  - Ensure api_url is a valid HTTPS URL", err=True)
+            print_error(f"Configuration error: {e}")
+            console.print("\n[bold]Troubleshooting:[/bold]")
+            console.print("  - Check that config file exists and is valid TOML")
+            console.print("  - Ensure api_url is a valid HTTPS URL")
             raise typer.Exit(2) from None
 
         # Connect to Looker and get instance info
@@ -34,7 +35,8 @@ def run(config: Path | None, output: str) -> None:
 
         # Format and display output
         if output == "json":
-            typer.echo(format_instance_info_json(status))
+            # Use print() for JSON to ensure it goes to stdout
+            print(format_instance_info_json(status))
         else:
             format_instance_info_table(status)
 
@@ -49,12 +51,12 @@ def run(config: Path | None, output: str) -> None:
         # Re-raise typer exits
         raise
     except KeyboardInterrupt:
-        typer.echo("\nInterrupted by user", err=True)
+        print_error("Interrupted by user")
         raise typer.Exit(130) from None
     except Exception as e:
-        typer.echo(f"Unexpected error: {e}", err=True)
-        typer.echo("\nTroubleshooting:", err=True)
-        typer.echo("  - Check network connectivity to Looker instance", err=True)
-        typer.echo("  - Verify credentials are correct and not expired", err=True)
-        typer.echo("  - Ensure api_url does not include /api/* path", err=True)
+        print_error(f"Unexpected error: {e}")
+        console.print("\n[bold]Troubleshooting:[/bold]")
+        console.print("  - Check network connectivity to Looker instance")
+        console.print("  - Verify credentials are correct and not expired")
+        console.print("  - Ensure api_url does not include /api/* path")
         raise typer.Exit(3) from None

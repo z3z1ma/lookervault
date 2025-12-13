@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
+from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
 from lookervault.exceptions import StorageError
 from lookervault.storage.repository import SQLiteContentRepository
 
@@ -29,14 +29,9 @@ def run(
         verbose: Enable verbose logging
         debug: Enable debug logging
     """
-    # Configure logging
+    # Configure rich logging
     log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    console = Console()
+    configure_rich_logging(level=log_level, show_time=debug, show_path=debug)
 
     try:
         # Validate retention days
@@ -134,10 +129,10 @@ def run(
     except typer.Exit:
         raise
     except StorageError as e:
-        console.print(f"[red]Storage error: {e}[/red]")
+        print_error(f"Storage error: {e}")
         logger.error(f"Storage error during cleanup: {e}")
         raise typer.Exit(1) from None
     except Exception as e:
-        console.print(f"[red]Unexpected error: {e}[/red]")
+        print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during cleanup")
         raise typer.Exit(1) from None
