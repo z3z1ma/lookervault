@@ -344,6 +344,7 @@ class ParallelOrchestrator:
                         except Exception as e:
                             # Item-level error - log and continue
                             import traceback
+
                             item_id = item_dict.get("id", "UNKNOWN")
                             error_msg = f"Failed to process item {item_id}: {e}"
 
@@ -366,10 +367,14 @@ class ParallelOrchestrator:
                             )
                             self.metrics.record_error(thread_name, error_msg)
 
+                    # Update metrics with batch completion
+                    self.metrics.increment_batches(count=1)
+
                     # Log batch completion
                     logger.debug(
                         f"Worker {worker_id} completed batch {work_item.batch_number} "
-                        f"({len(work_item.items)} items)"
+                        f"({len(work_item.items)} items, "
+                        f"total batches: {self.metrics.batches_completed})"
                     )
 
                 except queue.Empty:
