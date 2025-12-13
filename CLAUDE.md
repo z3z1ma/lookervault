@@ -146,3 +146,8 @@ All checks must pass before committing. If any check fails, fix the issues befor
 ## Active Technologies
 - Python 3.13 (per pyproject.toml) (001-looker-content-extraction)
 - SQLite database with binary blob storage + metadata columns (001-looker-content-extraction)
+- Python 3.13 + looker-sdk, typer, pydantic, tenacity, concurrent.futures (stdlib) (002-parallel-extraction)
+- SQLite (existing repository pattern) (002-parallel-extraction)
+
+## Recent Changes
+- 002-parallel-extraction: Added Python 3.13 + looker-sdk, typer, pydantic, tenacity, concurrent.futures (stdlib)
