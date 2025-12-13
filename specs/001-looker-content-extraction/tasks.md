@@ -26,11 +26,11 @@
 
 **Purpose**: Project initialization and dependency installation
 
-- [ ] T001 Add production dependencies via uv: `uv add msgspec tenacity`
-- [ ] T002 [P] Create storage module structure: `src/lookervault/storage/__init__.py`
-- [ ] T003 [P] Create extraction module structure: `src/lookervault/extraction/__init__.py`
-- [ ] T004 [P] Create ContentType enum in `src/lookervault/storage/models.py`
-- [ ] T005 [P] Create custom exceptions in `src/lookervault/exceptions.py` (extend existing with StorageError, SerializationError, ExtractionError, RateLimitError, etc.)
+- [X] T001 Add production dependencies via uv: `uv add msgspec tenacity`
+- [X] T002 [P] Create storage module structure: `src/lookervault/storage/__init__.py`
+- [X] T003 [P] Create extraction module structure: `src/lookervault/extraction/__init__.py`
+- [X] T004 [P] Create ContentType enum in `src/lookervault/storage/models.py`
+- [X] T005 [P] Create custom exceptions in `src/lookervault/exceptions.py` (extend existing with StorageError, SerializationError, ExtractionError, RateLimitError, etc.)
 
 **Checkpoint**: Project structure and dependencies ready
 
@@ -44,24 +44,24 @@
 
 ### Storage Foundation
 
-- [ ] T006 Create SQLite schema creation script in `src/lookervault/storage/schema.py` with content_items, sync_checkpoints, extraction_sessions tables
-- [ ] T007 Implement MsgpackSerializer protocol in `src/lookervault/storage/serializer.py` using msgspec library
-- [ ] T008 Create ContentItem dataclass in `src/lookervault/storage/models.py` with validation
-- [ ] T009 Create Checkpoint dataclass in `src/lookervault/storage/models.py`
-- [ ] T010 Create ExtractionSession dataclass in `src/lookervault/storage/models.py`
-- [ ] T011 Implement ContentRepository protocol in `src/lookervault/storage/repository.py` with SQLite backend
+- [X] T006 Create SQLite schema creation script in `src/lookervault/storage/schema.py` with content_items, sync_checkpoints, extraction_sessions tables
+- [X] T007 Implement MsgpackSerializer protocol in `src/lookervault/storage/serializer.py` using msgspec library
+- [X] T008 Create ContentItem dataclass in `src/lookervault/storage/models.py` with validation
+- [X] T009 Create Checkpoint dataclass in `src/lookervault/storage/models.py`
+- [X] T010 Create ExtractionSession dataclass in `src/lookervault/storage/models.py`
+- [X] T011 Implement ContentRepository protocol in `src/lookervault/storage/repository.py` with SQLite backend
 
 ### Looker API Foundation
 
-- [ ] T012 Extend LookerClient in `src/lookervault/looker/client.py` with connection testing
-- [ ] T013 Create ContentExtractor in `src/lookervault/looker/extractor.py` with SDK method mappings for all content types
+- [X] T012 Extend LookerClient in `src/lookervault/looker/client.py` with connection testing
+- [X] T013 Create ContentExtractor in `src/lookervault/looker/extractor.py` with SDK method mappings for all content types
 
 ### Retry & Progress Foundation
 
-- [ ] T014 [P] Create retry decorators in `src/lookervault/extraction/retry.py` using tenacity
-- [ ] T015 [P] Create ProgressTracker protocol in `src/lookervault/extraction/progress.py`
-- [ ] T016 [P] Implement RichProgressTracker in `src/lookervault/extraction/progress.py` using Rich library
-- [ ] T017 [P] Implement JsonProgressTracker in `src/lookervault/extraction/progress.py` for machine-readable output
+- [X] T014 [P] Create retry decorators in `src/lookervault/extraction/retry.py` using tenacity
+- [X] T015 [P] Create ProgressTracker protocol in `src/lookervault/extraction/progress.py`
+- [X] T016 [P] Implement RichProgressTracker in `src/lookervault/extraction/progress.py` using Rich library
+- [X] T017 [P] Implement JsonProgressTracker in `src/lookervault/extraction/progress.py` for machine-readable output
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -75,18 +75,18 @@
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Create BatchProcessor in `src/lookervault/extraction/batch_processor.py` with memory monitoring (tracemalloc)
-- [ ] T019 [US1] Implement ExtractionOrchestrator in `src/lookervault/extraction/orchestrator.py` coordinating extractor, repository, serializer, progress
-- [ ] T020 [US1] Create ExtractionConfig dataclass in `src/lookervault/extraction/orchestrator.py`
-- [ ] T021 [US1] Create ExtractionResult dataclass in `src/lookervault/extraction/orchestrator.py`
-- [ ] T022 [US1] Implement extract command in `src/lookervault/cli/commands/extract.py` using Typer with --types, --output, --batch-size options
-- [ ] T023 [US1] Add extract command to CLI app in `src/lookervault/cli/main.py`
-- [ ] T024 [US1] Implement extraction workflow: create session → iterate content types → extract batches → serialize → save → update progress → complete session
-- [ ] T025 [US1] Configure SQLite optimizations (16KB pages, 64MB cache, WAL mode) in repository initialization
-- [ ] T026 [US1] Add extraction progress display with Rich showing content type, items processed, percentage, ETA
-- [ ] T027 [US1] Add extraction summary report showing items by type, errors, duration, storage location
-- [ ] T028 [US1] Handle rate limit errors (HTTP 429) with automatic retry using tenacity exponential back-off
-- [ ] T029 [US1] Implement memory-efficient batch processing (default 100 items) to avoid loading all content in memory
+- [X] T018 [US1] Create BatchProcessor in `src/lookervault/extraction/batch_processor.py` with memory monitoring (tracemalloc)
+- [X] T019 [US1] Implement ExtractionOrchestrator in `src/lookervault/extraction/orchestrator.py` coordinating extractor, repository, serializer, progress
+- [X] T020 [US1] Create ExtractionConfig dataclass in `src/lookervault/extraction/orchestrator.py`
+- [X] T021 [US1] Create ExtractionResult dataclass in `src/lookervault/extraction/orchestrator.py`
+- [X] T022 [US1] Implement extract command in `src/lookervault/cli/commands/extract.py` using Typer with --types, --output, --batch-size options
+- [X] T023 [US1] Add extract command to CLI app in `src/lookervault/cli/main.py`
+- [X] T024 [US1] Implement extraction workflow: create session → iterate content types → extract batches → serialize → save → update progress → complete session
+- [X] T025 [US1] Configure SQLite optimizations (16KB pages, 64MB cache, WAL mode) in repository initialization
+- [X] T026 [US1] Add extraction progress display with Rich showing content type, items processed, percentage, ETA
+- [X] T027 [US1] Add extraction summary report showing items by type, errors, duration, storage location
+- [X] T028 [US1] Handle rate limit errors (HTTP 429) with automatic retry using tenacity exponential back-off
+- [X] T029 [US1] Implement memory-efficient batch processing (default 100 items) to avoid loading all content in memory
 
 **Checkpoint**: Full extraction works end-to-end. User Story 1 is independently functional and testable.
 

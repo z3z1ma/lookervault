@@ -70,5 +70,48 @@ def info(
     info_module.run(config, output)
 
 
+@app.command()
+def extract(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to configuration file"),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option("--output", "-o", help='Output format: "table" or "json"'),
+    ] = "table",
+    db: Annotated[
+        str,
+        typer.Option("--db", help="Database path for storage"),
+    ] = "looker.db",
+    types: Annotated[
+        str | None,
+        typer.Option(
+            "--types", "-t", help="Comma-separated content types (e.g., 'dashboards,looks')"
+        ),
+    ] = None,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch-size", "-b", help="Items per batch for memory management"),
+    ] = 100,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Resume incomplete extraction"),
+    ] = True,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Extract all content from Looker instance to local database."""
+    from .commands import extract as extract_module
+
+    extract_module.run(config, output, db, types, batch_size, resume, verbose, debug)
+
+
 if __name__ == "__main__":
     app()

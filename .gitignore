@@ -62,3 +62,8 @@ dmypy.json
 lookervault.toml
 config.toml
 *.local.toml
+
+# Database files (local SQLite backups)
+*.db
+*.sqlite
+*.sqlite3
