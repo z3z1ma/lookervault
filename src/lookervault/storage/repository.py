@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -140,7 +141,11 @@ class ContentRepository(Protocol):
 
 
 class SQLiteContentRepository:
-    """SQLite-based content repository implementation."""
+    """Thread-safe SQLite-based content repository implementation.
+
+    Uses thread-local connections to enable parallel access from multiple worker threads.
+    Each thread gets its own SQLite connection to prevent concurrency issues.
+    """
 
     def __init__(self, db_path: str | Path):
         """Initialize repository with database path.
@@ -151,34 +156,72 @@ class SQLiteContentRepository:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn: sqlite3.Connection | None = None
-        self._initialize_database()
+        # Thread-local storage for connections (one per thread)
+        self._local = threading.local()
 
-    def _initialize_database(self) -> None:
-        """Initialize database with schema and optimizations."""
-        conn = self._get_connection()
-        optimize_database(conn)
-        create_schema(conn)
+        # Initialize database schema once from main thread
+        with self._create_connection() as conn:
+            optimize_database(conn)
+            create_schema(conn)
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get or create database connection.
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create new SQLite connection with optimal settings for parallel access.
 
         Returns:
-            SQLite connection
+            New SQLite connection with thread-safe configuration
         """
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path))
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=60.0,  # 60 second busy timeout for lock contention
+            isolation_level=None,  # Manual transaction control
+            check_same_thread=True,  # Safety check - each thread uses own connection
+            cached_statements=0,  # Python 3.13 thread-safety fix
+        )
+        conn.row_factory = sqlite3.Row
+
+        # Per-connection PRAGMAs (WAL mode set globally in schema.py)
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA temp_store = MEMORY")
+
+        return conn
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get or create thread-local database connection.
+
+        Each thread gets its own connection stored in thread-local storage.
+        This prevents connection sharing between threads which would cause
+        SQLite errors and potential data corruption.
+
+        Returns:
+            SQLite connection for current thread
+        """
+        if not hasattr(self._local, "conn") or self._local.conn is None:
+            self._local.conn = self._create_connection()
+        return self._local.conn
+
+    def close_thread_connection(self) -> None:
+        """Close database connection for current thread.
+
+        MUST be called in worker thread cleanup (e.g., in finally block)
+        to prevent connection leaks when threads exit.
+        """
+        if hasattr(self._local, "conn") and self._local.conn:
+            self._local.conn.close()
+            self._local.conn = None
 
     def close(self) -> None:
-        """Close database connection."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        """Close database connection for current thread.
+
+        Alias for close_thread_connection() for backward compatibility.
+        """
+        self.close_thread_connection()
 
     def save_content(self, item: ContentItem) -> None:
-        """Save or update a content item.
+        """Save or update a content item with thread-safe transaction control.
+
+        Uses BEGIN IMMEDIATE to prevent write-after-read deadlocks in parallel execution.
+        This acquires a write lock immediately, allowing concurrent reads but blocking
+        other writers until the transaction completes.
 
         Args:
             item: ContentItem to persist
@@ -188,42 +231,49 @@ class SQLiteContentRepository:
         """
         try:
             conn = self._get_connection()
-            cursor = conn.cursor()
+            # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
+            conn.execute("BEGIN IMMEDIATE")
 
-            cursor.execute(
-                """
-                INSERT INTO content_items (
-                    id, content_type, name, owner_id, owner_email,
-                    created_at, updated_at, synced_at, deleted_at,
-                    content_size, content_data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    content_type = excluded.content_type,
-                    name = excluded.name,
-                    owner_id = excluded.owner_id,
-                    owner_email = excluded.owner_email,
-                    created_at = excluded.created_at,
-                    updated_at = excluded.updated_at,
-                    synced_at = excluded.synced_at,
-                    deleted_at = excluded.deleted_at,
-                    content_size = excluded.content_size,
-                    content_data = excluded.content_data
-            """,
-                (
-                    item.id,
-                    item.content_type,
-                    item.name,
-                    item.owner_id,
-                    item.owner_email,
-                    item.created_at.isoformat(),
-                    item.updated_at.isoformat(),
-                    item.synced_at.isoformat() if item.synced_at else None,
-                    item.deleted_at.isoformat() if item.deleted_at else None,
-                    item.content_size,
-                    item.content_data,
-                ),
-            )
-            conn.commit()
+            try:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    """
+                    INSERT INTO content_items (
+                        id, content_type, name, owner_id, owner_email,
+                        created_at, updated_at, synced_at, deleted_at,
+                        content_size, content_data
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        content_type = excluded.content_type,
+                        name = excluded.name,
+                        owner_id = excluded.owner_id,
+                        owner_email = excluded.owner_email,
+                        created_at = excluded.created_at,
+                        updated_at = excluded.updated_at,
+                        synced_at = excluded.synced_at,
+                        deleted_at = excluded.deleted_at,
+                        content_size = excluded.content_size,
+                        content_data = excluded.content_data
+                """,
+                    (
+                        item.id,
+                        item.content_type,
+                        item.name,
+                        item.owner_id,
+                        item.owner_email,
+                        item.created_at.isoformat(),
+                        item.updated_at.isoformat(),
+                        item.synced_at.isoformat() if item.synced_at else None,
+                        item.deleted_at.isoformat() if item.deleted_at else None,
+                        item.content_size,
+                        item.content_data,
+                    ),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         except sqlite3.Error as e:
             raise StorageError(f"Failed to save content: {e}") from e
 
@@ -374,7 +424,7 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to delete content: {e}") from e
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> int:
-        """Save extraction checkpoint.
+        """Save extraction checkpoint with thread-safe transaction control.
 
         Args:
             checkpoint: Checkpoint object
@@ -387,29 +437,36 @@ class SQLiteContentRepository:
         """
         try:
             conn = self._get_connection()
-            cursor = conn.cursor()
+            # BEGIN IMMEDIATE: Thread-safe checkpoint writes
+            conn.execute("BEGIN IMMEDIATE")
 
-            cursor.execute(
-                """
-                INSERT INTO sync_checkpoints (
-                    session_id, content_type, checkpoint_data, started_at,
-                    completed_at, item_count, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    checkpoint.session_id,
-                    checkpoint.content_type,
-                    json.dumps(checkpoint.checkpoint_data),
-                    checkpoint.started_at.isoformat(),
-                    checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
-                    checkpoint.item_count,
-                    checkpoint.error_message,
-                ),
-            )
+            try:
+                cursor = conn.cursor()
 
-            checkpoint_id = cursor.lastrowid
-            conn.commit()
-            return checkpoint_id
+                cursor.execute(
+                    """
+                    INSERT INTO sync_checkpoints (
+                        session_id, content_type, checkpoint_data, started_at,
+                        completed_at, item_count, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        checkpoint.session_id,
+                        checkpoint.content_type,
+                        json.dumps(checkpoint.checkpoint_data),
+                        checkpoint.started_at.isoformat(),
+                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
+                        checkpoint.item_count,
+                        checkpoint.error_message,
+                    ),
+                )
+
+                checkpoint_id = cursor.lastrowid
+                conn.commit()
+                return checkpoint_id
+            except Exception:
+                conn.rollback()
+                raise
         except sqlite3.Error as e:
             raise StorageError(f"Failed to save checkpoint: {e}") from e
 
@@ -466,7 +523,7 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to get checkpoint: {e}") from e
 
     def update_checkpoint(self, checkpoint: Checkpoint) -> None:
-        """Update existing checkpoint.
+        """Update existing checkpoint with thread-safe transaction control.
 
         Args:
             checkpoint: Checkpoint object with updated values
@@ -476,25 +533,32 @@ class SQLiteContentRepository:
         """
         try:
             conn = self._get_connection()
-            cursor = conn.cursor()
+            # BEGIN IMMEDIATE: Thread-safe checkpoint updates
+            conn.execute("BEGIN IMMEDIATE")
 
-            cursor.execute(
-                """
-                UPDATE sync_checkpoints
-                SET checkpoint_data = ?, completed_at = ?,
-                    item_count = ?, error_message = ?
-                WHERE id = ?
-            """,
-                (
-                    json.dumps(checkpoint.checkpoint_data),
-                    checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
-                    checkpoint.item_count,
-                    checkpoint.error_message,
-                    checkpoint.id,
-                ),
-            )
+            try:
+                cursor = conn.cursor()
 
-            conn.commit()
+                cursor.execute(
+                    """
+                    UPDATE sync_checkpoints
+                    SET checkpoint_data = ?, completed_at = ?,
+                        item_count = ?, error_message = ?
+                    WHERE id = ?
+                """,
+                    (
+                        json.dumps(checkpoint.checkpoint_data),
+                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
+                        checkpoint.item_count,
+                        checkpoint.error_message,
+                        checkpoint.id,
+                    ),
+                )
+
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         except sqlite3.Error as e:
             raise StorageError(f"Failed to update checkpoint: {e}") from e
 

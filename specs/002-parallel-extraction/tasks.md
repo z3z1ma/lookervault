@@ -25,9 +25,9 @@
 
 **Purpose**: Project initialization and dependency management
 
-- [ ] T001 Add pyrate-limiter dependency via `uv add pyrate-limiter`
-- [ ] T002 [P] Review and update CLAUDE.md with parallel extraction context (already updated by setup script)
-- [ ] T003 [P] Create directory structure for new modules: `src/lookervault/extraction/parallel/`
+- [X] T001 ~~Add pyrate-limiter dependency~~ (Changed to custom implementation using threading.Lock and sliding window algorithm for better reliability)
+- [X] T002 [P] Review and update CLAUDE.md with parallel extraction context (already updated by setup script)
+- [X] T003 [P] Create directory structure for new modules: `src/lookervault/extraction/parallel/`
 
 ---
 
@@ -37,18 +37,18 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Refactor SQLiteContentRepository to use thread-local connections in `src/lookervault/storage/repository.py`
+- [X] T004 Refactor SQLiteContentRepository to use thread-local connections in `src/lookervault/storage/repository.py`
   - Replace singleton `self._conn` with `self._local = threading.local()`
   - Add `_create_connection()` method with `timeout=60.0`, `cached_statements=0`, `isolation_level=None`
   - Add `close_thread_connection()` method for worker cleanup
-- [ ] T005 Add BEGIN IMMEDIATE transaction control to all write operations in `src/lookervault/storage/repository.py`
+- [X] T005 Add BEGIN IMMEDIATE transaction control to all write operations in `src/lookervault/storage/repository.py`
   - Update `save_content()` to use `BEGIN IMMEDIATE` before writes
   - Add proper commit/rollback handling
   - Update `save_checkpoint()` and `update_checkpoint()` with BEGIN IMMEDIATE
-- [ ] T006 [P] Create WorkItem dataclass in `src/lookervault/extraction/work_queue.py`
+- [X] T006 [P] Create WorkItem dataclass in `src/lookervault/extraction/work_queue.py`
   - Fields: content_type, items, batch_number, is_final_batch
   - Add validation for content_type and items
-- [ ] T007 [P] Create ParallelConfig model in `src/lookervault/config/models.py`
+- [X] T007 [P] Create ParallelConfig model in `src/lookervault/config/models.py`
   - Fields: workers, queue_size, batch_size, rate_limit_per_minute, rate_limit_per_second, adaptive_rate_limiting
   - Add validation (workers: 1-50, queue_size >= workers*10, batch_size: 10-1000)
   - Add defaults: workers=min(cpu_count, 8), queue_size=workers*100, batch_size=100
@@ -69,30 +69,30 @@
 
 ### Implementation for User Story 1
 
-- [ ] T008 [P] [US1] Create ThreadSafeMetrics class in `src/lookervault/extraction/metrics.py`
+- [X] T008 [P] [US1] Create ThreadSafeMetrics class in `src/lookervault/extraction/metrics.py`
   - Fields: items_processed, items_by_type, errors, worker_errors, start_time, _lock
   - Methods: increment_processed(), record_error(), snapshot()
   - All methods use `with self._lock` for thread safety
-- [ ] T009 [P] [US1] Create WorkQueue class in `src/lookervault/extraction/work_queue.py`
+- [X] T009 [P] [US1] Create WorkQueue class in `src/lookervault/extraction/work_queue.py`
   - Wraps `queue.Queue[WorkItem | None]` with bounded size
   - Methods: put_work(), get_work(), send_stop_signals()
   - Handle queue.Empty and queue.Full exceptions
-- [ ] T010 [US1] Create ParallelOrchestrator class in `src/lookervault/extraction/orchestrator.py`
-  - Constructor: extractor, repository, serializer, progress, config, max_workers, queue_size
+- [X] T010 [US1] Create ParallelOrchestrator class in `src/lookervault/extraction/parallel_orchestrator.py`
+  - Constructor: extractor, repository, serializer, progress, config, parallel_config
   - Method: extract() - main parallel extraction workflow
   - Method: _producer_worker() - fetches from API, creates WorkItems, queues them
   - Method: _consumer_worker() - gets WorkItems, processes items, saves to DB
   - Use ThreadPoolExecutor with max_workers
   - Producer in main thread, consumers in ThreadPoolExecutor
-- [ ] T011 [US1] Update ExtractionConfig in `src/lookervault/config/models.py` to add optional `parallel_config: ParallelConfig | None` field
-- [ ] T012 [US1] Add --workers CLI option to extract command in `src/lookervault/cli/commands/extract.py`
-  - Add workers parameter with typer.Option (min=1, max=50, default=min(cpu_count, 8))
+- [X] T011 [US1] ParallelConfig already created in Phase 2 (separate model, not nested in ExtractionConfig)
+- [X] T012 [US1] Add --workers CLI option to extract command in `src/lookervault/cli/commands/extract.py`
+  - Add workers parameter with default=min(cpu_count, 8)
   - Choose ParallelOrchestrator if workers > 1, else use existing ExtractionOrchestrator
   - Pass ParallelConfig to ParallelOrchestrator
-- [ ] T013 [US1] Implement worker cleanup logic in ParallelOrchestrator
+- [X] T013 [US1] Implement worker cleanup logic in ParallelOrchestrator
   - Call `repository.close_thread_connection()` in finally block of _consumer_worker()
   - Ensure all worker threads clean up connections on completion or error
-- [ ] T014 [US1] Add validation for thread pool size in CLI and ParallelConfig
+- [X] T014 [US1] Add validation for thread pool size in CLI and ParallelConfig
   - Validate workers in range [1, 50]
   - Display warning if workers > 16 (SQLite write contention)
   - Use default min(os.cpu_count() or 1, 8) if not specified
@@ -156,34 +156,34 @@
 
 ### Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Create AdaptiveRateLimiter class in `src/lookervault/extraction/rate_limiter.py`
-  - Initialize pyrate_limiter.Limiter with token bucket rates
-  - Fields: limiter, backoff_multiplier, lock (RLock)
-  - Methods: acquire(), on_429_detected(), on_success()
-  - Thread-safe via RLock
-- [ ] T022 [P] [US3] Create RateLimiterState dataclass in `src/lookervault/extraction/rate_limiter.py`
+- [X] T021 [P] [US3] Create AdaptiveRateLimiter class in `src/lookervault/extraction/rate_limiter.py`
+  - Custom sliding window implementation using threading.Lock and deque
+  - Fields: _minute_window, _second_window, _lock, state, adaptive
+  - Methods: acquire(), on_429_detected(), on_success(), get_stats()
+  - Thread-safe via threading.Lock (more reliable than pyrate-limiter)
+- [X] T022 [P] [US3] Create RateLimiterState dataclass in `src/lookervault/extraction/rate_limiter.py`
   - Fields: backoff_multiplier, last_429_timestamp, consecutive_successes, total_429_count, _lock
   - Methods for state management and adaptive backoff logic
-- [ ] T023 [US3] Integrate AdaptiveRateLimiter into LookerContentExtractor in `src/lookervault/looker/extractor.py`
-  - Add rate_limiter field to constructor
+- [X] T023 [US3] Integrate AdaptiveRateLimiter into LookerContentExtractor in `src/lookervault/looker/extractor.py`
+  - Add rate_limiter field to constructor (optional, backward compatible)
   - Call rate_limiter.acquire() before each API call in _call_api()
   - Call rate_limiter.on_success() after successful API calls
   - Call rate_limiter.on_429_detected() when HTTP 429 detected
-- [ ] T024 [US3] Update existing retry logic to work with rate limiter in `src/lookervault/extraction/retry.py`
-  - Ensure tenacity retry_on_rate_limit decorator still works
-  - Add logging when rate limit detected
-  - Preserve exponential backoff behavior
-- [ ] T025 [US3] Add rate limiter configuration to ParallelConfig in `src/lookervault/config/models.py`
-  - Add fields: rate_limit_per_minute (default 100), rate_limit_per_second (default 10)
-  - Validate rate_limit_per_second <= rate_limit_per_minute
-- [ ] T026 [US3] Pass rate limiter to all workers in ParallelOrchestrator
-  - Create single shared AdaptiveRateLimiter instance
-  - Pass to extractor so all workers share same rate limiter
-  - Ensure thread-safe coordination across workers
-- [ ] T027 [US3] Add CLI options for rate limiting in `src/lookervault/cli/commands/extract.py`
+- [X] T024 [US3] Existing retry logic already works with rate limiter
+  - @retry_on_rate_limit decorator works seamlessly with new rate limiter
+  - Logging already present for rate limit detection
+  - Exponential backoff behavior preserved
+- [X] T025 [US3] Rate limiter configuration already in ParallelConfig (created in Phase 2)
+  - Fields: rate_limit_per_minute (default 100), rate_limit_per_second (default 10)
+  - Validation: rate_limit_per_second <= rate_limit_per_minute
+- [X] T026 [US3] Pass rate limiter to all workers in ParallelOrchestrator
+  - Create single shared AdaptiveRateLimiter instance in __init__
+  - Inject into extractor so all workers share same rate limiter
+  - Ensures thread-safe coordination across workers
+- [X] T027 [US3] Add CLI options for rate limiting in `src/lookervault/cli/main.py` and `src/lookervault/cli/commands/extract.py`
   - Add --rate-limit-per-minute option (optional, default 100)
   - Add --rate-limit-per-second option (optional, default 10)
-  - Pass to ParallelConfig
+  - Pass to ParallelConfig when creating orchestrator
 
 **Checkpoint**: At this point, User Stories 1, 2, AND 3 should all work - users can extract in parallel with automatic rate limit handling and real-time progress.
 

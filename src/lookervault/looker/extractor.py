@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from looker_sdk import error as looker_error
 
@@ -10,6 +10,9 @@ from lookervault.exceptions import ExtractionError, RateLimitError
 from lookervault.extraction.retry import retry_on_rate_limit
 from lookervault.looker.client import LookerClient
 from lookervault.storage.models import ContentType
+
+if TYPE_CHECKING:
+    from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 
 
 class ContentExtractor(Protocol):
@@ -65,19 +68,30 @@ class ContentExtractor(Protocol):
 
 
 class LookerContentExtractor:
-    """Looker API-based content extractor implementation."""
+    """Looker API-based content extractor implementation with adaptive rate limiting.
 
-    def __init__(self, client: LookerClient):
-        """Initialize extractor with Looker client.
+    Supports two-layer rate limiting:
+    1. Proactive: Token bucket (if rate_limiter provided)
+    2. Reactive: tenacity retry with exponential backoff (always enabled)
+    """
+
+    def __init__(self, client: LookerClient, rate_limiter: "AdaptiveRateLimiter | None" = None):
+        """Initialize extractor with Looker client and optional rate limiter.
 
         Args:
             client: LookerClient instance
+            rate_limiter: Optional adaptive rate limiter for coordinated throttling
         """
         self.client = client
+        self.rate_limiter = rate_limiter
 
     @retry_on_rate_limit
     def _call_api(self, method_name: str, *args, **kwargs) -> Any:
-        """Call Looker SDK method with retry logic.
+        """Call Looker SDK method with proactive rate limiting and retry logic.
+
+        Rate limiting layers:
+        1. Proactive: acquire() blocks if rate limit would be exceeded (if rate_limiter set)
+        2. Reactive: @retry_on_rate_limit retries with exponential backoff on 429
 
         Args:
             method_name: Name of SDK method to call
@@ -88,15 +102,30 @@ class LookerContentExtractor:
             API response
 
         Raises:
-            RateLimitError: If rate limited
+            RateLimitError: If rate limited (after retries exhausted)
             ExtractionError: For other API errors
         """
+        # Layer 1: Proactive rate limiting (blocks if necessary)
+        if self.rate_limiter:
+            self.rate_limiter.acquire()
+
         try:
             method = getattr(self.client.sdk, method_name)
-            return method(*args, **kwargs)
+            result = method(*args, **kwargs)
+
+            # Success: record for adaptive recovery
+            if self.rate_limiter:
+                self.rate_limiter.on_success()
+
+            return result
+
         except looker_error.SDKError as e:
             error_str = str(e)
             if "429" in error_str or "rate limit" in error_str.lower():
+                # Layer 2: Adaptive backoff on 429 detection
+                if self.rate_limiter:
+                    self.rate_limiter.on_429_detected()
+
                 raise RateLimitError(f"Rate limit exceeded: {error_str}") from e
             raise ExtractionError(f"API error calling {method_name}: {error_str}") from e
 

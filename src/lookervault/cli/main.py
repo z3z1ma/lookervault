@@ -103,6 +103,30 @@ def extract(
         bool,
         typer.Option("--incremental", "-i", help="Extract only new/changed content"),
     ] = False,
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            min=1,
+            max=50,
+            help="Number of parallel worker threads (1-50, default: auto-detect based on CPU cores)",
+        ),
+    ] = 0,  # 0 = auto-detect in extract_module.run()
+    rate_limit_per_minute: Annotated[
+        int | None,
+        typer.Option(
+            "--rate-limit-per-minute",
+            help="Max API requests per minute across all workers (default: 100)",
+        ),
+    ] = None,
+    rate_limit_per_second: Annotated[
+        int | None,
+        typer.Option(
+            "--rate-limit-per-second",
+            help="Max API requests per second for burst handling (default: 10)",
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -115,7 +139,20 @@ def extract(
     """Extract all content from Looker instance to local database."""
     from .commands import extract as extract_module
 
-    extract_module.run(config, output, db, types, batch_size, resume, incremental, verbose, debug)
+    extract_module.run(
+        config,
+        output,
+        db,
+        types,
+        batch_size,
+        resume,
+        incremental,
+        workers,
+        rate_limit_per_minute,
+        rate_limit_per_second,
+        verbose,
+        debug,
+    )
 
 
 @app.command()
