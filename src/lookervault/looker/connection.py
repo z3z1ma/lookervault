@@ -1,7 +1,7 @@
 """Connection testing and Looker instance information retrieval."""
 
-from ..config.models import Configuration, ConnectionStatus
-from ..looker.client import LookerClient
+from lookervault.config.models import Configuration, ConnectionStatus
+from lookervault.looker.client import LookerClient
 
 
 def connect_and_get_info(config: Configuration) -> ConnectionStatus:

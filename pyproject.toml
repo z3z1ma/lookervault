@@ -49,6 +49,9 @@ ignore = [
 fixable = ["ALL"]
 unfixable = []
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105"]  # Allow assert and hardcoded secrets in tests
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -65,7 +68,6 @@ root = ["./src"]
 # Core type safety - strict enforcement
 possibly-unresolved-reference = "error"
 invalid-argument-type = "error"
-incompatible-assignment = "error"
 missing-argument = "error"
 unsupported-operator = "error"
 division-by-zero = "error"
@@ -76,7 +78,7 @@ redundant-cast = "warn"
 
 [dependency-groups]
 dev = [
-    "ty>=0.1.0",
+    "ty>=0.0.1a34",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",

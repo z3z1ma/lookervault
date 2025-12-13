@@ -6,7 +6,7 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-from ..config.models import ConnectionStatus, ReadinessCheckResult
+from lookervault.config.models import ConnectionStatus, ReadinessCheckResult
 
 
 def format_json(data: Any) -> str:

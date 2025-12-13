@@ -6,7 +6,7 @@ import looker_sdk
 from looker_sdk import error as looker_error
 from looker_sdk.sdk.api40.methods import Looker40SDK
 
-from ..config.models import ConnectionStatus
+from lookervault.config.models import ConnectionStatus
 
 
 class LookerClient:
@@ -58,7 +58,7 @@ class LookerClient:
         """
         if self._sdk is None:
             self._init_sdk()
-        return self._sdk  # type: ignore
+        return self._sdk
 
     def test_connection(self) -> ConnectionStatus:
         """
@@ -80,8 +80,8 @@ class LookerClient:
                 authenticated=True,
                 instance_url=self.api_url,
                 looker_version=versions.looker_release_version,
-                api_version=versions.current_version.version,  # type: ignore
-                user_id=int(user.id) if user.id else None,  # type: ignore
+                api_version=versions.current_version.version,
+                user_id=int(user.id) if user.id else None,
                 user_email=user.email,
             )
         except looker_error.SDKError as e:

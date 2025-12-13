@@ -5,9 +5,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ..config.loader import get_config_path, load_config
-from ..config.models import CheckItem, ReadinessCheckResult
-from ..exceptions import ConfigError
+from lookervault.config.loader import get_config_path, load_config
+from lookervault.config.models import CheckItem, ReadinessCheckResult
+from lookervault.exceptions import ConfigError
 
 
 def check_config_file(config_path: Path | None = None) -> CheckItem:

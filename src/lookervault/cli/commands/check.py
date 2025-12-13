@@ -4,9 +4,9 @@ from pathlib import Path
 
 import typer
 
-from ...config.validator import perform_readiness_check
-from ...exceptions import ConfigError
-from ..output import format_readiness_check_json, format_readiness_check_table
+from lookervault.cli.output import format_readiness_check_json, format_readiness_check_table
+from lookervault.config.validator import perform_readiness_check
+from lookervault.exceptions import ConfigError
 
 
 def run(config: Path | None, output: str) -> None:
@@ -48,10 +48,10 @@ def run(config: Path | None, output: str) -> None:
         raise
     except ConfigError as e:
         typer.echo(f"Configuration error: {e}", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from None
     except KeyboardInterrupt:
         typer.echo("\nInterrupted by user", err=True)
-        raise typer.Exit(130)
+        raise typer.Exit(130) from None
     except Exception as e:
         typer.echo(f"Unexpected error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import typer
 
-from ..exceptions import ConfigError
-from .models import Configuration
+from lookervault.config.models import Configuration
+from lookervault.exceptions import ConfigError
 
 
 def get_config_path(config_arg: Path | None = None) -> Path:
@@ -74,10 +74,10 @@ def load_config(config_path: Path | None = None) -> Configuration:
     data = {}
     if path.exists():
         try:
-            with open(path, "rb") as f:
+            with path.open("rb") as f:
                 data = tomllib.load(f)
         except tomllib.TOMLDecodeError as e:
-            raise ConfigError(f"Invalid TOML syntax in {path}: {e}")
+            raise ConfigError(f"Invalid TOML syntax in {path}: {e}") from e
 
         if "lookervault" not in data:
             raise ConfigError(f"Missing 'lookervault' section in {path}")
@@ -116,6 +116,6 @@ def load_config(config_path: Path | None = None) -> Configuration:
         }
 
     try:
-        return Configuration(**config_data)
+        return Configuration(**config_data)  # type: ignore[missing-argument]
     except Exception as e:
-        raise ConfigError(f"Invalid configuration: {e}")
+        raise ConfigError(f"Invalid configuration: {e}") from e

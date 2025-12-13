@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from .. import __version__
+from lookervault import __version__
 
 app = typer.Typer(
     help="LookerVault - Backup and restore tool for Looker instances",

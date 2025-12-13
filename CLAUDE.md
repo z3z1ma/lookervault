@@ -15,6 +15,30 @@
 
 **pyproject.toml**: Only manually edit `[tool.*]` sections (pytest, mypy, ruff, etc.). All dependencies and project metadata are managed by `uv add` commands.
 
+## Code Conventions
+
+### Absolute Imports
+
+**IMPORTANT**: This project uses absolute imports exclusively.
+
+- **DO** use absolute imports: `from lookervault.config.models import Configuration`
+- **DO NOT** use relative imports: `from ..config.models import Configuration`
+
+All imports should reference the full module path starting from the package root (`lookervault`). This improves code readability, makes refactoring easier, and prevents import errors when files are moved.
+
+**Examples:**
+```python
+# Good - Absolute imports
+from lookervault.config.models import Configuration, ConnectionStatus
+from lookervault.looker.client import LookerClient
+from lookervault.exceptions import ConfigError
+
+# Bad - Relative imports (DO NOT USE)
+from ..config.models import Configuration
+from .client import LookerClient
+from ...exceptions import ConfigError
+```
+
 ## Code Quality Tools
 
 This project uses modern Rust-based tools from [Astral](https://astral.sh) for code quality:
@@ -92,8 +116,29 @@ uvx ty check
 2. Run `ruff format` to auto-format
 3. Run `ruff check --fix` to lint and auto-fix issues
 4. Run `ty check` to verify types
-5. Commit changes
+5. Run `uv run pytest` to ensure tests pass
+6. Commit changes
 
 **Pre-commit Integration:** Both tools work well in pre-commit hooks to ensure code quality before commits.
 
 **Note:** Line length and formatting rules should be consistent between ruff's formatter and linter. Ruff makes a best-effort attempt to wrap lines at the configured `line-length`, but may exceed it in some cases.
+
+## Pre-Commit Requirements
+
+**CRITICAL**: No changes should be committed without running ALL of the following checks:
+
+```bash
+# Format code
+uvx ruff format
+
+# Lint and auto-fix issues
+uvx ruff check --fix
+
+# Type check
+uvx ty check
+
+# Run tests
+uv run pytest
+```
+
+All checks must pass before committing. If any check fails, fix the issues before proceeding with the commit.

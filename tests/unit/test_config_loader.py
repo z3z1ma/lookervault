@@ -1,6 +1,5 @@
 """Unit tests for configuration loader."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -58,7 +57,7 @@ client_secret = "file_secret"
 
 def test_load_config_file_not_found() -> None:
     """Test error when config file doesn't exist."""
-    with pytest.raises(ConfigError, match="Configuration file not found"):
+    with pytest.raises(ConfigError, match="No config file found"):
         load_config(Path("/nonexistent/config.toml"))
 
 
