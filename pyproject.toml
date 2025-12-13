@@ -1,7 +1,7 @@
 [project]
 name = "lookervault"
 version = "0.1.0"
-description = "Add your description here"
+description = "LookerVault is a CLI tool that backs up your entire Looker content"
 authors = [
     { name = "z3z1ma", email = "butler.alex2010@gmail.com" }
 ]

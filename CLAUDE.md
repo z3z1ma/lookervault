@@ -142,3 +142,7 @@ uv run pytest
 ```
 
 All checks must pass before committing. If any check fails, fix the issues before proceeding with the commit.
+
+## Active Technologies
+- Python 3.13 (per pyproject.toml) (001-looker-content-extraction)
+- SQLite database with binary blob storage + metadata columns (001-looker-content-extraction)
