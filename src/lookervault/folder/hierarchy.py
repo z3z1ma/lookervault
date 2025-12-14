@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any
 
-import msgspec
+import msgspec.json
 
 from lookervault.exceptions import NotFoundError
 from lookervault.storage.models import ContentType

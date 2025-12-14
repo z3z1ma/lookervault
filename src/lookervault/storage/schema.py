@@ -13,7 +13,9 @@ and improve performance for common queries on active records.
 import sqlite3
 from datetime import datetime
 
-SCHEMA_VERSION = 1
+from lookervault.storage.models import ContentType
+
+SCHEMA_VERSION = 2
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -49,7 +51,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
             synced_at TEXT NOT NULL,
             deleted_at TEXT DEFAULT NULL,
             content_size INTEGER NOT NULL,
-            content_data BLOB NOT NULL
+            content_data BLOB NOT NULL,
+            folder_id TEXT DEFAULT NULL
         )
     """)
 
@@ -77,6 +80,23 @@ def create_schema(conn: sqlite3.Connection) -> None:
         ON content_items(deleted_at)
         WHERE deleted_at IS NOT NULL
     """)
+
+    # Create partial index for folder_id (only for content types that support folders)
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_folder_id
+        ON content_items(folder_id)
+        WHERE deleted_at IS NULL
+          AND folder_id IS NOT NULL
+          AND content_type IN (?, ?, ?, ?)
+        """,
+        (
+            ContentType.DASHBOARD.value,
+            ContentType.LOOK.value,
+            ContentType.BOARD.value,
+            ContentType.FOLDER.value,
+        ),
+    )
 
     # Create sync_checkpoints table
     cursor.execute("""
@@ -235,6 +255,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
         ON dead_letter_queue(failed_at DESC)
     """)
 
+    # Migrate existing databases
+    _migrate_to_version_2(conn)
+
     # Record schema version if not already recorded
     cursor.execute(
         "SELECT version FROM schema_version WHERE version = ?",
@@ -246,10 +269,34 @@ def create_schema(conn: sqlite3.Connection) -> None:
             INSERT INTO schema_version (version, applied_at, description)
             VALUES (?, ?, ?)
         """,
-            (SCHEMA_VERSION, datetime.now().isoformat(), "Initial schema"),
+            (
+                SCHEMA_VERSION,
+                datetime.now().isoformat(),
+                "Added folder_id column with partial index",
+            ),
         )
 
     conn.commit()
+
+
+def _migrate_to_version_2(conn: sqlite3.Connection) -> None:
+    """Migrate existing databases from version 1 to version 2.
+
+    Adds folder_id column to content_items table if it doesn't exist.
+
+    Args:
+        conn: SQLite connection
+    """
+    cursor = conn.cursor()
+
+    # Check if folder_id column already exists
+    cursor.execute("PRAGMA table_info(content_items)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "folder_id" not in columns:
+        # Add folder_id column
+        cursor.execute("ALTER TABLE content_items ADD COLUMN folder_id TEXT DEFAULT NULL")
+        conn.commit()
 
 
 def optimize_database(conn: sqlite3.Connection) -> None:

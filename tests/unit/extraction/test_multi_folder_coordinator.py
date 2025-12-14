@@ -349,7 +349,7 @@ class TestMultiFolderOffsetCoordinator:
         folder_sizes = {"123": 250, "456": 150, "789": 50}
 
         fetched_items = {folder_id: [] for folder_id in folder_ids}
-        workers_done_per_folder = {folder_id: 0 for folder_id in folder_ids}
+        workers_done_per_folder = dict.fromkeys(folder_ids, 0)
         lock = threading.Lock()
 
         def worker(worker_id):
