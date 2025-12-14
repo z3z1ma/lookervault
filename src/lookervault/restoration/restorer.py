@@ -25,6 +25,10 @@ from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.extraction.retry import retry_on_rate_limit
 from lookervault.looker.client import LookerClient
 from lookervault.restoration.deserializer import ContentDeserializer
+from lookervault.restoration.subresource_restorer import (
+    DashboardSubResourceRestorer,
+    SubResourceRestorer,
+)
 from lookervault.restoration.validation import RestorationValidator
 from lookervault.storage.models import ContentType, RestorationResult
 from lookervault.storage.repository import ContentRepository
@@ -67,6 +71,7 @@ class LookerContentRestorer:
     - Validating content against Looker API schemas
     - Checking destination instance for existing content
     - Creating new content or updating existing content via API
+    - Restoring nested sub-resources (dashboard elements, filters, layouts)
     - Recording ID mappings for cross-instance migrations
     - Rate limiting and retry logic for resilient API operations
 
@@ -76,8 +81,9 @@ class LookerContentRestorer:
     3. Validate content structure and required fields
     4. Check if content exists in destination (GET request)
     5. If exists: update (PATCH), if not: create (POST)
-    6. Record ID mapping if created and id_mapper provided
-    7. Return RestorationResult with status, duration, errors
+    6. Restore sub-resources if applicable (e.g., dashboard elements/filters/layouts)
+    7. Record ID mapping if created and id_mapper provided
+    8. Return RestorationResult with status, duration, errors, sub-resource metadata
 
     Examples:
         >>> # Basic single-item restoration
@@ -123,6 +129,13 @@ class LookerContentRestorer:
         ContentType.MODEL_SET: ("model_set", "create_model_set", "update_model_set"),
     }
 
+    # Mapping of content types to sub-resource restorers
+    # Content types in this map will have sub-resources restored after parent restoration
+    _SUBRESOURCE_RESTORER_MAP: dict[ContentType, type[SubResourceRestorer]] = {
+        ContentType.DASHBOARD: DashboardSubResourceRestorer,
+        # Future: ContentType.BOARD: BoardSubResourceRestorer,
+    }
+
     def __init__(
         self,
         client: LookerClient,
@@ -161,10 +174,17 @@ class LookerContentRestorer:
         self.deserializer = ContentDeserializer()
         self.validator = RestorationValidator()
 
+        # Initialize sub-resource restorers for content types with nested structures
+        self.subresource_restorers: dict[ContentType, SubResourceRestorer] = {}
+        for content_type, restorer_class in self._SUBRESOURCE_RESTORER_MAP.items():
+            self.subresource_restorers[content_type] = restorer_class(client, rate_limiter)
+            logger.debug(f"Initialized {restorer_class.__name__} for {content_type.name}")
+
         logger.info(
             f"Initialized LookerContentRestorer: "
             f"rate_limiter={'enabled' if rate_limiter else 'disabled'}, "
-            f"id_mapper={'enabled' if id_mapper else 'disabled'}"
+            f"id_mapper={'enabled' if id_mapper else 'disabled'}, "
+            f"subresource_restorers={len(self.subresource_restorers)} types"
         )
 
     def check_exists(self, content_id: str, content_type: ContentType) -> bool:
@@ -261,6 +281,18 @@ class LookerContentRestorer:
         # Get the SDK update method name
         _, _, update_method_name = self._SDK_METHOD_MAP[content_type]
 
+        # Log request payload for debugging
+        logger.debug(
+            f"UPDATE API Request - {content_type.name} {content_id}:\n"
+            f"  Method: {update_method_name}\n"
+            f"  Payload keys: {list(content_dict.keys())}\n"
+            f"  Payload size: {len(str(content_dict))} bytes"
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            import json
+
+            logger.debug(f"  Full payload:\n{json.dumps(content_dict, indent=2, default=str)}")
+
         try:
             # Call SDK update method (e.g., client.sdk.update_dashboard("42", body))
             update_method = getattr(self.client.sdk, update_method_name)
@@ -270,12 +302,29 @@ class LookerContentRestorer:
             if self.rate_limiter:
                 self.rate_limiter.on_success()
 
-            logger.debug(f"Successfully updated {content_type.name} {content_id}")
-
             # Convert Looker SDK model to dict
+            response_dict: dict[str, Any]
             if hasattr(response, "__dict__"):
-                return dict(response)
-            return response
+                response_dict = dict(response)
+            else:
+                response_dict = response
+
+            # Log response for debugging
+            logger.debug(
+                f"UPDATE API Response - {content_type.name} {content_id}:\n"
+                f"  Response keys: {list(response_dict.keys())}\n"
+                f"  Response size: {len(str(response_dict))} bytes"
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                import json
+
+                logger.debug(
+                    f"  Full response:\n{json.dumps(response_dict, indent=2, default=str)}"
+                )
+
+            logger.info(f"Successfully updated {content_type.name} {content_id}")
+
+            return response_dict
 
         except looker_error.SDKError as e:
             error_str = str(e)
@@ -333,6 +382,18 @@ class LookerContentRestorer:
         # Get the SDK create method name
         _, create_method_name, _ = self._SDK_METHOD_MAP[content_type]
 
+        # Log request payload for debugging
+        logger.debug(
+            f"CREATE API Request - {content_type.name}:\n"
+            f"  Method: {create_method_name}\n"
+            f"  Payload keys: {list(content_dict.keys())}\n"
+            f"  Payload size: {len(str(content_dict))} bytes"
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            import json
+
+            logger.debug(f"  Full payload:\n{json.dumps(content_dict, indent=2, default=str)}")
+
         try:
             # Call SDK create method (e.g., client.sdk.create_dashboard(body))
             create_method = getattr(self.client.sdk, create_method_name)
@@ -342,12 +403,31 @@ class LookerContentRestorer:
             if self.rate_limiter:
                 self.rate_limiter.on_success()
 
-            logger.debug(f"Successfully created {content_type.name}")
-
             # Convert Looker SDK model to dict
+            response_dict: dict[str, Any]
             if hasattr(response, "__dict__"):
-                return dict(response)
-            return response
+                response_dict = dict(response)
+            else:
+                response_dict = response
+
+            # Log response for debugging
+            logger.debug(
+                f"CREATE API Response - {content_type.name}:\n"
+                f"  Response keys: {list(response_dict.keys())}\n"
+                f"  Response size: {len(str(response_dict))} bytes"
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                import json
+
+                logger.debug(
+                    f"  Full response:\n{json.dumps(response_dict, indent=2, default=str)}"
+                )
+
+            logger.info(
+                f"Successfully created {content_type.name} with ID: {response_dict.get('id')}"
+            )
+
+            return response_dict
 
         except looker_error.SDKError as e:
             error_str = str(e)
@@ -449,6 +529,17 @@ class LookerContentRestorer:
                 content_dict = self.deserializer.deserialize(
                     content_item.content_data, content_type, as_dict=True
                 )
+                logger.debug(
+                    f"Deserialized {content_type.name} {content_id} from backup:\n"
+                    f"  Keys: {list(content_dict.keys())}\n"
+                    f"  Size: {len(str(content_dict))} bytes"
+                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    import json
+
+                    logger.debug(
+                        f"  Full backup content:\n{json.dumps(content_dict, indent=2, default=str)}"
+                    )
             except DeserializationError as e:
                 logger.error(f"Deserialization failed for {content_type.name} {content_id}: {e}")
                 raise
@@ -507,13 +598,66 @@ class LookerContentRestorer:
                         destination_id=destination_id,
                     )
 
-            # Step 8: Return successful RestorationResult
+            # Step 8: Restore sub-resources if applicable (dashboard elements, filters, layouts, etc.)
+            subresource_result = None
+            if content_type in self.subresource_restorers:
+                logger.info(f"Restoring sub-resources for {content_type.name} {destination_id}")
+
+                subresource_restorer = self.subresource_restorers[content_type]
+                subresource_result = subresource_restorer.restore_subresources(
+                    parent_id=destination_id,
+                    parent_content=content_dict,
+                    dry_run=False,  # Already validated parent in dry_run, sub-resources are real
+                )
+
+                logger.info(
+                    f"Sub-resource restoration complete for {content_type.name} {destination_id}: "
+                    f"created={subresource_result.total_created}, "
+                    f"updated={subresource_result.total_updated}, "
+                    f"deleted={subresource_result.total_deleted}, "
+                    f"errors={subresource_result.total_errors}"
+                )
+
+                # Log sub-resource errors if any
+                if subresource_result.all_errors:
+                    logger.warning(
+                        f"Sub-resource restoration errors for {content_type.name} {destination_id}:\n"
+                        + "\n".join(f"  - {err}" for err in subresource_result.all_errors)
+                    )
+
+            # Step 9: Return successful RestorationResult
             duration_ms = (time.time() - start_time) * 1000
 
             logger.info(
                 f"Successfully {operation} {content_type.name} {content_id} "
                 f"(destination_id={destination_id}, duration={duration_ms:.1f}ms)"
             )
+
+            # Include sub-resource metadata in result
+            metadata = None
+            if subresource_result:
+                metadata = {
+                    "subresources": {
+                        "filters": {
+                            "created": subresource_result.filters.created_count,
+                            "updated": subresource_result.filters.updated_count,
+                            "deleted": subresource_result.filters.deleted_count,
+                            "errors": subresource_result.filters.error_count,
+                        },
+                        "elements": {
+                            "created": subresource_result.elements.created_count,
+                            "updated": subresource_result.elements.updated_count,
+                            "deleted": subresource_result.elements.deleted_count,
+                            "errors": subresource_result.elements.error_count,
+                        },
+                        "layouts": {
+                            "created": subresource_result.layouts.created_count,
+                            "updated": subresource_result.layouts.updated_count,
+                            "deleted": subresource_result.layouts.deleted_count,
+                            "errors": subresource_result.layouts.error_count,
+                        },
+                    }
+                }
 
             return RestorationResult(
                 content_id=content_id,
@@ -522,6 +666,7 @@ class LookerContentRestorer:
                 destination_id=destination_id,
                 retry_count=retry_count,
                 duration_ms=duration_ms,
+                metadata=metadata,
             )
 
         except NotFoundError as e:

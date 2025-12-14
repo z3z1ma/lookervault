@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
+from typing import Any
 from uuid import uuid4
 
 
@@ -180,6 +181,7 @@ class RestorationResult:
         error_message: Error details if status is "failed"
         retry_count: Number of retry attempts made
         duration_ms: Time taken for restoration operation in milliseconds
+        metadata: Optional dict containing additional restoration metadata (e.g., sub-resource counts)
 
     Examples:
         >>> # Successful creation
@@ -199,6 +201,16 @@ class RestorationResult:
         ...     error_message="Missing folder_id dependency",
         ...     retry_count=3,
         ... )
+
+        >>> # Dashboard restoration with sub-resource metadata
+        >>> result = RestorationResult(
+        ...     content_id="42",
+        ...     content_type=ContentType.DASHBOARD,
+        ...     status="updated",
+        ...     destination_id="42",
+        ...     duration_ms=5678.9,
+        ...     metadata={"subresources": {"filters": {"updated": 3}, "elements": {"created": 2}}},
+        ... )
     """
 
     content_id: str
@@ -208,6 +220,7 @@ class RestorationResult:
     error_message: str | None = None
     retry_count: int = 0
     duration_ms: float | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass
