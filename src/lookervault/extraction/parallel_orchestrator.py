@@ -11,6 +11,7 @@ from lookervault.config.models import ParallelConfig
 from lookervault.exceptions import OrchestrationError
 from lookervault.extraction.batch_processor import MemoryAwareBatchProcessor
 from lookervault.extraction.metrics import ThreadSafeMetrics
+from lookervault.extraction.multi_folder_coordinator import MultiFolderOffsetCoordinator
 from lookervault.extraction.offset_coordinator import OffsetCoordinator
 from lookervault.extraction.orchestrator import ExtractionConfig, ExtractionResult
 from lookervault.extraction.progress import ProgressTracker
@@ -303,6 +304,13 @@ class ParallelOrchestrator:
         """
         content_type_name = ContentType(content_type).name.lower()
 
+        # Determine extraction strategy
+        is_multi_folder = (
+            self.config.folder_ids
+            and len(self.config.folder_ids) > 1
+            and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
+        )
+
         # Create checkpoint
         checkpoint = Checkpoint(
             session_id=session_id,
@@ -313,14 +321,35 @@ class ParallelOrchestrator:
                 "incremental": self.config.incremental,
                 "parallel": True,
                 "workers": self.parallel_config.workers,
-                "strategy": "parallel_fetch",
+                "strategy": "multi_folder_parallel" if is_multi_folder else "parallel_fetch",
+                "folder_count": len(self.config.folder_ids) if self.config.folder_ids else 0,
             },
         )
         checkpoint_id = self.repository.save_checkpoint(checkpoint)
 
-        # Create offset coordinator
-        coordinator = OffsetCoordinator(stride=self.config.batch_size)
-        coordinator.set_total_workers(self.parallel_config.workers)
+        # Choose coordinator based on folder configuration
+        if is_multi_folder:
+            # Multi-folder: Use MultiFolderOffsetCoordinator for parallel SDK calls
+            coordinator = MultiFolderOffsetCoordinator(
+                folder_ids=list(self.config.folder_ids),
+                stride=self.config.batch_size,
+            )
+            coordinator.set_total_workers(self.parallel_config.workers)
+            logger.info(
+                f"Using multi-folder parallel SDK calls for {content_type_name} "
+                f"({len(self.config.folder_ids)} folders, {self.parallel_config.workers} workers)"
+            )
+        else:
+            # Single-folder or no-folder: Use standard OffsetCoordinator
+            coordinator = OffsetCoordinator(stride=self.config.batch_size)
+            coordinator.set_total_workers(self.parallel_config.workers)
+            if self.config.folder_ids and len(self.config.folder_ids) == 1:
+                logger.info(
+                    f"Using SDK-level folder filtering for {content_type_name} "
+                    f"(folder_id={list(self.config.folder_ids)[0]})"
+                )
+            else:
+                logger.info(f"Using standard parallel extraction for {content_type_name}")
 
         # Launch parallel fetch workers
         logger.info(
@@ -748,7 +777,7 @@ class ParallelOrchestrator:
         self,
         worker_id: int,
         content_type: int,
-        coordinator: "OffsetCoordinator",
+        coordinator: "OffsetCoordinator | MultiFolderOffsetCoordinator",
         fields: str | None,
         updated_after: datetime | None,
     ) -> int:
@@ -764,7 +793,7 @@ class ParallelOrchestrator:
         Args:
             worker_id: Worker thread identifier (0-based index)
             content_type: ContentType enum value
-            coordinator: Shared offset coordinator
+            coordinator: Shared offset coordinator (single or multi-folder)
             fields: Fields to retrieve (optional)
             updated_after: Only items updated after this timestamp (optional)
 
@@ -785,38 +814,31 @@ class ParallelOrchestrator:
         try:
             while True:
                 # Atomically claim next offset range
-                offset, limit = coordinator.claim_range()
+                claimed_range = coordinator.claim_range()
 
-                logger.debug(f"Worker {worker_id} claimed range: offset={offset}, limit={limit}")
+                # Check if all work is done
+                if claimed_range is None:
+                    logger.info(
+                        f"Worker {worker_id} received None from coordinator - all work complete"
+                    )
+                    break
 
-                # Determine folder_id for SDK-level filtering
-                # SDK search methods only support single folder_id, so:
-                # - Single folder_id: use SDK filtering (optimal)
-                # - Multiple folder_ids: use in-memory filtering (fallback)
-                folder_id_for_sdk = None
-                if (
-                    self.config.folder_ids
-                    and len(self.config.folder_ids) == 1
-                    and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
-                ):
-                    folder_id_for_sdk = list(self.config.folder_ids)[0]
-                    if worker_id == 0:  # Log once per extraction
-                        logger.info(
-                            f"Using SDK-level folder filtering for {ContentType(content_type).name} "
-                            f"(folder_id={folder_id_for_sdk})"
-                        )
-                elif (
-                    self.config.folder_ids
-                    and len(self.config.folder_ids) > 1
-                    and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
-                ):
-                    if worker_id == 0:  # Log once per extraction
-                        logger.info(
-                            f"Multiple folder_ids detected ({len(self.config.folder_ids)} folders) - "
-                            f"using in-memory filtering (SDK only supports single folder_id)"
-                        )
+                # Handle multi-folder coordinator (returns tuple of 3)
+                if isinstance(coordinator, MultiFolderOffsetCoordinator):
+                    folder_id, offset, limit = claimed_range  # type: ignore[misc]
+                    logger.debug(
+                        f"Worker {worker_id} claimed range: folder_id={folder_id}, "
+                        f"offset={offset}, limit={limit}"
+                    )
+                else:
+                    # Single-folder or no-folder coordinator (returns tuple of 2)
+                    offset, limit = claimed_range  # type: ignore[misc]
+                    folder_id = None
+                    logger.debug(
+                        f"Worker {worker_id} claimed range: offset={offset}, limit={limit}"
+                    )
 
-                # Fetch data from Looker API
+                # Fetch data from Looker API with SDK-level folder filtering
                 try:
                     items = self.extractor.extract_range(
                         ContentType(content_type),
@@ -824,7 +846,7 @@ class ParallelOrchestrator:
                         limit=limit,
                         fields=fields,
                         updated_after=updated_after,
-                        folder_id=folder_id_for_sdk,
+                        folder_id=folder_id,  # SDK-level filtering (None or specific folder_id)
                     )
                 except Exception as e:
                     logger.error(f"Worker {worker_id} API fetch failed at offset {offset}: {e}")
@@ -833,22 +855,24 @@ class ParallelOrchestrator:
 
                 # Check if we hit end of data
                 if not items or len(items) == 0:
-                    logger.info(
-                        f"Worker {worker_id} hit end-of-data at offset {offset}, marking complete"
-                    )
-                    coordinator.mark_worker_complete()
-                    break
+                    if isinstance(coordinator, MultiFolderOffsetCoordinator) and folder_id:
+                        logger.info(
+                            f"Worker {worker_id} hit end-of-data for folder {folder_id} "
+                            f"at offset {offset}, marking folder complete"
+                        )
+                        coordinator.mark_folder_complete(folder_id)
+                    else:
+                        logger.info(
+                            f"Worker {worker_id} hit end-of-data at offset {offset}, marking complete"
+                        )
+                        coordinator.mark_worker_complete()
+                        break
+                    continue  # Try next folder (multi-folder mode) or break (single-folder mode)
 
                 # Process items: convert and save to database
+                # NO in-memory filtering needed - SDK handles filtering via folder_id parameter
                 for item_dict in items:
                     try:
-                        # Check folder filter (in-memory fallback if SDK filtering not used)
-                        # Only apply in-memory filter if SDK filtering wasn't used
-                        if folder_id_for_sdk is None and self._should_filter_by_folder(
-                            item_dict, content_type
-                        ):
-                            continue  # Skip this item - not in target folders
-
                         # Convert to ContentItem
                         content_item = self._dict_to_content_item(item_dict, content_type)
 
@@ -879,12 +903,20 @@ class ParallelOrchestrator:
 
                 # Check if we got fewer items than requested (end of data)
                 if len(items) < limit:
-                    logger.info(
-                        f"Worker {worker_id} received {len(items)} < {limit} items at offset {offset}, "
-                        f"marking complete"
-                    )
-                    coordinator.mark_worker_complete()
-                    break
+                    if isinstance(coordinator, MultiFolderOffsetCoordinator) and folder_id:
+                        logger.info(
+                            f"Worker {worker_id} received {len(items)} < {limit} items "
+                            f"for folder {folder_id} at offset {offset}, marking folder complete"
+                        )
+                        coordinator.mark_folder_complete(folder_id)
+                    else:
+                        logger.info(
+                            f"Worker {worker_id} received {len(items)} < {limit} items at offset {offset}, "
+                            f"marking complete"
+                        )
+                        coordinator.mark_worker_complete()
+                        break
+                    continue  # Try next folder (multi-folder mode) or break (single-folder mode)
 
                 # Periodic progress update
                 if items_processed > 0 and items_processed % 500 == 0:
