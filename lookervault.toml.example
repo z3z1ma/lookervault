@@ -56,3 +56,34 @@ max_retries = 5                # Maximum retry attempts for transient errors
 #   2. Environment variables
 #   3. Config file values
 #   4. Hardcoded defaults
+#
+# GCS Snapshot Storage Configuration
+[snapshot]
+# GCS Storage Provider Configuration
+# Note: Optional - will use default Application Default Credentials (ADC) if not specified
+bucket_name = "lookervault-backups"    # GCS bucket for snapshot storage
+project_id = ""                        # Optional: GCP project ID (auto-detected from credentials if not set)
+region = "us-central1"                 # GCS bucket region
+storage_class = "STANDARD"             # Initial storage class
+autoclass_enabled = true               # Enable GCS Autoclass for automatic storage tier optimization
+prefix = "snapshots/"                  # Object name prefix for snapshots
+filename_prefix = "looker"             # Prefix for snapshot filenames
+
+# Snapshot Compression
+compression_enabled = true             # Enable gzip compression
+compression_level = 6                  # Compression level (1=fastest, 9=best compression)
+
+# Retention Policy
+[snapshot.retention]
+min_days = 30                          # Minimum retention period in days
+max_days = 90                          # Maximum retention period in days
+min_count = 5                          # Minimum number of snapshots to always retain
+lock_policy = false                    # Whether to lock retention policy (CAUTION: Irreversible)
+enabled = true                         # Enable retention policy enforcement
+
+# Snapshot Listing Cache
+cache_ttl_minutes = 5                 # Local cache TTL for snapshot listings (in minutes)
+
+# Audit Logging
+audit_log_path = "~/.lookervault/audit.log"  # Path to local audit log file
+audit_gcs_bucket = ""                  # Optional: GCS bucket for centralized audit logs

@@ -14,11 +14,11 @@ Test Coverage:
 """
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from lookervault.exceptions import NotFoundError, RestorationError, ValidationError
+from lookervault.exceptions import NotFoundError, RestorationError
 from lookervault.restoration.dead_letter_queue import DeadLetterQueue
 from lookervault.storage.models import ContentType, DeadLetterItem, RestorationResult
 

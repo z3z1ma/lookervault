@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from lookervault import __version__
+from lookervault.cli.commands.snapshot import app as snapshot_app
 
 app = typer.Typer(
     help="LookerVault - Backup and restore tool for Looker instances",
@@ -489,6 +490,9 @@ def restore_status_cmd(
         debug,
     )
 
+
+# Snapshot command group (imported at top)
+app.add_typer(snapshot_app, name="snapshot")
 
 # DLQ command group
 dlq_app = typer.Typer(

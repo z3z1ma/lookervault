@@ -2,9 +2,12 @@
 
 import os
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
+
+if TYPE_CHECKING:
+    from lookervault.snapshot.models import SnapshotConfig
 
 
 class LookerConfig(BaseModel):
@@ -45,6 +48,7 @@ class Configuration(BaseModel):
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
     restore: RestoreDefaults = RestoreDefaults()
+    snapshot: "SnapshotConfig | None" = None  # Optional snapshot configuration
 
 
 class ConnectionStatus(BaseModel):

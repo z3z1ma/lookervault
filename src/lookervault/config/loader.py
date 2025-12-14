@@ -8,6 +8,11 @@ import typer
 
 from lookervault.config.models import Configuration
 from lookervault.exceptions import ConfigError
+from lookervault.snapshot.models import (
+    GCSStorageProvider,
+    RetentionPolicy,
+    SnapshotConfig,
+)
 
 
 def get_db_path(db_path_arg: str | None = None) -> str:
@@ -162,6 +167,66 @@ def load_config(config_path: Path | None = None) -> Configuration:
                 raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
 
         config_data = {"looker": looker_config}
+
+    # Load snapshot configuration if present (optional section)
+    if "snapshot" in data.get("lookervault", {}):
+        snapshot_data = data["lookervault"]["snapshot"]
+
+        # Override with environment variables if present
+        if bucket_name := os.getenv("LOOKERVAULT_GCS_BUCKET"):
+            snapshot_data["bucket_name"] = bucket_name
+        if project_id := os.getenv("LOOKERVAULT_GCS_PROJECT"):
+            snapshot_data["project_id"] = project_id
+        if region := os.getenv("LOOKERVAULT_GCS_REGION"):
+            snapshot_data["region"] = region
+        if credentials_path := os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            snapshot_data["credentials_path"] = credentials_path
+
+        # Override retention policy from environment
+        if "retention" not in snapshot_data:
+            snapshot_data["retention"] = {}
+        if min_days_str := os.getenv("LOOKERVAULT_RETENTION_MIN_DAYS"):
+            try:
+                snapshot_data["retention"]["min_days"] = int(min_days_str)
+            except ValueError:
+                raise ConfigError(
+                    f"Invalid LOOKERVAULT_RETENTION_MIN_DAYS value: {min_days_str}"
+                ) from None
+        if max_days_str := os.getenv("LOOKERVAULT_RETENTION_MAX_DAYS"):
+            try:
+                snapshot_data["retention"]["max_days"] = int(max_days_str)
+            except ValueError:
+                raise ConfigError(
+                    f"Invalid LOOKERVAULT_RETENTION_MAX_DAYS value: {max_days_str}"
+                ) from None
+        if min_count_str := os.getenv("LOOKERVAULT_RETENTION_MIN_COUNT"):
+            try:
+                snapshot_data["retention"]["min_count"] = int(min_count_str)
+            except ValueError:
+                raise ConfigError(
+                    f"Invalid LOOKERVAULT_RETENTION_MIN_COUNT value: {min_count_str}"
+                ) from None
+
+        # Parse retention policy
+        retention_data = snapshot_data.get("retention", {})
+        retention = RetentionPolicy(**retention_data)
+
+        # Parse GCS provider config
+        provider_data = {
+            k: v
+            for k, v in snapshot_data.items()
+            if k not in ["retention", "cache_ttl_minutes", "audit_log_path", "audit_gcs_bucket"]
+        }
+        provider = GCSStorageProvider(**provider_data)
+
+        # Parse snapshot config
+        config_data["snapshot"] = SnapshotConfig(
+            provider=provider,
+            retention=retention,
+            cache_ttl_minutes=snapshot_data.get("cache_ttl_minutes", 5),
+            audit_log_path=snapshot_data.get("audit_log_path", "~/.lookervault/audit.log"),
+            audit_gcs_bucket=snapshot_data.get("audit_gcs_bucket"),
+        )
 
     try:
         return Configuration(**config_data)  # type: ignore[missing-argument]

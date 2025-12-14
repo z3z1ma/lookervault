@@ -7,6 +7,8 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "google-cloud-storage>=3.7.0",
+    "google-crc32c>=1.7.1",
     "looker-sdk>=24.0.0",
     "msgspec>=0.20.0",
     "pydantic>=2.0.0",
@@ -54,6 +56,7 @@ unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105"]  # Allow assert and hardcoded secrets in tests
+"src/lookervault/cli/commands/*.py" = ["B008", "B904"]  # Allow typer.Option defaults and typer.Exit exception pattern
 
 [tool.ruff.format]
 quote-style = "double"
