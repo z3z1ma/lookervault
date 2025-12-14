@@ -15,7 +15,7 @@ from datetime import datetime
 
 from lookervault.storage.models import ContentType
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -104,7 +104,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
             started_at TEXT NOT NULL,
             completed_at TEXT DEFAULT NULL,
             item_count INTEGER DEFAULT 0,
-            error_message TEXT DEFAULT NULL
+            error_message TEXT DEFAULT NULL,
+            UNIQUE(session_id, content_type, started_at)
         )
     """)
 
@@ -180,6 +181,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
             completed_at TEXT,
             item_count INTEGER DEFAULT 0,
             error_count INTEGER DEFAULT 0,
+            UNIQUE(session_id, content_type, started_at),
             FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
         )
     """)
@@ -232,6 +234,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
             retry_count INTEGER NOT NULL,
             failed_at TEXT NOT NULL,
             metadata TEXT,
+            UNIQUE(session_id, content_id, content_type, retry_count),
             FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
         )
     """)
@@ -251,6 +254,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
         ON dead_letter_queue(failed_at DESC)
     """)
 
+    # Run migrations after all tables are created
+    _migrate_to_version_3(conn)
+
     # Record schema version if not already recorded
     cursor.execute(
         "SELECT version FROM schema_version WHERE version = ?",
@@ -265,7 +271,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
             (
                 SCHEMA_VERSION,
                 datetime.now().isoformat(),
-                "Added folder_id column with partial index",
+                "Added unique constraints for idempotent upsert operations",
             ),
         )
 
@@ -290,6 +296,168 @@ def _migrate_to_version_2(conn: sqlite3.Connection) -> None:
         # Add folder_id column
         cursor.execute("ALTER TABLE content_items ADD COLUMN folder_id TEXT DEFAULT NULL")
         conn.commit()
+
+
+def _migrate_to_version_3(conn: sqlite3.Connection) -> None:
+    """Migrate existing databases from version 2 to version 3.
+
+    Adds unique constraints to enable idempotent upsert operations:
+    1. sync_checkpoints: UNIQUE(session_id, content_type, started_at)
+    2. restoration_checkpoints: UNIQUE(session_id, content_type, started_at)
+    3. dead_letter_queue: UNIQUE(session_id, content_id, content_type, retry_count)
+
+    Args:
+        conn: SQLite connection
+    """
+    cursor = conn.cursor()
+
+    # Check current schema version
+    cursor.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+    current_version = cursor.fetchone()
+    current_version = current_version[0] if current_version else 0
+
+    if current_version >= 3:
+        return  # Already migrated
+
+    # Check if tables exist (fresh database vs. migration)
+    cursor.execute("""
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name IN ('sync_checkpoints', 'restoration_checkpoints', 'dead_letter_queue')
+    """)
+    existing_tables = {row[0] for row in cursor.fetchall()}
+
+    # If no tables exist, this is a fresh database - skip migration
+    if not existing_tables:
+        return
+
+    # SQLite doesn't support ALTER TABLE ADD CONSTRAINT directly
+    # We need to recreate tables with new constraints
+
+    # 1. Migrate sync_checkpoints (only if it exists)
+    if "sync_checkpoints" in existing_tables:
+        cursor.execute("""
+            CREATE TABLE sync_checkpoints_tmp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                content_type INTEGER NOT NULL,
+                checkpoint_data TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT DEFAULT NULL,
+                item_count INTEGER DEFAULT 0,
+                error_message TEXT DEFAULT NULL,
+                UNIQUE(session_id, content_type, started_at)
+            )
+        """)
+
+        cursor.execute("""
+            INSERT INTO sync_checkpoints_tmp
+            SELECT * FROM sync_checkpoints
+        """)
+
+        cursor.execute("DROP TABLE sync_checkpoints")
+        cursor.execute("ALTER TABLE sync_checkpoints_tmp RENAME TO sync_checkpoints")
+
+        # Recreate indexes
+        cursor.execute("""
+            CREATE INDEX idx_checkpoint_type_completed
+            ON sync_checkpoints(content_type, completed_at)
+        """)
+        cursor.execute("""
+            CREATE INDEX idx_checkpoint_session
+            ON sync_checkpoints(session_id)
+        """)
+
+    # 2. Migrate restoration_checkpoints (only if it exists)
+    if "restoration_checkpoints" in existing_tables:
+        cursor.execute("""
+            CREATE TABLE restoration_checkpoints_tmp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                content_type INTEGER NOT NULL,
+                checkpoint_data TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                item_count INTEGER DEFAULT 0,
+                error_count INTEGER DEFAULT 0,
+                UNIQUE(session_id, content_type, started_at),
+                FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
+            )
+        """)
+
+        cursor.execute("""
+            INSERT INTO restoration_checkpoints_tmp
+            SELECT * FROM restoration_checkpoints
+        """)
+
+        cursor.execute("DROP TABLE restoration_checkpoints")
+        cursor.execute("ALTER TABLE restoration_checkpoints_tmp RENAME TO restoration_checkpoints")
+
+        # Recreate indexes
+        cursor.execute("""
+            CREATE INDEX idx_restoration_checkpoint_session
+            ON restoration_checkpoints(session_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX idx_restoration_checkpoint_type
+            ON restoration_checkpoints(content_type)
+        """)
+
+    # 3. Migrate dead_letter_queue (only if it exists)
+    if "dead_letter_queue" in existing_tables:
+        cursor.execute("""
+            CREATE TABLE dead_letter_queue_tmp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                content_id TEXT NOT NULL,
+                content_type INTEGER NOT NULL,
+                content_data BLOB NOT NULL,
+                error_message TEXT NOT NULL,
+                error_type TEXT NOT NULL,
+                stack_trace TEXT,
+                retry_count INTEGER NOT NULL,
+                failed_at TEXT NOT NULL,
+                metadata TEXT,
+                UNIQUE(session_id, content_id, content_type, retry_count),
+                FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
+            )
+        """)
+
+        cursor.execute("""
+            INSERT INTO dead_letter_queue_tmp
+            SELECT * FROM dead_letter_queue
+        """)
+
+        cursor.execute("DROP TABLE dead_letter_queue")
+        cursor.execute("ALTER TABLE dead_letter_queue_tmp RENAME TO dead_letter_queue")
+
+        # Recreate indexes
+        cursor.execute("""
+            CREATE INDEX idx_dlq_session
+            ON dead_letter_queue(session_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX idx_dlq_content
+            ON dead_letter_queue(content_type, content_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX idx_dlq_failed_at
+            ON dead_letter_queue(failed_at DESC)
+        """)
+
+    # Record migration
+    cursor.execute(
+        """
+        INSERT INTO schema_version (version, applied_at, description)
+        VALUES (?, ?, ?)
+        """,
+        (
+            3,
+            datetime.now().isoformat(),
+            "Added unique constraints for idempotent upsert operations",
+        ),
+    )
+
+    conn.commit()
 
 
 def optimize_database(conn: sqlite3.Connection) -> None:

@@ -178,6 +178,7 @@ class TestParallelFetchWorker:
                 limit=50,
                 fields=None,
                 updated_after=None,
+                folder_id=None,
             ),
             call(
                 ContentType.DASHBOARD,
@@ -185,6 +186,7 @@ class TestParallelFetchWorker:
                 limit=50,
                 fields=None,
                 updated_after=None,
+                folder_id=None,
             ),
             call(
                 ContentType.DASHBOARD,
@@ -192,6 +194,7 @@ class TestParallelFetchWorker:
                 limit=50,
                 fields=None,
                 updated_after=None,
+                folder_id=None,
             ),
             call(
                 ContentType.DASHBOARD,
@@ -199,6 +202,7 @@ class TestParallelFetchWorker:
                 limit=50,
                 fields=None,
                 updated_after=None,
+                folder_id=None,
             ),
         ]
 
@@ -230,6 +234,7 @@ class TestParallelFetchWorker:
             limit=100,
             fields="id,title",
             updated_after=cutoff_date,
+            folder_id=None,
         )
 
     def test_parallel_fetch_worker_handles_api_errors_gracefully(self):

@@ -198,13 +198,15 @@ class TestDeadLetterQueueGet:
         """Test get() returns DeadLetterItem when found in repository."""
         # Setup: repository returns a DLQ item
         expected_item = DeadLetterItem(
-            dlq_id="dlq-123",
+            session_id="test_session",
             content_id="456",
             content_type=ContentType.DASHBOARD.value,
-            error_type="ValidationError",
+            content_data=b"test_data",
             error_message="Validation failed",
-            session_id="test_session",
+            error_type="ValidationError",
+            retry_count=0,
             failed_at=datetime.now(UTC),
+            id="dlq-123",
         )
         mock_repository.get_dead_letter_item.return_value = expected_item
 
@@ -236,22 +238,26 @@ class TestDeadLetterQueueList:
         # Setup: repository returns multiple items
         items = [
             DeadLetterItem(
-                dlq_id="dlq-1",
+                session_id="session1",
                 content_id="1",
                 content_type=ContentType.DASHBOARD.value,
-                error_type="ValidationError",
+                content_data=b"test_data_1",
                 error_message="Error 1",
-                session_id="session1",
+                error_type="ValidationError",
+                retry_count=0,
                 failed_at=datetime.now(UTC),
+                id="dlq-1",
             ),
             DeadLetterItem(
-                dlq_id="dlq-2",
+                session_id="session1",
                 content_id="2",
                 content_type=ContentType.LOOK.value,
-                error_type="APIError",
+                content_data=b"test_data_2",
                 error_message="Error 2",
-                session_id="session1",
+                error_type="APIError",
+                retry_count=0,
                 failed_at=datetime.now(UTC),
+                id="dlq-2",
             ),
         ]
         mock_repository.list_dead_letter_items.return_value = items
@@ -346,13 +352,15 @@ class TestDeadLetterQueueRetry:
         """Test retry() successfully restores item and removes from DLQ."""
         # Setup: DLQ item exists in repository
         dlq_item = DeadLetterItem(
-            dlq_id="dlq-123",
+            session_id="test_session",
             content_id="456",
             content_type=ContentType.DASHBOARD.value,
-            error_type="ValidationError",
+            content_data=b"test_data",
             error_message="Validation failed",
-            session_id="test_session",
+            error_type="ValidationError",
+            retry_count=0,
             failed_at=datetime.now(UTC),
+            id="dlq-123",
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -372,7 +380,9 @@ class TestDeadLetterQueueRetry:
         # Assert
         assert result == success_result
         mock_repository.get_dead_letter_item.assert_called_once_with("dlq-123")
-        mock_restorer.restore_single.assert_called_once_with("456", ContentType.DASHBOARD)
+        mock_restorer.restore_single.assert_called_once_with(
+            content_id="456", content_type=ContentType.DASHBOARD
+        )
         mock_repository.delete_dead_letter_item.assert_called_once_with("dlq-123")
 
     def test_retry_should_fail_when_dlq_item_not_found(self, dlq, mock_repository, mock_restorer):
@@ -394,13 +404,15 @@ class TestDeadLetterQueueRetry:
         """Test retry() keeps item in DLQ when restoration fails again."""
         # Setup: DLQ item exists
         dlq_item = DeadLetterItem(
-            dlq_id="dlq-123",
+            session_id="test_session",
             content_id="456",
             content_type=ContentType.DASHBOARD.value,
-            error_type="ValidationError",
+            content_data=b"test_data",
             error_message="Validation failed",
-            session_id="test_session",
+            error_type="ValidationError",
+            retry_count=0,
             failed_at=datetime.now(UTC),
+            id="dlq-123",
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -429,13 +441,15 @@ class TestDeadLetterQueueRetry:
         """Test retry() handles exceptions from restore_single gracefully."""
         # Setup: DLQ item exists
         dlq_item = DeadLetterItem(
-            dlq_id="dlq-123",
+            session_id="test_session",
             content_id="456",
             content_type=ContentType.DASHBOARD.value,
-            error_type="ValidationError",
+            content_data=b"test_data",
             error_message="Validation failed",
-            session_id="test_session",
+            error_type="ValidationError",
+            retry_count=0,
             failed_at=datetime.now(UTC),
+            id="dlq-123",
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -459,7 +473,7 @@ class TestDeadLetterQueueClear:
         mock_repository.count_dead_letter_items.return_value = 5
 
         # Execute
-        count = dlq.clear()
+        count = dlq.clear(force=True)
 
         # Assert
         assert count == 5
@@ -475,7 +489,7 @@ class TestDeadLetterQueueClear:
         mock_repository.count_dead_letter_items.return_value = 3
 
         # Execute
-        count = dlq.clear(session_id="session_123")
+        count = dlq.clear(session_id="session_123", force=True)
 
         # Assert
         assert count == 3
@@ -489,7 +503,7 @@ class TestDeadLetterQueueClear:
         mock_repository.count_dead_letter_items.return_value = 2
 
         # Execute
-        count = dlq.clear(content_type=ContentType.DASHBOARD)
+        count = dlq.clear(content_type=ContentType.DASHBOARD, force=True)
 
         # Assert
         assert count == 2

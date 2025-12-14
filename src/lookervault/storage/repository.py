@@ -433,7 +433,7 @@ class SQLiteContentRepository:
                 """
                 SELECT id, content_type, name, owner_id, owner_email,
                        created_at, updated_at, synced_at, deleted_at,
-                       content_size, content_data
+                       content_size, content_data, folder_id
                 FROM content_items
                 WHERE id = ?
             """,
@@ -456,6 +456,7 @@ class SQLiteContentRepository:
                 deleted_at=datetime.fromisoformat(row["deleted_at"]) if row["deleted_at"] else None,
                 content_size=row["content_size"],
                 content_data=row["content_data"],
+                folder_id=row["folder_id"],
             )
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get content: {e}") from e
@@ -485,7 +486,7 @@ class SQLiteContentRepository:
             query = """
                 SELECT id, content_type, name, owner_id, owner_email,
                        created_at, updated_at, synced_at, deleted_at,
-                       content_size, content_data
+                       content_size, content_data, folder_id
                 FROM content_items
                 WHERE content_type = ?
             """
@@ -522,6 +523,7 @@ class SQLiteContentRepository:
                         else None,
                         content_size=row["content_size"],
                         content_data=row["content_data"],
+                        folder_id=row["folder_id"],
                     )
                 )
 
@@ -599,7 +601,11 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to delete content: {e}") from e
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> int:
-        """Save extraction checkpoint with thread-safe transaction control.
+        """Save or update extraction checkpoint with thread-safe transaction control.
+
+        Uses upsert (INSERT ... ON CONFLICT DO UPDATE) to make checkpoint saves idempotent.
+        If a checkpoint with the same (session_id, content_type, started_at) already exists,
+        it will be updated instead of creating a duplicate.
 
         Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
 
@@ -628,6 +634,11 @@ class SQLiteContentRepository:
                             session_id, content_type, checkpoint_data, started_at,
                             completed_at, item_count, error_message
                         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(session_id, content_type, started_at) DO UPDATE SET
+                            checkpoint_data = excluded.checkpoint_data,
+                            completed_at = excluded.completed_at,
+                            item_count = excluded.item_count,
+                            error_message = excluded.error_message
                     """,
                         (
                             checkpoint.session_id,
@@ -756,7 +767,11 @@ class SQLiteContentRepository:
         self._retry_on_busy(_update_operation)
 
     def create_session(self, session: ExtractionSession) -> None:
-        """Create new extraction session.
+        """Create or update extraction session.
+
+        Uses upsert (INSERT ... ON CONFLICT DO UPDATE) to make session creation idempotent.
+        If a session with the same id already exists, it will be updated instead of creating
+        a duplicate. The started_at field is preserved to maintain original session start time.
 
         Args:
             session: ExtractionSession object
@@ -774,6 +789,13 @@ class SQLiteContentRepository:
                     id, started_at, completed_at, status,
                     total_items, error_count, config, metadata
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    completed_at = excluded.completed_at,
+                    status = excluded.status,
+                    total_items = excluded.total_items,
+                    error_count = excluded.error_count,
+                    config = excluded.config,
+                    metadata = excluded.metadata
             """,
                 (
                     session.id,
@@ -1025,7 +1047,7 @@ class SQLiteContentRepository:
             query = f"""
                 SELECT id, content_type, name, owner_id, owner_email,
                        created_at, updated_at, synced_at, deleted_at,
-                       content_size, content_data
+                       content_size, content_data, folder_id
                 FROM content_items
                 WHERE content_type = ? AND folder_id IN ({placeholders})
             """
@@ -1063,6 +1085,7 @@ class SQLiteContentRepository:
                         else None,
                         content_size=row["content_size"],
                         content_data=row["content_data"],
+                        folder_id=row["folder_id"],
                     )
                 )
 
@@ -1093,7 +1116,7 @@ class SQLiteContentRepository:
                 """
                 SELECT id, content_type, name, owner_id, owner_email,
                        created_at, updated_at, synced_at, deleted_at,
-                       content_size, content_data
+                       content_size, content_data, folder_id
                 FROM content_items
                 WHERE deleted_at IS NOT NULL AND deleted_at < ?
                 ORDER BY deleted_at ASC
@@ -1120,6 +1143,7 @@ class SQLiteContentRepository:
                         else None,
                         content_size=row["content_size"],
                         content_data=row["content_data"],
+                        folder_id=row["folder_id"],
                     )
                 )
 
@@ -1156,7 +1180,11 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to hard delete items: {e}") from e
 
     def save_dead_letter_item(self, item: DeadLetterItem) -> int:
-        """Save failed restoration item to DLQ with thread-safe transaction control.
+        """Save or update failed restoration item to DLQ with thread-safe transaction control.
+
+        Uses upsert (INSERT ... ON CONFLICT DO UPDATE) to make DLQ saves idempotent.
+        If a DLQ entry with the same (session_id, content_id, content_type, retry_count)
+        already exists, it will be updated instead of creating a duplicate.
 
         Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
 
@@ -1186,6 +1214,13 @@ class SQLiteContentRepository:
                             error_message, error_type, stack_trace, retry_count,
                             failed_at, metadata
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(session_id, content_id, content_type, retry_count) DO UPDATE SET
+                            error_message = excluded.error_message,
+                            error_type = excluded.error_type,
+                            stack_trace = excluded.stack_trace,
+                            failed_at = excluded.failed_at,
+                            metadata = excluded.metadata,
+                            content_data = excluded.content_data
                     """,
                         (
                             item.session_id,
@@ -1610,7 +1645,11 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to clear mappings: {e}") from e
 
     def save_restoration_checkpoint(self, checkpoint: RestorationCheckpoint) -> int:
-        """Save restoration checkpoint with thread-safe transaction control.
+        """Save or update restoration checkpoint with thread-safe transaction control.
+
+        Uses upsert (INSERT ... ON CONFLICT DO UPDATE) to make checkpoint saves idempotent.
+        If a checkpoint with the same (session_id, content_type, started_at) already exists,
+        it will be updated instead of creating a duplicate.
 
         Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
 
@@ -1639,6 +1678,11 @@ class SQLiteContentRepository:
                             session_id, content_type, checkpoint_data, started_at,
                             completed_at, item_count, error_count
                         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(session_id, content_type, started_at) DO UPDATE SET
+                            checkpoint_data = excluded.checkpoint_data,
+                            completed_at = excluded.completed_at,
+                            item_count = excluded.item_count,
+                            error_count = excluded.error_count
                     """,
                         (
                             checkpoint.session_id,
@@ -1767,7 +1811,11 @@ class SQLiteContentRepository:
             raise StorageError(f"Failed to get restoration checkpoint: {e}") from e
 
     def create_restoration_session(self, session: RestorationSession) -> None:
-        """Create new restoration session with thread-safe transaction control.
+        """Create or update restoration session with thread-safe transaction control.
+
+        Uses upsert (INSERT ... ON CONFLICT DO UPDATE) to make session creation idempotent.
+        If a session with the same id already exists, it will be updated instead of creating
+        a duplicate. The started_at field is preserved to maintain original session start time.
 
         Uses BEGIN IMMEDIATE to prevent write-after-read deadlocks in parallel execution.
 
@@ -1795,6 +1843,16 @@ class SQLiteContentRepository:
                             source_instance, destination_instance,
                             config, metadata
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            completed_at = excluded.completed_at,
+                            status = excluded.status,
+                            total_items = excluded.total_items,
+                            success_count = excluded.success_count,
+                            error_count = excluded.error_count,
+                            source_instance = excluded.source_instance,
+                            destination_instance = excluded.destination_instance,
+                            config = excluded.config,
+                            metadata = excluded.metadata
                     """,
                         (
                             session.id,

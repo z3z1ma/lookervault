@@ -114,6 +114,7 @@ def run(
                     "id": item.id,
                     "name": item.name,
                     "owner_email": item.owner_email,
+                    "folder_id": item.folder_id,
                     "created_at": item.created_at.isoformat() if item.created_at else None,
                     "updated_at": item.updated_at.isoformat() if item.updated_at else None,
                     "synced_at": item.synced_at.isoformat() if item.synced_at else None,
@@ -126,8 +127,15 @@ def run(
             # Table format
             content_type_name = ContentType(ct).name.lower().capitalize()
             table = Table(title=f"{content_type_name}")
+
+            # Content types that support folder organization
+            folder_supported_types = {ContentType.DASHBOARD, ContentType.LOOK, ContentType.BOARD}
+            show_folder = ct in folder_supported_types
+
             table.add_column("ID", style="cyan")
             table.add_column("Name", style="white")
+            if show_folder:
+                table.add_column("Folder ID", style="magenta")
             table.add_column("Owner", style="yellow")
             table.add_column("Updated", style="green")
             table.add_column("Size", style="blue")
@@ -166,8 +174,12 @@ def run(
                 item_id = item.id.split("::")[-1][:20]
                 name = item.name[:40] + "..." if len(item.name) > 40 else item.name
                 owner = item.owner_email or "N/A"
+                folder = item.folder_id or "N/A"
 
-                table.add_row(item_id, name, owner, updated_str, size_str)
+                if show_folder:
+                    table.add_row(item_id, name, folder, owner, updated_str, size_str)
+                else:
+                    table.add_row(item_id, name, owner, updated_str, size_str)
 
             console.print(table)
 
