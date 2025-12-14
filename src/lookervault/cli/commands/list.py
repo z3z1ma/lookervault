@@ -8,6 +8,7 @@ import typer
 from rich.table import Table
 
 from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
+from lookervault.cli.types import parse_content_type
 from lookervault.exceptions import StorageError
 from lookervault.storage.models import ContentType
 from lookervault.storage.repository import SQLiteContentRepository
@@ -60,7 +61,7 @@ def run(
         repository = SQLiteContentRepository(db_path=db)
 
         # Parse content type
-        ct = _parse_content_type(content_type)
+        ct = parse_content_type(content_type)
 
         # Get total count before applying limit (for display purposes)
         total_count = repository.count_content(content_type=ct, include_deleted=False)
@@ -203,34 +204,3 @@ def run(
         print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during list operation")
         raise typer.Exit(1) from None
-
-
-def _parse_content_type(type_str: str) -> int:
-    """Parse content type string.
-
-    Args:
-        type_str: Content type name
-
-    Returns:
-        ContentType enum value
-
-    Raises:
-        typer.BadParameter: If invalid content type
-    """
-    type_name = type_str.strip().upper()
-
-    # Remove plural 's' if present
-    if type_name.endswith("S") and type_name != "SCHEDULES":
-        type_name = type_name[:-1]
-
-    # Special case mappings
-    if type_name == "SCHEDULE":
-        type_name = "SCHEDULED_PLAN"
-
-    try:
-        return ContentType[type_name].value
-    except KeyError:
-        available = ", ".join(ct.name.lower() for ct in ContentType)
-        raise typer.BadParameter(
-            f"Invalid content type: {type_str}. Available types: {available}"
-        ) from None

@@ -1,6 +1,6 @@
 # Quickstart Guide: Looker Content Extraction
 
-**Feature**: 001-looker-content-extraction
+**Feature**: 002-looker-content-extraction
 **Date**: 2025-12-13
 **Audience**: Developers and operators
 

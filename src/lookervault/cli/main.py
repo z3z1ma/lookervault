@@ -88,7 +88,11 @@ def extract(
     types: Annotated[
         str | None,
         typer.Option(
-            "--types", "-t", help="Comma-separated content types (e.g., 'dashboards,looks')"
+            "--types",
+            "-t",
+            help="Comma-separated content types to extract (e.g., 'dashboards,looks') or 'all' for everything. "
+            "Valid types: dashboard, look, lookml_model, explore, folder, board, user, group, role, "
+            "permission_set, model_set, scheduled_plan",
         ),
     ] = None,
     batch_size: Annotated[

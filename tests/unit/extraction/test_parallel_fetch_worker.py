@@ -3,8 +3,6 @@
 from datetime import UTC, datetime
 from unittest.mock import Mock, call
 
-import pytest
-
 from lookervault.config.models import ParallelConfig
 from lookervault.extraction.offset_coordinator import OffsetCoordinator
 from lookervault.extraction.orchestrator import ExtractionConfig
@@ -64,9 +62,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_basic_flow(self):
         """Test basic flow of parallel fetch worker."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         # Setup coordinator
         coordinator = OffsetCoordinator(stride=100)
@@ -101,9 +97,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_multiple_batches(self):
         """Test worker fetching multiple batches until end of data."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -132,9 +126,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_empty_results_immediately(self):
         """Test worker hitting end-of-data on first fetch."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -157,9 +149,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_claims_correct_offset_ranges(self):
         """Test worker claims sequential offset ranges."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=50)
         coordinator.set_total_workers(1)
@@ -216,9 +206,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_with_updated_after_filter(self):
         """Test worker passes updated_after filter to extract_range."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -246,9 +234,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_handles_api_errors_gracefully(self):
         """Test worker continues after API fetch errors."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -274,9 +260,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_handles_item_save_errors_gracefully(self):
         """Test worker continues after individual item save errors."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -311,9 +295,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_always_closes_connection(self):
         """Test worker always closes thread-local connection in finally block."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -355,9 +337,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_updates_metrics(self):
         """Test worker updates metrics correctly."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -382,9 +362,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_with_different_content_types(self):
         """Test worker handles different content types correctly."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)
@@ -421,9 +399,7 @@ class TestParallelFetchWorker:
 
     def test_parallel_fetch_worker_stops_on_partial_batch(self):
         """Test worker stops when receiving fewer items than limit."""
-        orchestrator, mock_extractor, mock_repository, _ = (
-            self.create_orchestrator_with_mocks()
-        )
+        orchestrator, mock_extractor, mock_repository, _ = self.create_orchestrator_with_mocks()
 
         coordinator = OffsetCoordinator(stride=100)
         coordinator.set_total_workers(1)

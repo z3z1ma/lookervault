@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
+from lookervault.cli.types import parse_content_types
 from lookervault.exceptions import StorageError
 from lookervault.storage.models import ContentType
 from lookervault.storage.repository import SQLiteContentRepository
@@ -47,7 +48,7 @@ def run(
         serializer = MsgpackSerializer()
 
         # Parse content types to verify
-        types_to_verify = _parse_content_types(content_type)
+        types_to_verify = parse_content_types(content_type)
 
         console.print(f"[cyan]Verifying content in {db}...[/cyan]\n")
 
@@ -134,37 +135,3 @@ def run(
         print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during verification")
         raise typer.Exit(1) from None
-
-
-def _parse_content_types(types_str: str | None) -> list[int]:
-    """Parse content type string.
-
-    Args:
-        types_str: Content type name or None for all
-
-    Returns:
-        List of ContentType enum values
-    """
-    if not types_str:
-        # Default to all content types
-        return [ct.value for ct in ContentType]
-
-    # Parse single type
-    type_name = types_str.strip().upper()
-
-    # Remove plural 's' if present
-    if type_name.endswith("S") and type_name != "SCHEDULES":
-        type_name = type_name[:-1]
-
-    # Special case mappings
-    if type_name == "SCHEDULE":
-        type_name = "SCHEDULED_PLAN"
-
-    try:
-        content_type = ContentType[type_name]
-        return [content_type.value]
-    except KeyError:
-        available = ", ".join(ct.name.lower() for ct in ContentType)
-        raise typer.BadParameter(
-            f"Invalid content type: {types_str}. Available types: {available}"
-        ) from None

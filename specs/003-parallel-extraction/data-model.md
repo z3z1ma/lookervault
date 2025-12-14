@@ -1,6 +1,6 @@
 # Data Model: Parallel Content Extraction
 
-**Feature**: 002-parallel-extraction
+**Feature**: 003-parallel-extraction
 **Date**: 2025-12-13
 **Purpose**: Define entities and their relationships for parallel extraction feature
 

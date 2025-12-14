@@ -1,6 +1,6 @@
 # Feature Specification: Looker Content Extraction System
 
-**Feature Branch**: `001-looker-content-extraction`
+**Feature Branch**: `002-looker-content-extraction`
 **Created**: 2025-12-13
 **Status**: Draft
 **Input**: User description: "We need to build the system and methods for actually pulling all content from Looker now, and we need to do that with a strong awareness of memory safety, retries, back-offs, progress tracking, and all things of that nature. We're going to be pulling this data into memory, and then serializing it to binary and storing it inside of SQLite. I'm open to extracting some top-level properties and storing that alongside it. But I want some binary representation of the raw object itself to make bi-directional serialization easier. We really need when we build the system to extract all of this content. We really really need to be able to restore the content faithfully - it's the most mission-critical part of the system. So while we're working on just the extraction right now, we need to be 100% certain in the path to writing that information back, and I don't know what that looks like today. There are tools like L Deploy (Looker Deploy) that can do something similar, so perhaps there's some prior art there that we need to look into."

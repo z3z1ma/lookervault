@@ -1,6 +1,6 @@
 # Feature Specification: Parallel Content Extraction
 
-**Feature Branch**: `002-parallel-extraction`
+**Feature Branch**: `003-parallel-extraction`
 **Created**: 2025-12-13
 **Status**: Draft
 **Input**: User description: "Now that we have the extraction feature working in Looker Vault, the next feature we must prioritize is performance. We need to make sure that we support parallelism through configurable thread pool size, and that when we're pooling data, there's some strategy to parallelize across threads. This is critical; it absolutely must be performant, but we're dealing with tens of thousands of pieces of customer content."

@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 
 from lookervault.cli.output import format_readiness_check_json, format_readiness_check_table
-from lookervault.cli.rich_logging import console, print_error
+from lookervault.cli.rich_logging import print_error
 from lookervault.config.validator import perform_readiness_check
 from lookervault.exceptions import ConfigError
 

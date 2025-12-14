@@ -1,6 +1,6 @@
 # Quickstart: Parallel Content Extraction
 
-**Feature**: 002-parallel-extraction
+**Feature**: 003-parallel-extraction
 **Date**: 2025-12-13
 **Status**: ✅ **IMPLEMENTED** - All phases complete
 **Audience**: Developers using or maintaining parallel extraction feature

@@ -1,7 +1,7 @@
 # Implementation Plan: Looker Content Extraction System
 
-**Branch**: `001-looker-content-extraction` | **Date**: 2025-12-13 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-looker-content-extraction/spec.md`
+**Branch**: `002-looker-content-extraction` | **Date**: 2025-12-13 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `/specs/002-looker-content-extraction/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
@@ -83,7 +83,7 @@ Build a robust content extraction system that retrieves all Looker artifacts (da
 ### Documentation (this feature)
 
 ```text
-specs/001-looker-content-extraction/
+specs/002-looker-content-extraction/
 ├── spec.md              # Feature specification
 ├── plan.md              # This file (/speckit.plan command output)
 ├── research.md          # Phase 0 output (/speckit.plan command)

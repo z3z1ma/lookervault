@@ -1,6 +1,6 @@
 # Research Findings: Looker Content Extraction System
 
-**Feature**: 001-looker-content-extraction
+**Feature**: 002-looker-content-extraction
 **Date**: 2025-12-13
 **Status**: Complete
 

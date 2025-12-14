@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
+from lookervault.cli.types import parse_content_types
 from lookervault.config.loader import load_config
 from lookervault.config.models import ParallelConfig
 from lookervault.exceptions import ConfigError, OrchestrationError
@@ -86,7 +87,7 @@ def run(
             raise typer.Exit(2)
 
         # Parse content types
-        content_types = _parse_content_types(types)
+        content_types = parse_content_types(types)
 
         # Create components
         looker_client = LookerClient(
@@ -273,43 +274,3 @@ def run(
             print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during extraction")
         raise typer.Exit(1) from None
-
-
-def _parse_content_types(types_str: str | None) -> list[int]:
-    """Parse comma-separated content types string.
-
-    Args:
-        types_str: Comma-separated content type names (e.g., "dashboards,looks")
-
-    Returns:
-        List of ContentType enum values
-
-    Raises:
-        typer.BadParameter: If invalid content type specified
-    """
-    if not types_str:
-        # Default to all content types
-        return [ct.value for ct in ContentType]
-
-    type_names = [t.strip().upper() for t in types_str.split(",")]
-    content_types = []
-
-    for type_name in type_names:
-        try:
-            # Remove plural 's' if present for matching
-            if type_name.endswith("S") and type_name != "SCHEDULES":
-                type_name = type_name[:-1]
-
-            # Special case mappings
-            if type_name == "SCHEDULE":
-                type_name = "SCHEDULED_PLAN"
-
-            content_type = ContentType[type_name]
-            content_types.append(content_type.value)
-        except KeyError:
-            available = ", ".join(ct.name.lower() for ct in ContentType)
-            raise typer.BadParameter(
-                f"Invalid content type: {type_name.lower()}. Available types: {available}"
-            ) from None
-
-    return content_types

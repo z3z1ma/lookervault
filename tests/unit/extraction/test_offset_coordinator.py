@@ -1,6 +1,7 @@
 """Unit tests for OffsetCoordinator."""
 
 import threading
+
 from lookervault.extraction.offset_coordinator import OffsetCoordinator
 
 
@@ -98,9 +99,7 @@ class TestOffsetCoordinator:
                     claimed_ranges.append((offset, limit))
 
         # Launch workers
-        threads = [
-            threading.Thread(target=worker_claim_ranges) for _ in range(num_workers)
-        ]
+        threads = [threading.Thread(target=worker_claim_ranges) for _ in range(num_workers)]
         for t in threads:
             t.start()
         for t in threads:
@@ -165,7 +164,9 @@ class TestOffsetCoordinator:
         assert len(completed) == num_workers
         assert coordinator.get_workers_done() == num_workers
         assert coordinator.all_workers_done()
-        assert coordinator.get_current_offset() == num_workers * 10 * 100  # 5 workers * 10 claims * 100 stride
+        assert (
+            coordinator.get_current_offset() == num_workers * 10 * 100
+        )  # 5 workers * 10 claims * 100 stride
 
     def test_set_total_workers(self):
         """Test setting total workers count."""

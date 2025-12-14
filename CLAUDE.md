@@ -144,13 +144,15 @@ uv run pytest
 All checks must pass before committing. If any check fails, fix the issues before proceeding with the commit.
 
 ## Active Technologies
-- Python 3.13 (per pyproject.toml) (001-looker-content-extraction)
-- SQLite database with binary blob storage + metadata columns (001-looker-content-extraction)
-- Python 3.13 + looker-sdk, typer, pydantic, tenacity, concurrent.futures (stdlib) (002-parallel-extraction)
-- SQLite (existing repository pattern) (002-parallel-extraction)
+- Python 3.13 (per pyproject.toml) (002-looker-content-extraction)
+- SQLite database with binary blob storage + metadata columns (002-looker-content-extraction)
+- Python 3.13 + looker-sdk, typer, pydantic, tenacity, concurrent.futures (stdlib) (003-parallel-extraction)
+- SQLite (existing repository pattern) (003-parallel-extraction)
+- Python 3.13 + looker-sdk (24.0.0+), typer, pydantic, tenacity, rich, msgspec (004-looker-restoration)
+- SQLite database (existing repository pattern with thread-local connections, BEGIN IMMEDIATE transactions) (004-looker-restoration)
 
 ## Recent Changes
-- 002-parallel-extraction: Added parallel content extraction with thread pool, adaptive rate limiting, and resume capability
+- 003-parallel-extraction: Added parallel content extraction with thread pool, adaptive rate limiting, and resume capability
 - 003-parallel-api-fetching: Parallelized Looker API calls using dynamic work stealing for 8-10x throughput improvement
 
 ## Parallel Content Extraction

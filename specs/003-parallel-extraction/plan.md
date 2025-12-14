@@ -1,7 +1,7 @@
 # Implementation Plan: Parallel Content Extraction
 
-**Branch**: `002-parallel-extraction` | **Date**: 2025-12-13 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/002-parallel-extraction/spec.md`
+**Branch**: `003-parallel-extraction` | **Date**: 2025-12-13 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `/specs/003-parallel-extraction/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
@@ -109,7 +109,7 @@ All constitutional principles satisfied. Parallel extraction is an optimization 
 ### Documentation (this feature)
 
 ```text
-specs/002-parallel-extraction/
+specs/003-parallel-extraction/
 ├── plan.md              # This file (/speckit.plan command output)
 ├── research.md          # Phase 0 output (/speckit.plan command)
 ├── data-model.md        # Phase 1 output (/speckit.plan command)

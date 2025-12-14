@@ -35,9 +35,7 @@ class TestExtractRange:
         )
 
         # Verify API call
-        mock_sdk.search_dashboards.assert_called_once_with(
-            fields="id,title", limit=100, offset=0
-        )
+        mock_sdk.search_dashboards.assert_called_once_with(fields="id,title", limit=100, offset=0)
 
         # Verify results
         assert len(results) == 3
@@ -55,9 +53,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.LOOK, offset=200, limit=50
-        )
+        results = extractor.extract_range(content_type=ContentType.LOOK, offset=200, limit=50)
 
         # Verify API call with correct offset
         mock_sdk.search_looks.assert_called_once_with(fields=None, limit=50, offset=200)
@@ -74,9 +70,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.USER, offset=500, limit=100
-        )
+        results = extractor.extract_range(content_type=ContentType.USER, offset=500, limit=100)
 
         mock_sdk.all_users.assert_called_once_with(fields=None, limit=100, offset=500)
         assert len(results) == 25
@@ -92,9 +86,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.GROUP, offset=0, limit=100
-        )
+        results = extractor.extract_range(content_type=ContentType.GROUP, offset=0, limit=100)
 
         mock_sdk.all_groups.assert_called_once_with(fields=None, limit=100, offset=0)
         assert len(results) == 10
@@ -110,9 +102,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.ROLE, offset=100, limit=50
-        )
+        results = extractor.extract_range(content_type=ContentType.ROLE, offset=100, limit=50)
 
         mock_sdk.search_roles.assert_called_once_with(fields=None, limit=50, offset=100)
         assert len(results) == 5
@@ -146,9 +136,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.DASHBOARD, offset=970, limit=100
-        )
+        results = extractor.extract_range(content_type=ContentType.DASHBOARD, offset=970, limit=100)
 
         assert len(results) == 30
 
@@ -223,25 +211,19 @@ class TestExtractRange:
             ExtractionError,
             match="Failed to extract range for LOOKML_MODEL.*Content type LOOKML_MODEL does not support range extraction",
         ):
-            extractor.extract_range(
-                content_type=ContentType.LOOKML_MODEL, offset=0, limit=100
-            )
+            extractor.extract_range(content_type=ContentType.LOOKML_MODEL, offset=0, limit=100)
 
         with pytest.raises(
             ExtractionError,
             match="Failed to extract range for FOLDER.*Content type FOLDER does not support range extraction",
         ):
-            extractor.extract_range(
-                content_type=ContentType.FOLDER, offset=0, limit=100
-            )
+            extractor.extract_range(content_type=ContentType.FOLDER, offset=0, limit=100)
 
         with pytest.raises(
             ExtractionError,
             match="Failed to extract range for BOARD.*Content type BOARD does not support range extraction",
         ):
-            extractor.extract_range(
-                content_type=ContentType.BOARD, offset=0, limit=100
-            )
+            extractor.extract_range(content_type=ContentType.BOARD, offset=0, limit=100)
 
     def test_extract_range_api_error_handling(self):
         """Test extract_range handles API errors correctly."""
@@ -258,9 +240,7 @@ class TestExtractRange:
             ExtractionError,
             match="Failed to extract range for DASHBOARD.*offset=0.*limit=100",
         ):
-            extractor.extract_range(
-                content_type=ContentType.DASHBOARD, offset=0, limit=100
-            )
+            extractor.extract_range(content_type=ContentType.DASHBOARD, offset=0, limit=100)
 
     def test_extract_range_none_results(self):
         """Test extract_range handles None API response."""
@@ -272,9 +252,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.DASHBOARD, offset=0, limit=100
-        )
+        results = extractor.extract_range(content_type=ContentType.DASHBOARD, offset=0, limit=100)
 
         # Should return empty list for None results
         assert results == []
@@ -296,18 +274,14 @@ class TestExtractRange:
         ]
 
         for offset, limit in test_cases:
-            mock_sdk.search_dashboards.return_value = [
-                Mock(id=str(i)) for i in range(limit)
-            ]
+            mock_sdk.search_dashboards.return_value = [Mock(id=str(i)) for i in range(limit)]
 
             results = extractor.extract_range(
                 content_type=ContentType.DASHBOARD, offset=offset, limit=limit
             )
 
             # Verify API call
-            mock_sdk.search_dashboards.assert_called_with(
-                fields=None, limit=limit, offset=offset
-            )
+            mock_sdk.search_dashboards.assert_called_with(fields=None, limit=limit, offset=offset)
 
             # Verify results
             assert len(results) == limit
@@ -336,9 +310,7 @@ class TestExtractRange:
         ]
 
         for content_type, api_method in supported_types:
-            results = extractor.extract_range(
-                content_type=content_type, offset=0, limit=100
-            )
+            results = extractor.extract_range(content_type=content_type, offset=0, limit=100)
 
             # Verify correct API method was called
             getattr(mock_sdk, api_method).assert_called()
@@ -365,9 +337,7 @@ class TestExtractRange:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        results = extractor.extract_range(
-            content_type=ContentType.DASHBOARD, offset=0, limit=100
-        )
+        results = extractor.extract_range(content_type=ContentType.DASHBOARD, offset=0, limit=100)
 
         # Verify SDK object was converted to dict
         assert len(results) == 1

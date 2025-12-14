@@ -1,6 +1,6 @@
 # Tasks: Looker Content Extraction System
 
-**Input**: Design documents from `/specs/001-looker-content-extraction/`
+**Input**: Design documents from `/specs/002-looker-content-extraction/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/internal-api.md
 
 **Tests**: Not explicitly requested in specification - tests are optional for this MVP

@@ -1,6 +1,6 @@
 # Research: Parallel Content Extraction
 
-**Feature**: 002-parallel-extraction
+**Feature**: 003-parallel-extraction
 **Date**: 2025-12-13
 **Purpose**: Resolve technical decisions for implementing parallel extraction with 1-50 worker threads
 

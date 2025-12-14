@@ -1,6 +1,6 @@
 # Tasks: Parallel Content Extraction
 
-**Input**: Design documents from `/specs/002-parallel-extraction/`
+**Input**: Design documents from `/specs/003-parallel-extraction/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
 
 **Tests**: This feature does NOT include explicit test generation tasks. Testing will be done through existing pytest framework after implementation.
