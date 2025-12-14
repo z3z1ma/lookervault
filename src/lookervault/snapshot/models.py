@@ -6,6 +6,67 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, computed_field, field_validator
 
+# Valid GCS regions (as of 2025)
+# Source: https://cloud.google.com/storage/docs/locations
+VALID_GCS_REGIONS = {
+    # North America
+    "northamerica-northeast1",  # Montréal
+    "northamerica-northeast2",  # Toronto
+    "us-central1",  # Iowa
+    "us-east1",  # South Carolina
+    "us-east4",  # Northern Virginia
+    "us-east5",  # Columbus
+    "us-south1",  # Dallas
+    "us-west1",  # Oregon
+    "us-west2",  # Los Angeles
+    "us-west3",  # Salt Lake City
+    "us-west4",  # Las Vegas
+    # South America
+    "southamerica-east1",  # São Paulo
+    "southamerica-west1",  # Santiago
+    # Europe
+    "europe-central2",  # Warsaw
+    "europe-north1",  # Finland
+    "europe-southwest1",  # Madrid
+    "europe-west1",  # Belgium
+    "europe-west2",  # London
+    "europe-west3",  # Frankfurt
+    "europe-west4",  # Netherlands
+    "europe-west6",  # Zürich
+    "europe-west8",  # Milan
+    "europe-west9",  # Paris
+    "europe-west10",  # Berlin
+    "europe-west12",  # Turin
+    # Asia Pacific
+    "asia-east1",  # Taiwan
+    "asia-east2",  # Hong Kong
+    "asia-northeast1",  # Tokyo
+    "asia-northeast2",  # Osaka
+    "asia-northeast3",  # Seoul
+    "asia-south1",  # Mumbai
+    "asia-south2",  # Delhi
+    "asia-southeast1",  # Singapore
+    "asia-southeast2",  # Jakarta
+    # Australia
+    "australia-southeast1",  # Sydney
+    "australia-southeast2",  # Melbourne
+    # Middle East
+    "me-central1",  # Doha
+    "me-west1",  # Tel Aviv
+    # Africa
+    "africa-south1",  # Johannesburg
+}
+
+# Valid GCS multi-regions
+VALID_GCS_MULTI_REGIONS = {
+    "us",  # Multi-region: US
+    "eu",  # Multi-region: EU
+    "asia",  # Multi-region: Asia
+}
+
+# Combined set of all valid locations
+VALID_GCS_LOCATIONS = VALID_GCS_REGIONS | VALID_GCS_MULTI_REGIONS
+
 
 class BackupTag(str, Enum):
     """Tags for categorizing backup snapshots."""
@@ -124,14 +185,77 @@ class GCSStorageProvider(BaseModel):
     @field_validator("bucket_name")
     @classmethod
     def validate_bucket_name(cls, v: str) -> str:
-        """Validate GCS bucket name format."""
+        """Validate GCS bucket name format according to Google Cloud Storage naming rules.
+
+        References:
+            https://cloud.google.com/storage/docs/buckets#naming
+        """
+        import re
+
         if not v:
             raise ValueError("Bucket name cannot be empty")
-        if not v.replace("-", "").replace("_", "").isalnum():
+
+        # Length constraints
+        if len(v) < 3:
+            raise ValueError("Bucket name must be at least 3 characters")
+        if len(v) > 63:
+            raise ValueError("Bucket name must not exceed 63 characters")
+
+        # Character constraints - must contain only lowercase letters, numbers, hyphens, underscores, and periods
+        if not re.match(r"^[a-z0-9._-]+$", v):
             raise ValueError(
-                "Bucket name must contain only lowercase letters, numbers, hyphens, and underscores"
+                "Bucket name must contain only lowercase letters, numbers, hyphens, underscores, and periods"
             )
+
+        # Must start and end with alphanumeric
+        if not v[0].isalnum() or not v[-1].isalnum():
+            raise ValueError("Bucket name must start and end with a letter or number")
+
+        # Cannot contain consecutive periods
+        if ".." in v:
+            raise ValueError("Bucket name cannot contain consecutive periods")
+
+        # Cannot be formatted as IP address
+        if re.match(r"^\d+\.\d+\.\d+\.\d+$", v):
+            raise ValueError("Bucket name cannot be formatted as an IP address")
+
+        # Cannot start with "goog" prefix
+        if v.startswith("goog"):
+            raise ValueError('Bucket name cannot start with "goog" prefix')
+
+        # Cannot contain "google"
+        if "google" in v.lower():
+            raise ValueError('Bucket name cannot contain "google"')
+
         return v.lower()
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, v: str) -> str:
+        """Validate GCS region/location code.
+
+        References:
+            https://cloud.google.com/storage/docs/locations
+        """
+        if not v:
+            raise ValueError("Region cannot be empty")
+
+        region_lower = v.lower()
+
+        if region_lower in VALID_GCS_LOCATIONS:
+            return region_lower
+
+        # Provide helpful error message with suggestions
+        suggestions = [r for r in VALID_GCS_LOCATIONS if region_lower in r or r in region_lower]
+        if suggestions:
+            raise ValueError(
+                f"Invalid GCS region '{v}'. Did you mean one of: {', '.join(sorted(suggestions)[:3])}?"
+            )
+
+        raise ValueError(
+            f"Invalid GCS region '{v}'. Must be a valid GCS region or multi-region "
+            f"(e.g., 'us-central1', 'europe-west1', 'us', 'eu', 'asia')"
+        )
 
     @field_validator("storage_class")
     @classmethod

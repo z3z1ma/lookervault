@@ -480,3 +480,117 @@ def validate_safety_threshold(
             f"  1. Adjust retention policy to retain more snapshots\n"
             f"  2. Use --force flag to override this safety check (DANGEROUS)\n"
         )
+
+
+@retry(
+    retry=retry_if_exception_type((GoogleAPICallError,)),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    reraise=True,
+)
+def delete_snapshot(
+    client: storage.Client,
+    bucket_name: str,
+    snapshot: SnapshotMetadata,
+    audit_logger: AuditLogger | None = None,
+    reason: str = "manual_deletion",
+    dry_run: bool = False,
+) -> bool:
+    """
+    Delete a single snapshot from GCS bucket.
+
+    Args:
+        client: Authenticated GCS storage client
+        bucket_name: GCS bucket name
+        snapshot: Snapshot metadata to delete
+        audit_logger: Optional audit logger for recording deletion
+        reason: Reason for deletion (for audit log)
+        dry_run: If True, skip actual deletion (preview only)
+
+    Returns:
+        True if deletion succeeded or was skipped (dry run), False if failed
+
+    Raises:
+        RuntimeError: If deletion fails after retries
+
+    Error Handling:
+        - Network errors: Retry with exponential backoff
+        - Protected snapshots (403 Forbidden): Raise RuntimeError with helpful message
+        - Snapshot not found: Log warning and return True (already deleted)
+        - Other errors: Raise RuntimeError
+    """
+    blob_name = snapshot.filename
+
+    try:
+        if dry_run:
+            logger.info(f"[DRY RUN] Would delete: {blob_name}")
+            return True
+
+        # Delete blob from GCS
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        # Check if blob exists before attempting deletion
+        if not blob.exists():
+            logger.warning(f"Snapshot not found (may have been deleted externally): {blob_name}")
+            return True
+
+        # Attempt deletion
+        blob.delete()
+
+        logger.info(f"Deleted snapshot: {blob_name} ({snapshot.size_mb} MB)")
+
+        # Audit log successful deletion
+        if audit_logger:
+            audit_logger.log_deletion(
+                snapshot,
+                reason=reason,
+                success=True,
+            )
+
+        return True
+
+    except Forbidden as e:
+        # Protected snapshot (e.g., object lock, retention policy)
+        error_msg = f"Cannot delete protected snapshot: {blob_name}\n\nGCS protection enabled: {e}"
+        logger.error(error_msg)
+
+        if audit_logger:
+            audit_logger.log_deletion(
+                snapshot,
+                reason=reason,
+                success=False,
+                error_message=f"Protected by GCS: {str(e)}",
+            )
+
+        raise RuntimeError(error_msg) from e
+
+    except GoogleAPICallError as e:
+        # Network or API error - will be retried by tenacity
+        error_msg = f"Failed to delete {blob_name}: {e}"
+        logger.error(error_msg)
+
+        if audit_logger:
+            audit_logger.log_deletion(
+                snapshot,
+                reason=reason,
+                success=False,
+                error_message=str(e),
+            )
+
+        raise RuntimeError(error_msg) from e
+
+    except Exception as e:
+        # Unexpected error
+        error_msg = f"Unexpected error deleting {blob_name}: {e}"
+        logger.error(error_msg)
+
+        if audit_logger:
+            audit_logger.log_deletion(
+                snapshot,
+                reason=reason,
+                success=False,
+                error_message=str(e),
+            )
+
+        raise RuntimeError(error_msg) from e

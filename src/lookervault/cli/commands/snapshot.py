@@ -645,11 +645,243 @@ def delete(
     snapshot_ref: str = typer.Argument(..., help="Snapshot reference (index or timestamp)"),
     force: bool = typer.Option(False, help="Skip confirmation prompt"),
     dry_run: bool = typer.Option(False, help="Preview deletion without executing"),
-    json: bool = typer.Option(False, "--json", help="Output results as JSON"),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON"),
+    config: Path | None = typer.Option(None, help="Path to config file"),
+    verbose: bool = typer.Option(False, help="Enable verbose logging"),
+    quiet: bool = typer.Option(False, help="Suppress all non-error output"),
 ) -> None:
-    """Delete snapshot from Google Cloud Storage."""
-    typer.echo("TODO: Implement delete command")
-    raise typer.Exit(1)
+    """Delete snapshot from Google Cloud Storage.
+
+    This command deletes a specific snapshot from Google Cloud Storage. The snapshot
+    is moved to GCS's soft delete retention (7 days) before permanent deletion.
+
+    SNAPSHOT_REF can be either:
+        - Sequential index (e.g., "1" for most recent, "2" for second-most recent)
+        - Timestamp in ISO format (e.g., "2025-12-14T10:30:00")
+
+    Examples:
+        # Preview deletion (dry run)
+        lookervault snapshot delete 1 --dry-run
+
+        # Delete most recent snapshot with confirmation
+        lookervault snapshot delete 1
+
+        # Delete by timestamp without confirmation
+        lookervault snapshot delete 2025-12-14T10:30:00 --force
+
+        # Delete with JSON output (for scripting)
+        lookervault snapshot delete 1 --json --force
+
+    Exit Codes:
+        0: Deletion successful
+        1: Deletion failed (network error, authentication error, etc.)
+        2: Validation error (invalid snapshot reference, etc.)
+    """
+    # Configure logging
+    if quiet:
+        log_level = logging.ERROR
+    elif verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
+    configure_rich_logging(log_level)
+
+    try:
+        # Load configuration
+        try:
+            cfg = load_config(config)
+        except ConfigError as e:
+            print_error(f"Configuration error: {e}")
+            raise typer.Exit(EXIT_VALIDATION_ERROR)
+
+        # Validate snapshot configuration exists
+        if not cfg.snapshot:
+            print_error(
+                "Snapshot configuration not found in lookervault.toml\n\n"
+                "Add snapshot configuration:\n"
+                "[snapshot]\n"
+                'bucket_name = "lookervault-backups"\n'
+                'region = "us-central1"\n'
+            )
+            raise typer.Exit(EXIT_VALIDATION_ERROR)
+
+        snapshot_config = cfg.snapshot
+        provider = snapshot_config.provider
+
+        # Import delete functions (lazy import to avoid circular dependencies)
+        from datetime import datetime
+
+        from lookervault.snapshot.client import create_storage_client, validate_bucket_access
+        from lookervault.snapshot.lister import (
+            get_snapshot_by_index,
+            get_snapshot_by_timestamp,
+        )
+        from lookervault.snapshot.retention import AuditLogger, delete_snapshot
+
+        try:
+            # Create GCS client
+            client = create_storage_client(project_id=provider.project_id)
+
+            # Validate bucket access
+            validate_bucket_access(client, provider.bucket_name)
+
+            # Parse snapshot reference (index or timestamp)
+            snapshot = None
+            try:
+                # Try parsing as integer index first
+                index = int(snapshot_ref)
+                snapshot = get_snapshot_by_index(
+                    client=client,
+                    bucket_name=provider.bucket_name,
+                    index=index,
+                    prefix=provider.prefix,
+                )
+            except ValueError:
+                # Not an integer, try parsing as timestamp
+                try:
+                    # Try parsing as ISO timestamp
+                    timestamp = datetime.fromisoformat(snapshot_ref.replace("Z", "+00:00"))
+                    snapshot = get_snapshot_by_timestamp(
+                        client=client,
+                        bucket_name=provider.bucket_name,
+                        timestamp=timestamp,
+                        filename_prefix=provider.filename_prefix,
+                        prefix=provider.prefix,
+                    )
+                except ValueError:
+                    # Invalid snapshot reference
+                    print_error(
+                        f"Invalid snapshot reference: '{snapshot_ref}'\n\n"
+                        f"SNAPSHOT_REF must be either:\n"
+                        f"  - Sequential index (e.g., '1', '2', '3')\n"
+                        f"  - ISO timestamp (e.g., '2025-12-14T10:30:00')\n\n"
+                        f"Run 'lookervault snapshot list' to see available snapshots."
+                    )
+                    raise typer.Exit(EXIT_VALIDATION_ERROR)
+
+            # Display snapshot metadata
+            if not json_output and not quiet:
+                console.print(f"\n[bold]Snapshot {snapshot.sequential_index}[/bold]")
+                console.print("─" * 60)
+                console.print(f"  Filename:   {snapshot.filename.split('/')[-1]}")
+                console.print(
+                    f"  Timestamp:  {snapshot.timestamp.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                )
+                console.print(
+                    f"  Size:       {snapshot.size_mb} MB ({snapshot.size_bytes:,} bytes)"
+                )
+                console.print(f"  Age:        {_format_age(snapshot.age_days)}")
+                console.print(f"  Location:   {snapshot.gcs_path}")
+                console.print()
+
+            # Dry run preview
+            if dry_run:
+                if json_output:
+                    output = {
+                        "success": True,
+                        "snapshot": {
+                            "index": snapshot.sequential_index,
+                            "filename": snapshot.filename.split("/")[-1],
+                            "timestamp": snapshot.timestamp.isoformat(),
+                            "size_bytes": snapshot.size_bytes,
+                        },
+                        "dry_run": True,
+                        "deleted": False,
+                    }
+                    console.print_json(data=output)
+                elif not quiet:
+                    console.print("[yellow][DRY RUN] Preview mode - no actual deletion[/yellow]")
+                    console.print(
+                        f"\nThis would delete snapshot {snapshot.sequential_index} "
+                        f"({snapshot.size_mb} MB)"
+                    )
+                    console.print(
+                        "\nTo execute deletion, run: "
+                        f"[cyan]lookervault snapshot delete {snapshot_ref} [/cyan]"
+                    )
+                raise typer.Exit(EXIT_SUCCESS)
+
+            # Confirmation prompt (unless --force or --json)
+            if not force and not json_output:
+                console.print()
+                confirmed = typer.confirm(
+                    f"Delete snapshot {snapshot.sequential_index} ({snapshot.size_mb} MB)?",
+                    default=False,
+                )
+                if not confirmed:
+                    console.print("\n[yellow]Deletion cancelled.[/yellow]")
+                    raise typer.Exit(EXIT_SUCCESS)
+
+            # Initialize audit logger
+            audit_logger = AuditLogger(
+                log_path=snapshot_config.audit_log_path,
+                gcs_bucket=snapshot_config.audit_gcs_bucket,
+            )
+
+            # Execute deletion
+            if not json_output and not quiet:
+                console.print("\n[bold]Deleting snapshot...[/bold]")
+
+            success = delete_snapshot(
+                client=client,
+                bucket_name=provider.bucket_name,
+                snapshot=snapshot,
+                audit_logger=audit_logger,
+                reason="manual_deletion",
+                dry_run=False,
+            )
+
+            # Output results
+            if json_output:
+                output = {
+                    "success": success,
+                    "snapshot": {
+                        "index": snapshot.sequential_index,
+                        "filename": snapshot.filename.split("/")[-1],
+                        "timestamp": snapshot.timestamp.isoformat(),
+                        "size_bytes": snapshot.size_bytes,
+                    },
+                    "dry_run": False,
+                    "deleted": success,
+                }
+                console.print_json(data=output)
+            elif not quiet:
+                console.print()
+                console.print("[bold green]✓[/bold green] Snapshot deleted successfully!")
+                console.print(f"  Snapshot:    {snapshot.filename.split('/')[-1]}")
+                console.print(f"  Size freed:  {snapshot.size_mb} MB")
+                console.print()
+                console.print(
+                    "[dim]Note: GCS soft delete enabled. Snapshot can be recovered within 7 days.[/dim]"
+                )
+                console.print(
+                    f"[dim]Run 'gcloud storage objects list --soft-deleted gs://{provider.bucket_name}/{provider.prefix}' to view.[/dim]"
+                )
+                console.print(f"\n[dim]Audit log: {snapshot_config.audit_log_path}[/dim]")
+
+            raise typer.Exit(EXIT_SUCCESS)
+
+        except typer.Exit:
+            # Re-raise exit exceptions (don't catch our own exits!)
+            raise
+
+        except RuntimeError as e:
+            # Deletion errors, authentication, or bucket access errors
+            print_error(str(e))
+            raise typer.Exit(EXIT_GENERAL_ERROR)
+
+        except Exception as e:
+            logger.exception("Unexpected error during delete operation")
+            print_error(f"Unexpected error: {e}")
+            raise typer.Exit(EXIT_GENERAL_ERROR)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        logger.exception("Fatal error")
+        print_error(f"Fatal error: {e}")
+        raise typer.Exit(EXIT_GENERAL_ERROR)
 
 
 @app.command()

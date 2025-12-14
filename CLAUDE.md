@@ -150,10 +150,11 @@ All checks must pass before committing. If any check fails, fix the issues befor
 - SQLite (existing repository pattern) (003-parallel-extraction)
 - Python 3.13 + looker-sdk (24.0.0+), typer, pydantic, tenacity, rich, msgspec (004-looker-restoration)
 - SQLite database (existing repository pattern with thread-local connections, BEGIN IMMEDIATE transactions) (004-looker-restoration)
-- Python 3.13 + google-cloud-storage (GCS SDK), typer (CLI), rich (UI/progress), tenacity (retry logic), pydantic (config validation) (005-cloud-snapshot-storage)
+- Python 3.13 + google-cloud-storage (GCS SDK), google-crc32c (checksum verification), typer (CLI), rich (UI/progress), tenacity (retry logic), pydantic (config validation) (005-cloud-snapshot-storage)
 - Google Cloud Storage (GCS) buckets for snapshot storage; existing SQLite database for local operations (005-cloud-snapshot-storage)
 
 ## Recent Changes
+- 005-cloud-snapshot-storage: Added cloud snapshot management with GCS integration, automated retention policies, and interactive snapshot selection UI
 - 004-looker-restoration: Added Looker content restoration with dependency ordering, parallel workers, DLQ error recovery, and checkpoint-based resume
 - 003-parallel-extraction: Added parallel content extraction with thread pool, adaptive rate limiting, and resume capability
 - 003-parallel-api-fetching: Parallelized Looker API calls using dynamic work stealing for 8-10x throughput improvement

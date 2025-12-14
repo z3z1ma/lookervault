@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import google_crc32c
+from google.api_core import exceptions as api_exceptions
 from google.api_core import retry
+from google.cloud import exceptions as gcs_exceptions
 from google.cloud import storage
 from rich.progress import (
     BarColumn,
@@ -241,15 +243,57 @@ def download_snapshot(
     blob = bucket.blob(snapshot.filename)
 
     # Check if blob exists
-    if not blob.exists():
+    try:
+        if not blob.exists():
+            raise RuntimeError(
+                f"Snapshot not found in GCS: {snapshot.gcs_path}\n\n"
+                f"The snapshot may have been deleted or moved.\n"
+                f"Run 'lookervault snapshot list' to see available snapshots."
+            )
+    except (gcs_exceptions.Forbidden, gcs_exceptions.Unauthorized) as e:
         raise RuntimeError(
-            f"Snapshot not found in GCS: {snapshot.gcs_path}\n\n"
-            f"The snapshot may have been deleted or moved.\n"
-            f"Run 'lookervault snapshot list' to see available snapshots."
-        )
+            f"Permission denied when accessing snapshot in GCS bucket '{snapshot.gcs_bucket}'.\n\n"
+            f"Your credentials lack permission to read objects.\n\n"
+            f"Required permissions:\n"
+            f"  - storage.objects.get\n\n"
+            f"Solutions:\n"
+            f"  1. Grant Storage Object Viewer role:\n"
+            f"     gcloud storage buckets add-iam-policy-binding gs://{snapshot.gcs_bucket} \\\n"
+            f"       --member='serviceAccount:YOUR_SA@PROJECT.iam.gserviceaccount.com' \\\n"
+            f"       --role='roles/storage.objectViewer'\n\n"
+            f"  2. Verify current permissions:\n"
+            f"     gcloud storage buckets get-iam-policy gs://{snapshot.gcs_bucket}\n\n"
+            f"  Error details: {e}\n"
+        ) from e
+    except Exception as e:
+        error_msg = str(e).lower()
+        if (
+            "connection" in error_msg
+            or "timeout" in error_msg
+            or "network" in error_msg
+            or "dns" in error_msg
+        ):
+            raise RuntimeError(
+                f"Network error while checking snapshot existence in GCS.\n\n"
+                f"Common causes:\n"
+                f"  - Network connectivity issues\n"
+                f"  - Firewall blocking Google Cloud APIs\n"
+                f"  - DNS resolution problems\n\n"
+                f"Solutions:\n"
+                f"  1. Test connectivity to Google Cloud:\n"
+                f"     curl -I https://storage.googleapis.com\n\n"
+                f"  2. Retry the download - network issues are often transient\n\n"
+                f"  3. Verify firewall allows HTTPS (port 443) to Google Cloud APIs\n\n"
+                f"  Error details: {e}\n"
+            ) from e
+        raise
 
     # Reload to get latest metadata
-    blob.reload()
+    try:
+        blob.reload()
+    except Exception as e:
+        logger.warning(f"Failed to reload blob metadata: {e}")
+        logger.warning("Proceeding with download using snapshot metadata")
 
     # Determine if file is compressed
     is_compressed = snapshot.content_encoding == "gzip" or snapshot.filename.endswith(".gz")
@@ -281,21 +325,108 @@ def download_snapshot(
             progress = None
             task_id = None
 
-        # Download blob to file
-        with download_path.open("wb") as f:
-            # Note: blob.download_to_file doesn't support progress callbacks
-            # so we download in chunks manually
-            blob_bytes = blob.download_as_bytes(retry=PRODUCTION_RETRY)
-            f.write(blob_bytes)
+        # Download blob to file with chunked streaming for progress tracking
+        bytes_downloaded = 0
+        try:
+            with download_path.open("wb") as f:
+                # Download in chunks to track progress
+                chunk_size = CHUNK_SIZE
 
-            # Update progress (download complete at this point)
-            if progress and task_id is not None:
-                progress.update(task_id, completed=download_size)
+                for start in range(0, download_size, chunk_size):
+                    end = min(start + chunk_size - 1, download_size - 1)
 
-        if progress:
-            progress.stop()
+                    # Download chunk using byte range
+                    chunk_bytes = blob.download_as_bytes(
+                        start=start, end=end + 1, retry=PRODUCTION_RETRY
+                    )
+                    f.write(chunk_bytes)
+                    bytes_downloaded += len(chunk_bytes)
 
-        logger.info(f"Download complete: {download_path}")
+                    # Update progress
+                    if progress and task_id is not None:
+                        progress.update(task_id, advance=len(chunk_bytes))
+
+            if progress:
+                progress.stop()
+
+            logger.info(f"Download complete: {download_path}")
+
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if progress:
+                progress.stop()
+            raise OSError(
+                f"Network error during download from GCS.\n\n"
+                f"Download failed after downloading {bytes_downloaded:,} of {download_size:,} bytes.\n\n"
+                f"Common causes:\n"
+                f"  - Network connectivity lost during download\n"
+                f"  - Download timeout (files >{download_size // 1024 // 1024}MB may take longer)\n"
+                f"  - Firewall blocking persistent connections to Google Cloud\n"
+                f"  - VPN disconnected during download\n\n"
+                f"Solutions:\n"
+                f"  1. Retry the download - it will resume from where it failed\n"
+                f"  2. Check network stability:\n"
+                f"     ping -c 5 storage.googleapis.com\n\n"
+                f"  3. Verify firewall allows outbound HTTPS (port 443)\n\n"
+                f"  4. If using VPN/proxy, ensure stable connection during download\n\n"
+                f"  5. For large files, consider increasing timeout in code\n\n"
+                f"  Error details: {e}\n"
+            ) from e
+
+        except gcs_exceptions.TooManyRequests as e:
+            if progress:
+                progress.stop()
+            raise OSError(
+                f"Rate limit exceeded during download from GCS.\n\n"
+                f"You have exceeded the API rate limit for Google Cloud Storage.\n\n"
+                f"Solutions:\n"
+                f"  1. Wait a few minutes and retry the download\n\n"
+                f"  2. Check your GCS quota limits:\n"
+                f"     https://console.cloud.google.com/apis/api/storage.googleapis.com/quotas\n\n"
+                f"  3. If downloads are frequent, consider requesting quota increase:\n"
+                f"     https://cloud.google.com/docs/quota\n\n"
+                f"  4. Implement exponential backoff between downloads\n\n"
+                f"  Error details: {e}\n"
+            ) from e
+
+        except (gcs_exceptions.Forbidden, gcs_exceptions.Unauthorized) as e:
+            if progress:
+                progress.stop()
+            raise RuntimeError(
+                f"Permission denied during download from GCS bucket '{snapshot.gcs_bucket}'.\n\n"
+                f"Your credentials lack permission to read objects.\n\n"
+                f"Required permissions:\n"
+                f"  - storage.objects.get\n\n"
+                f"Solutions:\n"
+                f"  1. Grant Storage Object Viewer role:\n"
+                f"     gcloud storage buckets add-iam-policy-binding gs://{snapshot.gcs_bucket} \\\n"
+                f"       --member='serviceAccount:YOUR_SA@PROJECT.iam.gserviceaccount.com' \\\n"
+                f"       --role='roles/storage.objectViewer'\n\n"
+                f"  2. Verify current permissions:\n"
+                f"     gcloud storage buckets get-iam-policy gs://{snapshot.gcs_bucket}\n\n"
+                f"  Error details: {e}\n"
+            ) from e
+
+        except api_exceptions.RetryError as e:
+            if progress:
+                progress.stop()
+            raise OSError(
+                f"Download failed after multiple retry attempts.\n\n"
+                f"The download was retried multiple times but continued to fail.\n\n"
+                f"Common causes:\n"
+                f"  - Persistent network connectivity issues\n"
+                f"  - GCS service degradation or outage\n"
+                f"  - Quota or rate limit exceeded\n"
+                f"  - Insufficient permissions\n\n"
+                f"Solutions:\n"
+                f"  1. Check GCS service status:\n"
+                f"     https://status.cloud.google.com/\n\n"
+                f"  2. Verify network connectivity:\n"
+                f"     curl -I https://storage.googleapis.com\n\n"
+                f"  3. Check API quotas and limits:\n"
+                f"     https://console.cloud.google.com/apis/api/storage.googleapis.com/quotas\n\n"
+                f"  4. Review error details below for specific cause\n\n"
+                f"  Error details: {e}\n"
+            ) from e
 
         # Verify checksum if requested
         checksum_verified = False

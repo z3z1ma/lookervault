@@ -39,6 +39,13 @@ LookerVault is feature-complete with enterprise-grade extraction and restoration
 - `lookervault restore dlq retry <id>` - Retry failed restoration
 - `lookervault restore status` - Show restoration session status
 
+#### Cloud Snapshot Management
+- `lookervault snapshot upload` - Upload database snapshot to Google Cloud Storage
+- `lookervault snapshot list` - List available snapshots with timestamps and sizes
+- `lookervault snapshot download <ref>` - Download snapshot to local machine
+- `lookervault snapshot cleanup` - Delete old snapshots based on retention policy
+- `lookervault restore --from-snapshot <ref>` - Restore directly from cloud snapshot
+
 ## Features
 
 ### 🚀 High-Performance Parallel Extraction
@@ -124,6 +131,39 @@ lookervault restore dlq retry <id>
 - **Thread-Safe Operations**: Thread-local SQLite connections with proper transaction management
 - **Comprehensive Error Handling**: Transient errors retried with exponential backoff (default: 5 attempts)
 - **Dry Run Mode**: Validate operations without making actual changes
+
+### ☁️ Cloud Snapshot Management
+
+Upload database snapshots to Google Cloud Storage for off-site backups and disaster recovery:
+
+- **Automated Uploads**: Upload snapshots to GCS with timestamped filenames and compression
+- **Snapshot Listing**: Browse available snapshots sorted by date with sequential indices
+- **Direct Restoration**: Restore Looker content directly from cloud snapshots (no manual download)
+- **Retention Policies**: Automatically delete old snapshots based on age and count limits
+- **Data Integrity**: CRC32C checksum verification for all uploads and downloads
+- **Interactive UI**: Browse and select snapshots with keyboard navigation
+- **Cost Optimization**: 70-80% file size reduction through gzip compression
+
+**Example**: Upload, list, and restore from cloud snapshots
+
+```bash
+# Upload snapshot to GCS
+lookervault snapshot upload
+
+# List available snapshots
+lookervault snapshot list
+
+# Download snapshot to local
+lookervault snapshot download 1
+
+# Restore directly from cloud snapshot (no download needed)
+lookervault restore dashboards --from-snapshot 1
+
+# Clean up old snapshots (retention policy)
+lookervault snapshot cleanup
+```
+
+**See**: [specs/005-cloud-snapshot-storage/quickstart.md](specs/005-cloud-snapshot-storage/quickstart.md) for detailed workflows and best practices
 
 ## Installation
 
@@ -653,13 +693,16 @@ lookervault extract --workers 8
 - ✅ Resume capability for extraction and restoration
 - ✅ Dead Letter Queue for failed items
 
+### Recent Features (v0.2.0)
+- ✅ **Cloud Snapshot Storage**: Upload database snapshots to Google Cloud Storage
+- ✅ **Snapshot Management**: List, download, and restore from cloud snapshots
+- ✅ **Automated Retention**: Delete old snapshots based on retention policies
+- ✅ **Interactive UI**: Browse and select snapshots with keyboard navigation
+
 ### Future Features (Not Yet Implemented)
 
-- 🌩 **Cloud Storage Integration**: Upload backups to S3, GCS, or Azure Blob Storage
 - 🔄 **Cross-Instance Migration**: Restore content to different Looker instance with ID remapping
-- 📊 **Backup Management**: List, compare, and manage backup snapshots over time
 - 🔍 **Content Diff**: Compare backups and show changes between versions
-- 🛡 **Automated Disaster Recovery**: Scheduled backups with automatic cloud upload
 - 📈 **Incremental Extraction**: Extract only changed content since last backup
 - 🔐 **Encryption**: Encrypt SQLite database at rest
 - 🔍 **Content Search**: Full-text search across extracted content
