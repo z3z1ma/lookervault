@@ -24,12 +24,27 @@ class OutputConfig(BaseModel):
     color_enabled: bool = True
 
 
+class RestoreDefaults(BaseModel):
+    """Default values for restore operations from config file."""
+
+    workers: int = Field(default=8, ge=1, le=32, description="Default worker count")
+    rate_limit_per_minute: int = Field(
+        default=120, ge=1, description="Default rate limit per minute"
+    )
+    rate_limit_per_second: int = Field(
+        default=10, ge=1, description="Default rate limit per second"
+    )
+    checkpoint_interval: int = Field(default=100, ge=1, description="Default checkpoint interval")
+    max_retries: int = Field(default=5, ge=0, le=10, description="Default max retries")
+
+
 class Configuration(BaseModel):
     """Complete LookerVault configuration."""
 
     config_version: str = "1.0"
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
+    restore: RestoreDefaults = RestoreDefaults()
 
 
 class ConnectionStatus(BaseModel):

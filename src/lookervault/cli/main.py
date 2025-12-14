@@ -291,9 +291,12 @@ def restore_single_cmd(
         typer.Option("--config", "-c", help="Path to configuration file"),
     ] = None,
     db_path: Annotated[
-        str,
-        typer.Option("--db-path", help="Path to SQLite backup database"),
-    ] = "looker.db",
+        str | None,
+        typer.Option(
+            "--db-path",
+            help="Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or 'looker.db')",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Validate without making changes"),
@@ -309,6 +312,10 @@ def restore_single_cmd(
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Suppress all non-error output"),
     ] = False,
     debug: Annotated[
         bool,
@@ -327,6 +334,7 @@ def restore_single_cmd(
         force,
         json_output,
         verbose,
+        quiet,
         debug,
     )
 
@@ -338,9 +346,12 @@ def restore_all_cmd(
         typer.Option("--config", "-c", help="Path to configuration file"),
     ] = None,
     db_path: Annotated[
-        str,
-        typer.Option("--db-path", help="Path to SQLite backup database"),
-    ] = "looker.db",
+        str | None,
+        typer.Option(
+            "--db-path",
+            help="Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or 'looker.db')",
+        ),
+    ] = None,
     exclude_types: Annotated[
         list[str] | None,
         typer.Option("--exclude-types", help="Content types to exclude from restoration"),
@@ -350,25 +361,39 @@ def restore_all_cmd(
         typer.Option("--only-types", help="Restore only these content types"),
     ] = None,
     workers: Annotated[
-        int,
-        typer.Option("--workers", help="Number of parallel workers (1-32)"),
-    ] = 8,
+        int | None,
+        typer.Option(
+            "--workers", help="Number of parallel workers (1-32, default: config file or 8)"
+        ),
+    ] = None,
     rate_limit_per_minute: Annotated[
-        int,
-        typer.Option("--rate-limit-per-minute", help="API rate limit per minute"),
-    ] = 120,
+        int | None,
+        typer.Option(
+            "--rate-limit-per-minute",
+            help="API rate limit per minute (default: config file or 120)",
+        ),
+    ] = None,
     rate_limit_per_second: Annotated[
-        int,
-        typer.Option("--rate-limit-per-second", help="Burst rate limit per second"),
-    ] = 10,
+        int | None,
+        typer.Option(
+            "--rate-limit-per-second",
+            help="Burst rate limit per second (default: config file or 10)",
+        ),
+    ] = None,
     checkpoint_interval: Annotated[
-        int,
-        typer.Option("--checkpoint-interval", help="Save checkpoint every N items"),
-    ] = 100,
+        int | None,
+        typer.Option(
+            "--checkpoint-interval",
+            help="Save checkpoint every N items (default: config file or 100)",
+        ),
+    ] = None,
     max_retries: Annotated[
-        int,
-        typer.Option("--max-retries", help="Maximum retry attempts for transient errors"),
-    ] = 5,
+        int | None,
+        typer.Option(
+            "--max-retries",
+            help="Maximum retry attempts for transient errors (default: config file or 5)",
+        ),
+    ] = None,
     skip_if_modified: Annotated[
         bool,
         typer.Option("--skip-if-modified", help="Skip items modified in destination since backup"),
@@ -376,6 +401,10 @@ def restore_all_cmd(
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Validate without making changes"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Skip confirmation prompt"),
     ] = False,
     json_output: Annotated[
         bool,
@@ -385,12 +414,20 @@ def restore_all_cmd(
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
     ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Suppress all non-error output"),
+    ] = False,
     debug: Annotated[
         bool,
         typer.Option("--debug", help="Enable debug logging"),
     ] = False,
 ) -> None:
-    """Restore all content types in dependency order."""
+    """Restore all content types in dependency order.
+
+    WARNING: This is a destructive operation that will restore ALL content from backup.
+    Use --dry-run first to preview changes.
+    """
     from .commands import restore_all as restore_all_module
 
     restore_all_module.restore_all(
@@ -405,6 +442,241 @@ def restore_all_cmd(
         max_retries,
         skip_if_modified,
         dry_run,
+        force,
+        json_output,
+        verbose,
+        quiet,
+        debug,
+    )
+
+
+@restore_app.command("status")
+def restore_status_cmd(
+    session_id: Annotated[
+        str | None,
+        typer.Option("--session-id", help="Session ID to show (None = latest)"),
+    ] = None,
+    all_sessions: Annotated[
+        bool,
+        typer.Option("--all", help="Show all sessions"),
+    ] = False,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Show restoration session status."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_status(
+        session_id,
+        all_sessions,
+        db_path,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
+# DLQ command group
+dlq_app = typer.Typer(
+    help="Manage dead letter queue (failed restoration items)",
+    no_args_is_help=True,
+)
+restore_app.add_typer(dlq_app, name="dlq")
+
+
+@dlq_app.command("list")
+def dlq_list_cmd(
+    session_id: Annotated[
+        str | None,
+        typer.Option("--session-id", help="Filter by session ID"),
+    ] = None,
+    content_type: Annotated[
+        str | None,
+        typer.Option("--type", "-t", help="Filter by content type"),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum entries to return"),
+    ] = 100,
+    offset: Annotated[
+        int,
+        typer.Option("--offset", help="Pagination offset"),
+    ] = 0,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """List dead letter queue entries."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_dlq_list(
+        session_id,
+        content_type,
+        limit,
+        offset,
+        db_path,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
+@dlq_app.command("show")
+def dlq_show_cmd(
+    dlq_id: Annotated[
+        int,
+        typer.Argument(help="DLQ entry ID to show"),
+    ],
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Show details of a specific DLQ entry."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_dlq_show(
+        dlq_id,
+        db_path,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
+@dlq_app.command("retry")
+def dlq_retry_cmd(
+    dlq_id: Annotated[
+        int,
+        typer.Argument(help="DLQ entry ID to retry"),
+    ],
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to configuration file"),
+    ] = None,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    fix_dependencies: Annotated[
+        bool,
+        typer.Option("--fix-dependencies", help="Attempt to fix dependency issues"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Force retry even if likely to fail"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Retry restoration for a failed DLQ entry."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_dlq_retry(
+        dlq_id,
+        config,
+        db_path,
+        fix_dependencies,
+        force,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
+@dlq_app.command("clear")
+def dlq_clear_cmd(
+    session_id: Annotated[
+        str | None,
+        typer.Option("--session-id", help="Clear entries for session"),
+    ] = None,
+    content_type: Annotated[
+        str | None,
+        typer.Option("--type", "-t", help="Clear entries for content type"),
+    ] = None,
+    all_entries: Annotated[
+        bool,
+        typer.Option("--all", help="Clear all entries"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Force clear without confirmation"),
+    ] = False,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Clear DLQ entries (requires --force)."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_dlq_clear(
+        session_id,
+        content_type,
+        all_entries,
+        force,
+        db_path,
         json_output,
         verbose,
         debug,

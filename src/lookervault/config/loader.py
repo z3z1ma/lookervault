@@ -10,6 +10,33 @@ from lookervault.config.models import Configuration
 from lookervault.exceptions import ConfigError
 
 
+def get_db_path(db_path_arg: str | None = None) -> str:
+    """
+    Get database path with priority order.
+
+    Priority:
+    1. Command-line argument
+    2. LOOKERVAULT_DB_PATH environment variable
+    3. Default: "looker.db"
+
+    Args:
+        db_path_arg: Optional database path from command-line argument
+
+    Returns:
+        Database path to use
+    """
+    # 1. Command-line argument
+    if db_path_arg:
+        return db_path_arg
+
+    # 2. Environment variable
+    if env_db_path := os.getenv("LOOKERVAULT_DB_PATH"):
+        return env_db_path
+
+    # 3. Default
+    return "looker.db"
+
+
 def get_config_path(config_arg: Path | None = None) -> Path:
     """
     Get configuration file path with priority order.
@@ -59,6 +86,10 @@ def load_config(config_path: Path | None = None) -> Configuration:
     - LOOKERVAULT_CLIENT_SECRET
     - LOOKERVAULT_API_URL
     - LOOKERVAULT_TIMEOUT (optional, default: 120 seconds)
+    - LOOKERVAULT_DB_PATH (optional, default database path)
+    - LOOKER_BASE_URL (alias for LOOKERVAULT_API_URL)
+    - LOOKER_CLIENT_ID (alias for LOOKERVAULT_CLIENT_ID)
+    - LOOKER_CLIENT_SECRET (alias for LOOKERVAULT_CLIENT_SECRET)
 
     Args:
         config_path: Optional path to config file
@@ -91,12 +122,14 @@ def load_config(config_path: Path | None = None) -> Configuration:
         if "looker" in config_data:
             looker_config = config_data["looker"]
 
-            # Override with env vars if present
-            if client_id := os.getenv("LOOKERVAULT_CLIENT_ID"):
+            # Override with env vars if present (support both LOOKERVAULT_ and LOOKER_ prefixes)
+            if client_id := (os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID")):
                 looker_config["client_id"] = client_id
-            if client_secret := os.getenv("LOOKERVAULT_CLIENT_SECRET"):
+            if client_secret := (
+                os.getenv("LOOKERVAULT_CLIENT_SECRET") or os.getenv("LOOKER_CLIENT_SECRET")
+            ):
                 looker_config["client_secret"] = client_secret
-            if api_url := os.getenv("LOOKERVAULT_API_URL"):
+            if api_url := (os.getenv("LOOKERVAULT_API_URL") or os.getenv("LOOKER_BASE_URL")):
                 looker_config["api_url"] = api_url
             if timeout_str := os.getenv("LOOKERVAULT_TIMEOUT"):
                 try:
@@ -105,18 +138,20 @@ def load_config(config_path: Path | None = None) -> Configuration:
                     raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
     else:
         # No config file, build entirely from env vars
-        api_url = os.getenv("LOOKERVAULT_API_URL")
+        api_url = os.getenv("LOOKERVAULT_API_URL") or os.getenv("LOOKER_BASE_URL")
         if not api_url:
             raise ConfigError(
-                "No config file found and LOOKERVAULT_API_URL environment variable not set. "
+                "No config file found and LOOKERVAULT_API_URL/LOOKER_BASE_URL environment variable not set. "
                 "Either create a config file or set environment variables: "
-                "LOOKERVAULT_API_URL, LOOKERVAULT_CLIENT_ID, LOOKERVAULT_CLIENT_SECRET"
+                "LOOKERVAULT_API_URL (or LOOKER_BASE_URL), LOOKERVAULT_CLIENT_ID (or LOOKER_CLIENT_ID), "
+                "LOOKERVAULT_CLIENT_SECRET (or LOOKER_CLIENT_SECRET)"
             )
 
         looker_config = {
             "api_url": api_url,
-            "client_id": os.getenv("LOOKERVAULT_CLIENT_ID", ""),
-            "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET", ""),
+            "client_id": os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID", ""),
+            "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET")
+            or os.getenv("LOOKER_CLIENT_SECRET", ""),
         }
 
         # Add timeout if specified

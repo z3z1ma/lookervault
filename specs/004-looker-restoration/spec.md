@@ -70,6 +70,8 @@ An administrator needs to restore content from one Looker instance to a differen
 2. **Given** a dashboard references a look by ID and both are being migrated, **When** the look is created first with a new ID in the destination, **Then** the dashboard's reference to the look is updated to use the new destination ID
 3. **Given** ID mapping exists for previously migrated content, **When** incremental restore is run, **Then** the system uses existing mappings to update rather than duplicate content
 
+**⚠️ IMPLEMENTATION NOTE (2025-12-13)**: User Story 4 is **SKIPPED** for this implementation. Cross-instance migration is not a required use case. The feature will only support same-instance restoration where IDs remain consistent. All tasks in Phase 6 (T091-T103) are marked as not applicable.
+
 ---
 
 ### Edge Cases

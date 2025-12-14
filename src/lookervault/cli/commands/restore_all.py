@@ -8,10 +8,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import typer
+from rich.prompt import Confirm
 
 from lookervault.cli.rich_logging import configure_rich_logging, console, print_error
 from lookervault.cli.types import parse_content_type
-from lookervault.config.loader import load_config
+from lookervault.config.loader import get_db_path, load_config
 from lookervault.config.models import RestorationConfig
 from lookervault.exceptions import (
     ConfigError,
@@ -19,9 +20,11 @@ from lookervault.exceptions import (
     RestorationError,
     ValidationError,
 )
+from lookervault.extraction.metrics import ThreadSafeMetrics
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.looker.client import LookerClient
 from lookervault.restoration.dependency_graph import DependencyGraph
+from lookervault.restoration.parallel_orchestrator import ParallelRestorationOrchestrator
 from lookervault.restoration.restorer import LookerContentRestorer
 from lookervault.storage.models import ContentType
 from lookervault.storage.repository import SQLiteContentRepository
@@ -38,37 +41,47 @@ EXIT_API_ERROR = 4
 
 def restore_all(
     config: Path | None = None,
-    db_path: str = "looker.db",
+    db_path: str | None = None,
     exclude_types: list[str] | None = None,
     only_types: list[str] | None = None,
-    workers: int = 8,
-    rate_limit_per_minute: int = 120,
-    rate_limit_per_second: int = 10,
-    checkpoint_interval: int = 100,
-    max_retries: int = 5,
+    workers: int | None = None,
+    rate_limit_per_minute: int | None = None,
+    rate_limit_per_second: int | None = None,
+    checkpoint_interval: int | None = None,
+    max_retries: int | None = None,
     skip_if_modified: bool = False,
     dry_run: bool = False,
+    force: bool = False,
     json_output: bool = False,
     verbose: bool = False,
+    quiet: bool = False,
     debug: bool = False,
 ) -> None:
     """Restore all content types in dependency order.
 
     Args:
         config: Optional path to config file
-        db_path: Path to SQLite backup database
+        db_path: Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or "looker.db")
         exclude_types: Content types to exclude from restoration
         only_types: Restore only these content types (if specified, exclude_types ignored)
-        workers: Number of parallel workers
-        rate_limit_per_minute: API rate limit per minute
-        rate_limit_per_second: Burst rate limit per second
-        checkpoint_interval: Save checkpoint every N items
-        max_retries: Maximum retry attempts for transient errors
+        workers: Number of parallel workers (default: config file or 8)
+        rate_limit_per_minute: API rate limit per minute (default: config file or 120)
+        rate_limit_per_second: Burst rate limit per second (default: config file or 10)
+        checkpoint_interval: Save checkpoint every N items (default: config file or 100)
+        max_retries: Maximum retry attempts for transient errors (default: config file or 5)
         skip_if_modified: Skip items modified in destination since backup
         dry_run: Validate and show what would be restored without making changes
+        force: Skip confirmation prompt
         json_output: Output results in JSON format
         verbose: Enable verbose logging
+        quiet: Suppress all non-error output
         debug: Enable debug logging
+
+    Environment Variables:
+        LOOKERVAULT_DB_PATH: Default database path
+        LOOKER_BASE_URL or LOOKERVAULT_API_URL: Looker instance URL
+        LOOKER_CLIENT_ID or LOOKERVAULT_CLIENT_ID: API client ID
+        LOOKER_CLIENT_SECRET or LOOKERVAULT_CLIENT_SECRET: API client secret
 
     Exit codes:
         0: Success
@@ -77,8 +90,19 @@ def restore_all(
         3: Validation error
         4: API error (rate limit, authentication, etc.)
     """
-    # Configure logging
-    log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
+    # Resolve database path from CLI arg > env var > default
+    resolved_db_path = get_db_path(db_path)
+
+    # Configure logging (quiet overrides verbose)
+    if quiet:
+        log_level = logging.ERROR
+    elif debug:
+        log_level = logging.DEBUG
+    elif verbose:
+        log_level = logging.INFO
+    else:
+        log_level = logging.WARNING
+
     configure_rich_logging(
         level=log_level,
         show_time=debug,
@@ -91,6 +115,25 @@ def restore_all(
     try:
         # Load configuration
         cfg = load_config(config)
+
+        # Use config file defaults if CLI args not provided (CLI > env > config > hardcoded)
+        final_workers = workers if workers is not None else cfg.restore.workers
+        final_rate_limit_per_minute = (
+            rate_limit_per_minute
+            if rate_limit_per_minute is not None
+            else cfg.restore.rate_limit_per_minute
+        )
+        final_rate_limit_per_second = (
+            rate_limit_per_second
+            if rate_limit_per_second is not None
+            else cfg.restore.rate_limit_per_second
+        )
+        final_checkpoint_interval = (
+            checkpoint_interval
+            if checkpoint_interval is not None
+            else cfg.restore.checkpoint_interval
+        )
+        final_max_retries = max_retries if max_retries is not None else cfg.restore.max_retries
 
         # Validate credentials
         if not cfg.looker.client_id or not cfg.looker.client_secret:
@@ -110,12 +153,12 @@ def restore_all(
             verify_ssl=cfg.looker.verify_ssl,
         )
 
-        repository = SQLiteContentRepository(db_path=db_path)
+        repository = SQLiteContentRepository(db_path=resolved_db_path)
 
         # Create rate limiter
         rate_limiter = AdaptiveRateLimiter(
-            requests_per_minute=rate_limit_per_minute,
-            requests_per_second=rate_limit_per_second,
+            requests_per_minute=final_rate_limit_per_minute,
+            requests_per_second=final_rate_limit_per_second,
         )
 
         # Create restorer
@@ -153,20 +196,45 @@ def restore_all(
 
         total_types = len(ordered_types)
 
+        # Confirmation prompt for destructive operation (unless dry_run or force or JSON output)
+        if not dry_run and not force and not json_output and not quiet:
+            console.print(
+                "\n[bold yellow]⚠ WARNING: Bulk restoration of ALL content types[/bold yellow]"
+            )
+            console.print(
+                f"This will restore [cyan]{total_types}[/cyan] content types from the backup:"
+            )
+            for ct in ordered_types[:5]:  # Show first 5 types
+                console.print(f"  • {ct.name.lower()}")
+            if total_types > 5:
+                console.print(f"  ... and {total_types - 5} more")
+            console.print(
+                "\n[dim]This may overwrite existing content in the destination instance.[/dim]"
+            )
+
+            if not Confirm.ask("\nProceed with bulk restoration?", default=False):
+                console.print("Operation cancelled")
+                repository.close()
+                raise typer.Exit(EXIT_SUCCESS)
+
         # Display start message
-        if not json_output:
+        if not json_output and not quiet:
             console.print("\n[bold]Restoring all content types in dependency order...[/bold]")
             if dry_run:
                 console.print("[dim](Dry run mode - no changes will be made)[/dim]\n")
+            if final_workers > 1:
+                console.print(
+                    f"[dim]Using {final_workers} worker threads for parallel restoration[/dim]\n"
+                )
 
         # Step 2: Create RestorationConfig
         session_id = str(uuid.uuid4())
         restoration_config = RestorationConfig(
-            workers=workers,
-            rate_limit_per_minute=rate_limit_per_minute,
-            rate_limit_per_second=rate_limit_per_second,
-            checkpoint_interval=checkpoint_interval,
-            max_retries=max_retries,
+            workers=final_workers,
+            rate_limit_per_minute=final_rate_limit_per_minute,
+            rate_limit_per_second=final_rate_limit_per_second,
+            checkpoint_interval=final_checkpoint_interval,
+            max_retries=final_max_retries,
             dry_run=dry_run,
             skip_if_modified=skip_if_modified,
         )
@@ -175,7 +243,103 @@ def restore_all(
         if not hasattr(restoration_config, "session_id"):
             restoration_config.session_id = session_id  # type: ignore
 
-        # Step 3: Aggregate results across all types
+        # Step 3: Choose parallel or sequential restoration based on worker count
+        if final_workers > 1:
+            # Use parallel orchestrator for restore_all
+            metrics = ThreadSafeMetrics()
+
+            # Create orchestrator
+            # Note: repository implements DeadLetterQueue Protocol (save_dead_letter_item)
+            orchestrator = ParallelRestorationOrchestrator(
+                restorer=restorer,
+                repository=repository,
+                config=restoration_config,
+                rate_limiter=rate_limiter,
+                metrics=metrics,
+                dlq=repository,  # Repository implements the DLQ Protocol
+            )
+
+            # Call orchestrator.restore_all() with the ordered types
+            try:
+                summary = orchestrator.restore_all(requested_types=ordered_types)
+
+                # Display final summary
+                total_duration = time.time() - start_time
+
+                if json_output:
+                    # JSON output format
+                    output = {
+                        "status": "completed",
+                        "session_id": session_id,
+                        "summary": {
+                            "total_items": summary.total_items,
+                            "success_count": summary.success_count,
+                            "created_count": summary.created_count,
+                            "updated_count": summary.updated_count,
+                            "error_count": summary.error_count,
+                            "skipped_count": summary.skipped_count,
+                            "duration_seconds": summary.duration_seconds,
+                            "average_throughput": summary.average_throughput,
+                        },
+                        "by_content_type": {
+                            ContentType(ct).name.lower(): count
+                            for ct, count in summary.content_type_breakdown.items()
+                        },
+                        "error_breakdown": summary.error_breakdown,
+                    }
+                    console.print(json.dumps(output, indent=2))
+                else:
+                    # Human-readable output
+                    console.print("\n[bold green]✓ Full restoration complete![/bold green]")
+                    console.print(f"  Total: {summary.total_items} items")
+
+                    success_rate = (
+                        (summary.success_count / summary.total_items * 100)
+                        if summary.total_items > 0
+                        else 0.0
+                    )
+
+                    if summary.error_count > 0:
+                        console.print(
+                            f"  Success: {summary.success_count} ({success_rate:.1f}%) - "
+                            f"[yellow]{summary.created_count} created, "
+                            f"{summary.updated_count} updated[/yellow]"
+                        )
+                        console.print(f"  [red]Failed: {summary.error_count}[/red]")
+                    else:
+                        console.print(
+                            f"  Success: {summary.success_count} ({success_rate:.1f}%) - "
+                            f"{summary.created_count} created, "
+                            f"{summary.updated_count} updated"
+                        )
+
+                    # Format duration nicely
+                    if summary.duration_seconds >= 60:
+                        minutes = int(summary.duration_seconds // 60)
+                        seconds = int(summary.duration_seconds % 60)
+                        duration_str = f"{minutes}m {seconds}s"
+                    else:
+                        duration_str = f"{summary.duration_seconds:.1f}s"
+
+                    console.print(f"  Total Duration: [cyan]{duration_str}[/cyan]")
+
+                # Clean exit
+                repository.close()
+
+                # Exit with appropriate code
+                if summary.error_count > 0:
+                    raise typer.Exit(EXIT_GENERAL_ERROR)
+                else:
+                    raise typer.Exit(EXIT_SUCCESS)
+
+            except Exception as e:
+                if not json_output:
+                    print_error(f"Parallel restoration error: {e}")
+                logger.exception("Error during parallel restoration")
+                raise typer.Exit(EXIT_GENERAL_ERROR) from None
+
+        # Step 4: Sequential restoration (backward compatible, workers == 1)
+        # Aggregate results across all types
         aggregated_results = {
             "total_items": 0,
             "success_count": 0,
@@ -188,7 +352,7 @@ def restore_all(
             "per_type_summaries": [],
         }
 
-        # Step 4: Loop through types, calling restore_bulk() for each
+        # Step 5: Loop through types, calling restore_bulk() for each
         for idx, content_type in enumerate(ordered_types, 1):
             content_type_name = content_type.name.lower()
 
@@ -342,9 +506,13 @@ def restore_all(
         logger.error(f"Restoration error: {e}")
         raise typer.Exit(EXIT_GENERAL_ERROR) from None
     except KeyboardInterrupt:
-        if not json_output:
-            print_error("Restoration interrupted by user")
-        logger.info("Restoration interrupted by user")
+        # Graceful Ctrl+C handling - checkpoint already saved by orchestrator/restorer
+        if not json_output and not quiet:
+            console.print("\n[yellow]⚠ Interrupted by user (Ctrl+C)[/yellow]")
+            console.print(
+                "[dim]Progress has been saved. Use 'restore all' with the same options to resume.[/dim]"
+            )
+        logger.info("Restoration interrupted by user (KeyboardInterrupt)")
         raise typer.Exit(130) from None
     except Exception as e:
         if not json_output:
