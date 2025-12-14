@@ -1,0 +1,340 @@
+# CLI Command Contracts: YAML Export/Import
+
+## Command: lookervault unpack
+
+synopsis: "Extract binary MessagePack content from SQLite database to YAML files"
+
+description: |
+  The unpack command exports Looker content from a local SQLite database to human-editable
+  YAML files. Two strategies are supported:
+
+  - **full**: Export all content types organized by type (dashboards/, looks/, users/, etc.)
+  - **folder**: Export dashboards and looks organized by Looker folder hierarchy
+
+  Use this command to prepare content for bulk modifications using text processing tools
+  (sed, awk, Python scripts) before repacking and restoring to Looker.
+
+options:
+  --db-path:
+    type: string
+    default: "looker.db"
+    description: "Path to SQLite database file containing Looker content"
+    required: false
+    example: "--db-path /backups/prod-looker-2025-12-14.db"
+
+  --output-dir:
+    type: string
+    default: null
+    description: "Export directory path where YAML files will be written"
+    required: true
+    example: "--output-dir ./looker-export"
+
+  --strategy:
+    type: string
+    default: "full"
+    choices: ["full", "folder"]
+    description: |
+      Export organization strategy:
+      - full: All content types in type-based subdirectories
+      - folder: Dashboards/looks in folder hierarchy (mirrors Looker UI)
+    example: "--strategy folder"
+
+  --content-types:
+    type: string
+    default: null
+    description: |
+      Filter by comma-separated content types (only for full strategy).
+      Valid types: DASHBOARD, LOOK, USER, GROUP, FOLDER, BOARD, ROLE,
+                   LOOKML_MODEL, EXPLORE, PERMISSION_SET, MODEL_SET, SCHEDULED_PLAN
+    example: "--content-types DASHBOARD,LOOK"
+
+  --overwrite:
+    type: boolean
+    default: false
+    description: "Overwrite existing export directory if it exists"
+    example: "--overwrite"
+
+  --json:
+    type: boolean
+    default: false
+    description: "Output results in JSON format (for scripting/automation)"
+    example: "--json"
+
+  --verbose:
+    type: boolean
+    default: false
+    description: "Enable verbose logging with detailed progress information"
+    example: "--verbose"
+
+exit_codes:
+  0: "Export completed successfully"
+  1: "General error (invalid arguments, database not found, etc.)"
+  2: "Output directory already exists (without --overwrite)"
+  3: "Database schema version mismatch"
+  4: "Folder cycle detected (circular parent_id references)"
+
+output_format:
+  human:
+    example: |
+      Unpacking Looker content from looker.db...
+      Strategy: full
+      Output directory: ./looker-export
+
+      [====================================] 100% (2,405 / 2,405) ETA: 0s
+
+      Exported content summary:
+        DASHBOARD      : 1,250 items → dashboards/
+        LOOK           : 834 items → looks/
+        USER           : 156 items → users/
+        FOLDER         : 47 items → folders/
+        GROUP          : 23 items → groups/
+        ROLE           : 12 items → roles/
+        BOARD          : 8 items → boards/
+        LOOKML_MODEL   : 5 items → lookml_models/
+        EXPLORE        : 42 items → explores/
+        PERMISSION_SET : 7 items → permission_sets/
+        MODEL_SET      : 3 items → model_sets/
+        SCHEDULED_PLAN : 18 items → scheduled_plans/
+        Total          : 2,405 items
+
+      Metadata written to ./looker-export/metadata.json
+      Export completed in 2m 15s
+
+  json:
+    example: |
+      {
+        "status": "success",
+        "strategy": "full",
+        "output_dir": "./looker-export",
+        "total_items": 2405,
+        "content_type_counts": {
+          "DASHBOARD": 1250,
+          "LOOK": 834,
+          "USER": 156,
+          "FOLDER": 47,
+          "GROUP": 23,
+          "ROLE": 12,
+          "BOARD": 8,
+          "LOOKML_MODEL": 5,
+          "EXPLORE": 42,
+          "PERMISSION_SET": 7,
+          "MODEL_SET": 3,
+          "SCHEDULED_PLAN": 18
+        },
+        "duration_seconds": 135,
+        "metadata_file": "./looker-export/metadata.json"
+      }
+
+examples:
+  - description: "Export all content with full strategy"
+    command: "lookervault unpack --output-dir ./export"
+
+  - description: "Export dashboards and looks only"
+    command: "lookervault unpack --output-dir ./export --content-types DASHBOARD,LOOK"
+
+  - description: "Export with folder hierarchy"
+    command: "lookervault unpack --output-dir ./export --strategy folder"
+
+  - description: "Export from specific database with overwrite"
+    command: "lookervault unpack --db-path /backups/prod.db --output-dir ./export --overwrite"
+
+---
+
+## Command: lookervault pack
+
+synopsis: "Import YAML files to binary MessagePack format in SQLite database"
+
+description: |
+  The pack command imports YAML files from an export directory back into a SQLite database.
+  It supports creating a new database or updating an existing one. Modified queries in
+  dashboard elements are automatically detected and new query objects are created with
+  updated IDs.
+
+  Use this command after modifying YAML files to prepare the database for restoration
+  to Looker via the existing `lookervault restore` command.
+
+options:
+  --input-dir:
+    type: string
+    default: null
+    description: "Export directory path containing YAML files and metadata.json"
+    required: true
+    example: "--input-dir ./looker-export"
+
+  --db-path:
+    type: string
+    default: null
+    description: "Path to SQLite database file (will be created if doesn't exist)"
+    required: true
+    example: "--db-path ./looker-modified.db"
+
+  --dry-run:
+    type: boolean
+    default: false
+    description: |
+      Validate YAML files and simulate pack operation without writing to database.
+      Reports validation errors, missing dependencies, and preview of changes.
+    example: "--dry-run"
+
+  --force:
+    type: boolean
+    default: false
+    description: "Skip confirmation prompts (use with caution)"
+    example: "--force"
+
+  --json:
+    type: boolean
+    default: false
+    description: "Output results in JSON format (for scripting/automation)"
+    example: "--json"
+
+  --verbose:
+    type: boolean
+    default: false
+    description: "Enable verbose logging with detailed validation information"
+    example: "--verbose"
+
+exit_codes:
+  0: "Pack completed successfully"
+  1: "General error (invalid arguments, input directory not found, etc.)"
+  2: "Metadata.json missing or invalid"
+  3: "YAML syntax error in one or more files"
+  4: "Schema validation failed (fields don't match Looker SDK models)"
+  5: "Database transaction failed (concurrent modification detected)"
+  6: "Query creation failed (Looker API error)"
+
+output_format:
+  human:
+    example: |
+      Packing YAML content to looker-modified.db...
+      Input directory: ./looker-export
+      Strategy: full
+
+      Validating export...
+      ✓ Metadata.json valid
+      ✓ 2,405 YAML files found
+      ✓ All YAML syntax valid
+      ✓ Schema validation passed
+
+      Detected modifications:
+        Modified dashboards: 127 files
+        Modified queries: 43 new queries required
+        Unchanged items: 2,278 files
+
+      [====================================] 100% (2,405 / 2,405) ETA: 0s
+
+      Pack summary:
+        Created items  : 0
+        Updated items  : 127
+        Unchanged items: 2,278
+        New queries    : 43
+        Errors         : 0
+
+      Database written to ./looker-modified.db
+      Pack completed in 4m 32s
+
+      Next steps:
+        1. Verify changes: lookervault list --db-path ./looker-modified.db
+        2. Restore to Looker: lookervault restore bulk dashboards --db-path ./looker-modified.db
+
+  json:
+    example: |
+      {
+        "status": "success",
+        "input_dir": "./looker-export",
+        "db_path": "./looker-modified.db",
+        "strategy": "full",
+        "validation": {
+          "metadata_valid": true,
+          "yaml_files_found": 2405,
+          "syntax_errors": 0,
+          "schema_errors": 0
+        },
+        "modifications": {
+          "modified_dashboards": 127,
+          "new_queries_required": 43,
+          "unchanged_items": 2278
+        },
+        "pack_results": {
+          "created_items": 0,
+          "updated_items": 127,
+          "unchanged_items": 2278,
+          "new_queries": 43,
+          "errors": 0
+        },
+        "duration_seconds": 272
+      }
+
+examples:
+  - description: "Pack YAML files to new database"
+    command: "lookervault pack --input-dir ./export --db-path ./modified.db"
+
+  - description: "Dry run to validate before packing"
+    command: "lookervault pack --input-dir ./export --db-path ./modified.db --dry-run"
+
+  - description: "Pack with force flag (skip prompts)"
+    command: "lookervault pack --input-dir ./export --db-path ./modified.db --force"
+
+  - description: "Pack with JSON output for automation"
+    command: "lookervault pack --input-dir ./export --db-path ./modified.db --json"
+
+validation_stages:
+  1_syntax:
+    description: "YAML syntax validation using ruamel.yaml parser"
+    errors:
+      - "Invalid YAML syntax at line 42 in dashboards/123.yaml"
+      - "Duplicate key '_metadata' in looks/456.yaml"
+
+  2_schema:
+    description: "Schema validation against Looker SDK models using Pydantic"
+    errors:
+      - "Missing required field 'title' in dashboards/123.yaml"
+      - "Invalid type for 'user_id': expected int, got str in users/789.yaml"
+
+  3_sdk_conversion:
+    description: "Conversion to Looker SDK model instances"
+    errors:
+      - "Failed to instantiate Dashboard model from dashboards/123.yaml: ..."
+
+  4_business_rules:
+    description: "Business rule validation (optional, pre-flight)"
+    errors:
+      - "Dashboard references non-existent folder_id: 999 in dashboards/123.yaml"
+      - "Look references non-existent query_id: 888 in looks/456.yaml"
+
+---
+
+## Shared Error Messages
+
+common_errors:
+  DatabaseNotFound:
+    message: "Database file not found: {db_path}"
+    suggestion: "Verify the database path is correct or run 'lookervault extract' to create it"
+
+  OutputDirExists:
+    message: "Output directory already exists: {output_dir}"
+    suggestion: "Use --overwrite to replace existing directory or choose a different path"
+
+  MetadataMissing:
+    message: "metadata.json not found in {input_dir}"
+    suggestion: "Ensure the directory contains a valid LookerVault export"
+
+  InvalidYAMLSyntax:
+    message: "YAML syntax error in {file_path}:\n  Line {line}: {error}"
+    suggestion: "Fix YAML syntax errors before repacking"
+
+  SchemaValidationFailed:
+    message: "Schema validation failed for {file_path}:\n  {errors}"
+    suggestion: "Ensure YAML fields match Looker SDK model for {content_type}"
+
+  FolderCycleDetected:
+    message: "Circular folder reference detected: {cycle_path}"
+    suggestion: "Fix folder parent_id relationships in database or YAML files"
+
+  DatabaseLocked:
+    message: "Database is locked (concurrent modification detected)"
+    suggestion: "Wait for other operations to complete and retry"
+
+  QueryCreationFailed:
+    message: "Failed to create new query for dashboard element {element_id}: {error}"
+    suggestion: "Check Looker API connectivity or use --dry-run to identify issues"
