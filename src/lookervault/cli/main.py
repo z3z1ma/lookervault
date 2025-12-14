@@ -298,6 +298,13 @@ def restore_single_cmd(
             help="Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or 'looker.db')",
         ),
     ] = None,
+    from_snapshot: Annotated[
+        str | None,
+        typer.Option(
+            "--from-snapshot",
+            help="Restore from cloud snapshot (index like '1' or timestamp like '2025-12-14T10:30:00')",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Validate without making changes"),
@@ -331,6 +338,7 @@ def restore_single_cmd(
         content_id,
         config,
         db_path,
+        from_snapshot,
         dry_run,
         force,
         json_output,
@@ -351,6 +359,13 @@ def restore_all_cmd(
         typer.Option(
             "--db-path",
             help="Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or 'looker.db')",
+        ),
+    ] = None,
+    from_snapshot: Annotated[
+        str | None,
+        typer.Option(
+            "--from-snapshot",
+            help="Restore from cloud snapshot (index like '1' or timestamp like '2025-12-14T10:30:00')",
         ),
     ] = None,
     exclude_types: Annotated[
@@ -434,6 +449,7 @@ def restore_all_cmd(
     restore_all_module.restore_all(
         config,
         db_path,
+        from_snapshot,
         exclude_types,
         only_types,
         workers,
