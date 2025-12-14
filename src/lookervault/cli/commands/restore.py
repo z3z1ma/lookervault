@@ -117,10 +117,17 @@ def restore_single(
         repository = SQLiteContentRepository(db_path=db_path)
         deserializer = ContentDeserializer()
 
+        # Create rate limiter for API throttling
+        rate_limiter = AdaptiveRateLimiter(
+            requests_per_minute=120,
+            requests_per_second=10,
+        )
+
         # Create restorer for check_exists() and restoration operations
         restorer = LookerContentRestorer(
             client=looker_client,
             repository=repository,
+            rate_limiter=rate_limiter,
         )
 
         # Display start message (human-readable mode)
@@ -283,33 +290,64 @@ def restore_single(
 
             raise typer.Exit(EXIT_SUCCESS)
 
-        # TODO: Implement actual restoration via LookerContentRestorer.restore_single()
-        # For MVP, we just indicate success placeholder
+        # Step 7: Perform actual restoration via LookerContentRestorer.restore_single()
         if not json_output:
-            console.print(
-                "\n[yellow]⚠ Warning: Actual restoration not yet implemented (placeholder)[/yellow]"
-            )
-            console.print("[green]✓ Restoration would complete successfully![/green]")
-            duration = time.time() - start_time
-            console.print(f"  Destination ID: [cyan]{content_id}[/cyan]")
-            console.print(f"  Duration: [cyan]{duration:.1f}s[/cyan]")
+            console.print("\nRestoring content...", end="")
+
+        # Call restore_single to perform the actual restoration
+        result = restorer.restore_single(content_id, content_type_enum, dry_run=False)
+
+        # Check result and display appropriate output
+        if result.status in ["created", "updated"]:
+            # Success!
+            if not json_output:
+                console.print(" [green]✓[/green]")
+                console.print(
+                    f"\n[bold green]✓ Restoration successful![/bold green] ({result.status.upper()})"
+                )
+                console.print(f"  Source ID: [cyan]{content_id}[/cyan]")
+                console.print(f"  Destination ID: [cyan]{result.destination_id}[/cyan]")
+                console.print(f"  Duration: [cyan]{result.duration_ms:.1f}ms[/cyan]")
+            else:
+                import json
+
+                output = {
+                    "status": "success",
+                    "content_type": content_type_name,
+                    "content_id": content_id,
+                    "operation": result.status,
+                    "destination_id": result.destination_id,
+                    "duration_ms": result.duration_ms,
+                }
+                console.print(json.dumps(output, indent=2))
+
+            # Clean exit
+            repository.close()
+            raise typer.Exit(EXIT_SUCCESS)
+
         else:
-            import json
+            # Failed
+            if not json_output:
+                console.print(" [red]✗[/red]")
+                console.print("\n[bold red]✗ Restoration failed![/bold red]")
+                console.print(f"  Error: {result.error_message}")
+                console.print(f"  Duration: [cyan]{result.duration_ms:.1f}ms[/cyan]")
+            else:
+                import json
 
-            duration = time.time() - start_time
-            output = {
-                "status": "success",
-                "content_type": content_type_name,
-                "content_id": content_id,
-                "operation": operation,
-                "destination_id": content_id,
-                "duration_ms": int(duration * 1000),
-            }
-            console.print(json.dumps(output, indent=2))
+                output = {
+                    "status": "error",
+                    "error_type": "RestorationError",
+                    "error_message": result.error_message,
+                    "content_type": content_type_name,
+                    "content_id": content_id,
+                    "duration_ms": result.duration_ms,
+                }
+                console.print(json.dumps(output, indent=2))
 
-        # Clean exit
-        repository.close()
-        raise typer.Exit(EXIT_SUCCESS)
+            # Clean exit
+            repository.close()
+            raise typer.Exit(EXIT_GENERAL_ERROR)
 
     except typer.Exit:
         raise
