@@ -154,6 +154,7 @@ All checks must pass before committing. If any check fails, fix the issues befor
 - Google Cloud Storage (GCS) buckets for snapshot storage; existing SQLite database for local operations (005-cloud-snapshot-storage)
 
 ## Recent Changes
+- **Folder-Level Filtering** (2025-12-14): Added folder-level filtering for extract and restore operations with SDK-level filtering (primary) and in-memory filtering (fallback). Supports --folder-ids and --recursive flags for selective content operations.
 - 005-cloud-snapshot-storage: Added cloud snapshot management with GCS integration, automated retention policies, and interactive snapshot selection UI
 - 004-looker-restoration: Added Looker content restoration with dependency ordering, parallel workers, DLQ error recovery, and checkpoint-based resume
 - 003-parallel-extraction: Added parallel content extraction with thread pool, adaptive rate limiting, and resume capability

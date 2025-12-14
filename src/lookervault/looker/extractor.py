@@ -229,6 +229,7 @@ class LookerContentExtractor:
         limit: int,
         fields: str | None = None,
         updated_after: datetime | None = None,
+        folder_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Extract a specific offset range of content.
 
@@ -241,6 +242,7 @@ class LookerContentExtractor:
             limit: Number of items to fetch
             fields: Fields to retrieve (optional)
             updated_after: Only items updated after this timestamp (optional)
+            folder_id: Folder ID for SDK-level filtering (dashboards/looks only)
 
         Returns:
             List of content items (may be fewer than limit if at end)
@@ -271,13 +273,19 @@ class LookerContentExtractor:
                     f"Only paginated types (DASHBOARD, LOOK, USER, GROUP, ROLE) are supported."
                 )
 
+            # Build API call kwargs
+            api_kwargs = {
+                "fields": fields,
+                "limit": limit,
+                "offset": offset,
+            }
+
+            # Add folder_id for SDK-level filtering (dashboards and looks support this)
+            if folder_id and content_type in [ContentType.DASHBOARD, ContentType.LOOK]:
+                api_kwargs["folder_id"] = folder_id
+
             # Fetch data from API
-            results = self._call_api(
-                api_method,
-                fields=fields,
-                limit=limit,
-                offset=offset,
-            )
+            results = self._call_api(api_method, **api_kwargs)
 
             # Convert SDK objects to dicts and filter by timestamp if needed
             filtered_results = []

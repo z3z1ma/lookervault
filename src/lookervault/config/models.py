@@ -246,6 +246,9 @@ class RestorationConfig(BaseModel):
     content_ids: list[str] | None = Field(
         default=None, description="Specific content IDs to restore (None = all)"
     )
+    folder_ids: list[str] | None = Field(
+        default=None, description="Folder IDs to restore (None = all folders)"
+    )
     date_range: tuple[datetime, datetime] | None = Field(
         default=None, description="Restore only items within date range"
     )

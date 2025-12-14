@@ -140,6 +140,23 @@ def extract(
         bool,
         typer.Option("--debug", help="Enable debug logging"),
     ] = False,
+    folder_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--folder-ids",
+            help="Comma-separated folder IDs to extract (e.g., '123,456'). "
+            "Only content within these folders will be extracted. "
+            "Only works with dashboard, look, board, folder types.",
+        ),
+    ] = None,
+    recursive: Annotated[
+        bool,
+        typer.Option(
+            "--recursive",
+            "-r",
+            help="Include all subfolders when using --folder-ids",
+        ),
+    ] = False,
 ) -> None:
     """Extract all content from Looker instance to local database."""
     from .commands import extract as extract_module
@@ -157,6 +174,8 @@ def extract(
         rate_limit_per_second,
         verbose,
         debug,
+        folder_ids,
+        recursive,
     )
 
 
@@ -329,6 +348,23 @@ def restore_single_cmd(
         bool,
         typer.Option("--debug", help="Enable debug logging"),
     ] = False,
+    folder_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--folder-ids",
+            help="Comma-separated folder IDs to restore (e.g., '123,456'). "
+            "Restores folder metadata + content within folders. "
+            "Only works with dashboard, look, board, folder types.",
+        ),
+    ] = None,
+    recursive: Annotated[
+        bool,
+        typer.Option(
+            "--recursive",
+            "-r",
+            help="Include all subfolders when using --folder-ids",
+        ),
+    ] = False,
 ) -> None:
     """Restore a single content item by type and ID."""
     from .commands import restore as restore_module
@@ -345,6 +381,8 @@ def restore_single_cmd(
         verbose,
         quiet,
         debug,
+        folder_ids,
+        recursive,
     )
 
 
@@ -438,6 +476,23 @@ def restore_all_cmd(
         bool,
         typer.Option("--debug", help="Enable debug logging"),
     ] = False,
+    folder_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--folder-ids",
+            help="Comma-separated folder IDs to restore (e.g., '123,456'). "
+            "Restores folder metadata + content within folders. "
+            "Only works with dashboard, look, board, folder types.",
+        ),
+    ] = None,
+    recursive: Annotated[
+        bool,
+        typer.Option(
+            "--recursive",
+            "-r",
+            help="Include all subfolders when using --folder-ids",
+        ),
+    ] = False,
 ) -> None:
     """Restore all content types in dependency order.
 
@@ -464,6 +519,8 @@ def restore_all_cmd(
         verbose,
         quiet,
         debug,
+        folder_ids,
+        recursive,
     )
 
 

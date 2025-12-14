@@ -35,6 +35,8 @@ class ExtractionConfig:
     incremental: bool = False
     verify: bool = False
     output_mode: str = "table"
+    folder_ids: set[str] | None = None
+    recursive_folders: bool = False
 
 
 @dataclass

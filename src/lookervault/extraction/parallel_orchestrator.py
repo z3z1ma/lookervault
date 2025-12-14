@@ -209,6 +209,35 @@ class ParallelOrchestrator:
                         updated_after=updated_after,
                     )
 
+                # After FOLDER extraction: expand folder_ids if recursive
+                if (
+                    content_type == ContentType.FOLDER.value
+                    and self.config.folder_ids
+                    and self.config.recursive_folders
+                ):
+                    from lookervault.folder.hierarchy import FolderHierarchyResolver
+
+                    logger.info("Expanding folder IDs recursively after FOLDER extraction")
+
+                    # Build hierarchy resolver from repository
+                    hierarchy_resolver = FolderHierarchyResolver(self.repository)
+
+                    # Get root folder IDs (current config)
+                    root_folder_ids = list(self.config.folder_ids)
+
+                    # Expand to include all descendants
+                    all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                        root_folder_ids, include_roots=True
+                    )
+
+                    # Update config with expanded folder IDs
+                    self.config.folder_ids = all_folder_ids
+
+                    logger.info(
+                        f"Expanded {len(root_folder_ids)} root folder(s) to "
+                        f"{len(all_folder_ids)} total folder(s) (recursive)"
+                    )
+
             # Get final metrics snapshot
             final_metrics = self.metrics.snapshot()
             result.total_items = final_metrics["total"]
@@ -760,6 +789,33 @@ class ParallelOrchestrator:
 
                 logger.debug(f"Worker {worker_id} claimed range: offset={offset}, limit={limit}")
 
+                # Determine folder_id for SDK-level filtering
+                # SDK search methods only support single folder_id, so:
+                # - Single folder_id: use SDK filtering (optimal)
+                # - Multiple folder_ids: use in-memory filtering (fallback)
+                folder_id_for_sdk = None
+                if (
+                    self.config.folder_ids
+                    and len(self.config.folder_ids) == 1
+                    and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
+                ):
+                    folder_id_for_sdk = list(self.config.folder_ids)[0]
+                    if worker_id == 0:  # Log once per extraction
+                        logger.info(
+                            f"Using SDK-level folder filtering for {ContentType(content_type).name} "
+                            f"(folder_id={folder_id_for_sdk})"
+                        )
+                elif (
+                    self.config.folder_ids
+                    and len(self.config.folder_ids) > 1
+                    and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
+                ):
+                    if worker_id == 0:  # Log once per extraction
+                        logger.info(
+                            f"Multiple folder_ids detected ({len(self.config.folder_ids)} folders) - "
+                            f"using in-memory filtering (SDK only supports single folder_id)"
+                        )
+
                 # Fetch data from Looker API
                 try:
                     items = self.extractor.extract_range(
@@ -768,6 +824,7 @@ class ParallelOrchestrator:
                         limit=limit,
                         fields=fields,
                         updated_after=updated_after,
+                        folder_id=folder_id_for_sdk,
                     )
                 except Exception as e:
                     logger.error(f"Worker {worker_id} API fetch failed at offset {offset}: {e}")
@@ -785,6 +842,13 @@ class ParallelOrchestrator:
                 # Process items: convert and save to database
                 for item_dict in items:
                     try:
+                        # Check folder filter (in-memory fallback if SDK filtering not used)
+                        # Only apply in-memory filter if SDK filtering wasn't used
+                        if folder_id_for_sdk is None and self._should_filter_by_folder(
+                            item_dict, content_type
+                        ):
+                            continue  # Skip this item - not in target folders
+
                         # Convert to ContentItem
                         content_item = self._dict_to_content_item(item_dict, content_type)
 
@@ -865,6 +929,39 @@ class ParallelOrchestrator:
 
         # All other content types use 'id'
         return item_dict.get("id")
+
+    def _should_filter_by_folder(self, item_dict: dict[str, Any], content_type: int) -> bool:
+        """Check if item should be filtered out based on folder_ids.
+
+        Args:
+            item_dict: Raw API response dictionary
+            content_type: ContentType enum value
+
+        Returns:
+            True if item should be SKIPPED (filtered out), False if should be included
+        """
+        # No filter configured - include all
+        if not self.config.folder_ids:
+            return False
+
+        # Only filter folder-aware content types
+        if content_type not in [
+            ContentType.DASHBOARD.value,
+            ContentType.LOOK.value,
+            ContentType.BOARD.value,
+        ]:
+            return False  # Not a folder-aware type, include
+
+        # Extract folder_id from item
+        item_folder_id = item_dict.get("folder_id")
+
+        # If item has no folder_id, filter it out (shouldn't happen for folder-aware types)
+        if item_folder_id is None:
+            logger.warning(f"Item {item_dict.get('id', 'unknown')} has no folder_id, filtering out")
+            return True
+
+        # Check if item's folder_id is in the configured filter set
+        return str(item_folder_id) not in self.config.folder_ids
 
     def _dict_to_content_item(self, item_dict: dict[str, Any], content_type: int) -> ContentItem:
         """Convert API response dict to ContentItem.

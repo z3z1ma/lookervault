@@ -225,7 +225,30 @@ class ParallelRestorationOrchestrator:
         )
 
         # Step 1: Query SQLite for all content IDs of this content_type
-        content_ids = self.repository.get_content_ids(content_type.value)
+        # Apply folder filtering if configured
+        if self.config.folder_ids and content_type in [
+            ContentType.DASHBOARD,
+            ContentType.LOOK,
+            ContentType.BOARD,
+        ]:
+            # Folder-filtered query for folder-aware content types
+            content_ids = self.repository.get_content_ids_in_folders(
+                content_type.value, set(self.config.folder_ids), include_deleted=False
+            )
+            logger.info(
+                f"Found {len(content_ids)} {content_type.name} items "
+                f"in {len(self.config.folder_ids)} folder(s)"
+            )
+        elif content_type == ContentType.FOLDER:
+            # Restoring folders: use folder_ids directly if specified
+            if self.config.folder_ids:
+                content_ids = set(self.config.folder_ids)
+                logger.info(f"Restoring {len(content_ids)} folder(s) by ID")
+            else:
+                content_ids = self.repository.get_content_ids(content_type.value)
+        else:
+            # No folder filter for this type (or no folder_ids configured)
+            content_ids = self.repository.get_content_ids(content_type.value)
 
         if not content_ids:
             logger.info(f"No {content_type.name} content found in repository")

@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+import msgspec
+
 from lookervault.exceptions import NotFoundError, StorageError
 from lookervault.storage.models import (
     Checkpoint,
@@ -168,6 +170,49 @@ class ContentRepository(Protocol):
 
         Returns:
             Set of content IDs
+        """
+        ...
+
+    def get_content_ids_in_folders(
+        self, content_type: int, folder_ids: set[str], include_deleted: bool = False
+    ) -> set[str]:
+        """Get content IDs belonging to specified folders.
+
+        Args:
+            content_type: ContentType enum value
+            folder_ids: Set of folder IDs to filter by
+            include_deleted: Include soft-deleted items
+
+        Returns:
+            Set of content IDs in the specified folders
+
+        Raises:
+            ValueError: If content_type doesn't support folder filtering
+        """
+        ...
+
+    def list_content_in_folders(
+        self,
+        content_type: int,
+        folder_ids: set[str],
+        include_deleted: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> Sequence[ContentItem]:
+        """List content items within specified folders.
+
+        Args:
+            content_type: ContentType enum value
+            folder_ids: Set of folder IDs to filter by
+            include_deleted: Include soft-deleted items
+            limit: Maximum items to return
+            offset: Pagination offset
+
+        Returns:
+            Sequence of ContentItem objects in the specified folders
+
+        Raises:
+            ValueError: If content_type doesn't support folder filtering
         """
         ...
 
@@ -834,6 +879,196 @@ class SQLiteContentRepository:
             return {row["id"] for row in cursor.fetchall()}
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get content IDs: {e}") from e
+
+    def get_content_ids_in_folders(
+        self, content_type: int, folder_ids: set[str], include_deleted: bool = False
+    ) -> set[str]:
+        """Get content IDs belonging to specified folders.
+
+        This method:
+        1. Queries all content_items of the specified type
+        2. Deserializes content_data BLOB for each item
+        3. Extracts folder_id field from deserialized data
+        4. Filters to only items where folder_id IN folder_ids
+
+        Args:
+            content_type: ContentType enum value
+            folder_ids: Set of folder IDs to filter by
+            include_deleted: Include soft-deleted items
+
+        Returns:
+            Set of content IDs in the specified folders
+
+        Raises:
+            ValueError: If content_type doesn't support folder filtering
+        """
+        # Validate content type supports folder filtering
+        from lookervault.storage.models import ContentType
+
+        if content_type not in [
+            ContentType.DASHBOARD.value,
+            ContentType.LOOK.value,
+            ContentType.BOARD.value,
+        ]:
+            raise ValueError(
+                f"Content type {ContentType(content_type).name} does not support folder filtering"
+            )
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Query all content items of this type
+            query = """
+                SELECT id, content_data
+                FROM content_items
+                WHERE content_type = ?
+            """
+
+            params: list[int | str] = [content_type]
+
+            if not include_deleted:
+                query += " AND deleted_at IS NULL"
+
+            cursor.execute(query, params)
+
+            # Deserialize and filter by folder_id
+            decoder = msgspec.json.Decoder()
+            filtered_ids: set[str] = set()
+
+            for row in cursor.fetchall():
+                # Deserialize content_data BLOB
+                content_metadata = decoder.decode(row["content_data"])
+
+                # Extract folder_id
+                item_folder_id = content_metadata.get("folder_id")
+
+                # Filter by folder_ids set
+                if item_folder_id is not None and str(item_folder_id) in folder_ids:
+                    filtered_ids.add(row["id"])
+
+            logger.debug(
+                f"Filtered {len(filtered_ids)} {ContentType(content_type).name} items "
+                f"in {len(folder_ids)} folder(s)"
+            )
+
+            return filtered_ids
+
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get content IDs in folders: {e}") from e
+
+    def list_content_in_folders(
+        self,
+        content_type: int,
+        folder_ids: set[str],
+        include_deleted: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> Sequence[ContentItem]:
+        """List content items within specified folders.
+
+        This method:
+        1. Queries all content_items of the specified type
+        2. Deserializes content_data BLOB for each item
+        3. Extracts folder_id field from deserialized data
+        4. Filters to only items where folder_id IN folder_ids
+        5. Returns full ContentItem objects
+
+        Args:
+            content_type: ContentType enum value
+            folder_ids: Set of folder IDs to filter by
+            include_deleted: Include soft-deleted items
+            limit: Maximum items to return
+            offset: Pagination offset
+
+        Returns:
+            Sequence of ContentItem objects in the specified folders
+
+        Raises:
+            ValueError: If content_type doesn't support folder filtering
+        """
+        # Validate content type supports folder filtering
+        from lookervault.storage.models import ContentType
+
+        if content_type not in [
+            ContentType.DASHBOARD.value,
+            ContentType.LOOK.value,
+            ContentType.BOARD.value,
+        ]:
+            raise ValueError(
+                f"Content type {ContentType(content_type).name} does not support folder filtering"
+            )
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Query all content items of this type
+            query = """
+                SELECT id, content_type, name, owner_id, owner_email,
+                       created_at, updated_at, synced_at, deleted_at,
+                       content_size, content_data
+                FROM content_items
+                WHERE content_type = ?
+            """
+
+            params: list[int | str] = [content_type]
+
+            if not include_deleted:
+                query += " AND deleted_at IS NULL"
+
+            query += " ORDER BY updated_at DESC"
+
+            cursor.execute(query, params)
+
+            # Deserialize and filter by folder_id
+            decoder = msgspec.json.Decoder()
+            filtered_items: list[ContentItem] = []
+
+            for row in cursor.fetchall():
+                # Deserialize content_data BLOB
+                content_metadata = decoder.decode(row["content_data"])
+
+                # Extract folder_id
+                item_folder_id = content_metadata.get("folder_id")
+
+                # Filter by folder_ids set
+                if item_folder_id is not None and str(item_folder_id) in folder_ids:
+                    filtered_items.append(
+                        ContentItem(
+                            id=row["id"],
+                            content_type=row["content_type"],
+                            name=row["name"],
+                            owner_id=row["owner_id"],
+                            owner_email=row["owner_email"],
+                            created_at=datetime.fromisoformat(row["created_at"]),
+                            updated_at=datetime.fromisoformat(row["updated_at"]),
+                            synced_at=datetime.fromisoformat(row["synced_at"])
+                            if row["synced_at"]
+                            else None,
+                            deleted_at=datetime.fromisoformat(row["deleted_at"])
+                            if row["deleted_at"]
+                            else None,
+                            content_size=row["content_size"],
+                            content_data=row["content_data"],
+                        )
+                    )
+
+            # Apply limit and offset (Python-side pagination)
+            if offset > 0:
+                filtered_items = filtered_items[offset:]
+            if limit:
+                filtered_items = filtered_items[:limit]
+
+            logger.debug(
+                f"Listed {len(filtered_items)} {ContentType(content_type).name} items "
+                f"in {len(folder_ids)} folder(s)"
+            )
+
+            return filtered_items
+
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to list content in folders: {e}") from e
 
     def get_deleted_items_before(self, cutoff_date: datetime) -> Sequence[ContentItem]:
         """Get soft-deleted items before cutoff date.
