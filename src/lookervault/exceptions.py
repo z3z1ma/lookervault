@@ -69,3 +69,57 @@ class ProcessingError(LookerVaultError):
     """Exception raised for batch processing errors."""
 
     pass
+
+
+class RestorationError(LookerVaultError):
+    """Base exception for content restoration errors."""
+
+    pass
+
+
+class DeserializationError(RestorationError):
+    """Exception raised when content cannot be deserialized from storage.
+
+    This occurs when:
+    - Binary blob in database is corrupted or invalid
+    - JSON/msgpack format is malformed
+    - Content schema doesn't match expected structure
+    """
+
+    pass
+
+
+class ValidationError(RestorationError):
+    """Exception raised when content fails validation before restoration.
+
+    This occurs when:
+    - Required fields are missing from content
+    - Field values fail type or constraint checks
+    - Content structure doesn't match Looker API expectations
+    """
+
+    pass
+
+
+class DependencyError(RestorationError):
+    """Exception raised when content dependencies cannot be resolved.
+
+    This occurs when:
+    - Referenced content doesn't exist in source or destination
+    - Circular dependencies detected in dependency graph
+    - Dependency ordering violation during bulk restoration
+    """
+
+    pass
+
+
+class IDMappingError(RestorationError):
+    """Exception raised when ID mapping fails during cross-instance restoration.
+
+    This occurs when:
+    - Source ID cannot be mapped to destination ID
+    - ID mapping table is inconsistent or corrupted
+    - Foreign key references cannot be translated
+    """
+
+    pass

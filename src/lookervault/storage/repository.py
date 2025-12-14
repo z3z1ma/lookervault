@@ -1,5 +1,7 @@
 """Content repository for SQLite storage operations."""
 
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
@@ -11,7 +13,15 @@ from pathlib import Path
 from typing import Protocol, TypeVar
 
 from lookervault.exceptions import NotFoundError, StorageError
-from lookervault.storage.models import Checkpoint, ContentItem, ExtractionSession
+from lookervault.storage.models import (
+    Checkpoint,
+    ContentItem,
+    DeadLetterItem,
+    ExtractionSession,
+    IDMapping,
+    RestorationCheckpoint,
+    RestorationSession,
+)
 from lookervault.storage.schema import create_schema, optimize_database
 
 logger = logging.getLogger(__name__)
@@ -903,3 +913,840 @@ class SQLiteContentRepository:
             return deleted_count
         except sqlite3.Error as e:
             raise StorageError(f"Failed to hard delete items: {e}") from e
+
+    def save_dead_letter_item(self, item: DeadLetterItem) -> int:
+        """Save failed restoration item to DLQ with thread-safe transaction control.
+
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
+        Args:
+            item: DeadLetterItem object
+
+        Returns:
+            DLQ entry ID
+
+        Raises:
+            StorageError: If save fails after retries
+        """
+
+        def _save_operation() -> int:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe DLQ writes
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO dead_letter_queue (
+                            session_id, content_id, content_type, content_data,
+                            error_message, error_type, stack_trace, retry_count,
+                            failed_at, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            item.session_id,
+                            item.content_id,
+                            item.content_type,
+                            item.content_data,
+                            item.error_message,
+                            item.error_type,
+                            item.stack_trace,
+                            item.retry_count,
+                            item.failed_at.isoformat(),
+                            json.dumps(item.metadata) if item.metadata else None,
+                        ),
+                    )
+
+                    dlq_id = cursor.lastrowid
+                    conn.commit()
+                    return dlq_id
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to save dead letter item: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        return self._retry_on_busy(_save_operation)
+
+    def get_dead_letter_item(self, dlq_id: int) -> DeadLetterItem | None:
+        """Retrieve DLQ entry by ID.
+
+        Args:
+            dlq_id: Dead letter queue entry ID
+
+        Returns:
+            DeadLetterItem if found, None otherwise
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT id, session_id, content_id, content_type, content_data,
+                       error_message, error_type, stack_trace, retry_count,
+                       failed_at, metadata
+                FROM dead_letter_queue
+                WHERE id = ?
+            """,
+                (dlq_id,),
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return DeadLetterItem(
+                id=row["id"],
+                session_id=row["session_id"],
+                content_id=row["content_id"],
+                content_type=row["content_type"],
+                content_data=row["content_data"],
+                error_message=row["error_message"],
+                error_type=row["error_type"],
+                stack_trace=row["stack_trace"],
+                retry_count=row["retry_count"],
+                failed_at=datetime.fromisoformat(row["failed_at"]),
+                metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+            )
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get dead letter item: {e}") from e
+
+    def list_dead_letter_items(
+        self,
+        session_id: str | None = None,
+        content_type: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[DeadLetterItem]:
+        """List DLQ entries with optional filters.
+
+        Args:
+            session_id: Optional session filter
+            content_type: Optional content type filter
+            limit: Maximum items to return (default: 100)
+            offset: Pagination offset (default: 0)
+
+        Returns:
+            Sequence of DeadLetterItem objects
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT id, session_id, content_id, content_type, content_data,
+                       error_message, error_type, stack_trace, retry_count,
+                       failed_at, metadata
+                FROM dead_letter_queue
+                WHERE 1=1
+            """
+
+            params: list[int | str] = []
+
+            if session_id is not None:
+                query += " AND session_id = ?"
+                params.append(session_id)
+
+            if content_type is not None:
+                query += " AND content_type = ?"
+                params.append(content_type)
+
+            query += " ORDER BY failed_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+            cursor.execute(query, params)
+
+            items = []
+            for row in cursor.fetchall():
+                items.append(
+                    DeadLetterItem(
+                        id=row["id"],
+                        session_id=row["session_id"],
+                        content_id=row["content_id"],
+                        content_type=row["content_type"],
+                        content_data=row["content_data"],
+                        error_message=row["error_message"],
+                        error_type=row["error_type"],
+                        stack_trace=row["stack_trace"],
+                        retry_count=row["retry_count"],
+                        failed_at=datetime.fromisoformat(row["failed_at"]),
+                        metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+                    )
+                )
+
+            return items
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to list dead letter items: {e}") from e
+
+    def count_dead_letter_items(
+        self,
+        session_id: str | None = None,
+        content_type: int | None = None,
+    ) -> int:
+        """Count DLQ entries with optional filters.
+
+        Args:
+            session_id: Optional session filter
+            content_type: Optional content type filter
+
+        Returns:
+            Total count of matching DLQ entries
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT COUNT(*) as total
+                FROM dead_letter_queue
+                WHERE 1=1
+            """
+
+            params: list[int | str] = []
+
+            if session_id is not None:
+                query += " AND session_id = ?"
+                params.append(session_id)
+
+            if content_type is not None:
+                query += " AND content_type = ?"
+                params.append(content_type)
+
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+
+            return row["total"] if row else 0
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to count dead letter items: {e}") from e
+
+    def delete_dead_letter_item(self, dlq_id: int) -> None:
+        """Permanently delete DLQ entry with thread-safe transaction control.
+
+        This is typically called after successful manual retry of a failed item.
+
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
+        Args:
+            dlq_id: Dead letter queue entry ID
+
+        Raises:
+            NotFoundError: If DLQ entry doesn't exist
+            StorageError: If deletion fails after retries
+        """
+
+        def _delete_operation() -> None:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe DLQ deletion
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        DELETE FROM dead_letter_queue
+                        WHERE id = ?
+                    """,
+                        (dlq_id,),
+                    )
+
+                    if cursor.rowcount == 0:
+                        raise NotFoundError(f"Dead letter item not found: {dlq_id}")
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to delete dead letter item: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_delete_operation)
+
+    def save_id_mapping(self, mapping: IDMapping) -> None:
+        """Save source ID → destination ID mapping with thread-safe transaction control.
+
+        Args:
+            mapping: IDMapping object to persist
+
+        Raises:
+            StorageError: If save fails after retries
+        """
+
+        def _save_operation() -> None:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO id_mappings (
+                            source_instance, content_type, source_id,
+                            destination_id, created_at, session_id
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(source_instance, content_type, source_id) DO UPDATE SET
+                            destination_id = excluded.destination_id,
+                            created_at = excluded.created_at,
+                            session_id = excluded.session_id
+                    """,
+                        (
+                            mapping.source_instance,
+                            mapping.content_type,
+                            mapping.source_id,
+                            mapping.destination_id,
+                            mapping.created_at.isoformat(),
+                            mapping.session_id,
+                        ),
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to save ID mapping: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_save_operation)
+
+    def get_id_mapping(
+        self, source_instance: str, content_type: int, source_id: str
+    ) -> IDMapping | None:
+        """Retrieve ID mapping for source content.
+
+        Args:
+            source_instance: Source Looker instance URL
+            content_type: ContentType enum value
+            source_id: Original ID from source instance
+
+        Returns:
+            IDMapping if found, None otherwise
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT source_instance, content_type, source_id,
+                       destination_id, created_at, session_id
+                FROM id_mappings
+                WHERE source_instance = ? AND content_type = ? AND source_id = ?
+            """,
+                (source_instance, content_type, source_id),
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return IDMapping(
+                source_instance=row["source_instance"],
+                content_type=row["content_type"],
+                source_id=row["source_id"],
+                destination_id=row["destination_id"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                session_id=row["session_id"],
+            )
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get ID mapping: {e}") from e
+
+    def get_destination_id(
+        self, source_instance: str, content_type: int, source_id: str
+    ) -> str | None:
+        """Get destination ID for source ID.
+
+        Args:
+            source_instance: Source Looker instance URL
+            content_type: ContentType enum value
+            source_id: Original ID from source instance
+
+        Returns:
+            Destination ID if mapped, None otherwise
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT destination_id
+                FROM id_mappings
+                WHERE source_instance = ? AND content_type = ? AND source_id = ?
+            """,
+                (source_instance, content_type, source_id),
+            )
+
+            row = cursor.fetchone()
+            return row["destination_id"] if row else None
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get destination ID: {e}") from e
+
+    def batch_get_mappings(
+        self, source_instance: str, content_type: int, source_ids: Sequence[str]
+    ) -> dict[str, str]:
+        """Batch retrieve mappings for multiple source IDs.
+
+        Optimized for performance using single bulk query with IN clause.
+
+        Args:
+            source_instance: Source Looker instance URL
+            content_type: ContentType enum value
+            source_ids: List of source IDs to look up
+
+        Returns:
+            Dictionary mapping source_id -> destination_id (only includes found mappings)
+        """
+        if not source_ids:
+            return {}
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Use parameterized query with IN clause for bulk lookup
+            # Safe: placeholders are just "?" repeated, no user input in SQL structure
+            placeholders = ",".join("?" * len(source_ids))
+            query = f"""
+                SELECT source_id, destination_id
+                FROM id_mappings
+                WHERE source_instance = ? AND content_type = ? AND source_id IN ({placeholders})
+            """  # noqa: S608
+
+            params = [source_instance, content_type] + list(source_ids)
+            cursor.execute(query, params)
+
+            return {row["source_id"]: row["destination_id"] for row in cursor.fetchall()}
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to batch get mappings: {e}") from e
+
+    def clear_mappings(
+        self, source_instance: str | None = None, content_type: int | None = None
+    ) -> int:
+        """Clear ID mappings with optional filters.
+
+        Args:
+            source_instance: Optional source instance filter (None = all instances)
+            content_type: Optional content type filter (None = all types)
+
+        Returns:
+            Number of mappings deleted
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = "DELETE FROM id_mappings"
+            params: list[str | int] = []
+            conditions = []
+
+            if source_instance is not None:
+                conditions.append("source_instance = ?")
+                params.append(source_instance)
+
+            if content_type is not None:
+                conditions.append("content_type = ?")
+                params.append(content_type)
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            cursor.execute(query, params)
+            deleted_count = cursor.rowcount
+            conn.commit()
+
+            return deleted_count
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to clear mappings: {e}") from e
+
+    def save_restoration_checkpoint(self, checkpoint: RestorationCheckpoint) -> int:
+        """Save restoration checkpoint with thread-safe transaction control.
+
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
+        Args:
+            checkpoint: RestorationCheckpoint object
+
+        Returns:
+            Checkpoint ID
+
+        Raises:
+            StorageError: If save fails after retries
+        """
+
+        def _save_operation() -> int:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe checkpoint writes
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO restoration_checkpoints (
+                            session_id, content_type, checkpoint_data, started_at,
+                            completed_at, item_count, error_count
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            checkpoint.session_id,
+                            checkpoint.content_type,
+                            json.dumps(checkpoint.checkpoint_data),
+                            checkpoint.started_at.isoformat(),
+                            checkpoint.completed_at.isoformat()
+                            if checkpoint.completed_at
+                            else None,
+                            checkpoint.item_count,
+                            checkpoint.error_count,
+                        ),
+                    )
+
+                    checkpoint_id = cursor.lastrowid
+                    conn.commit()
+                    return checkpoint_id
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to save restoration checkpoint: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        return self._retry_on_busy(_save_operation)
+
+    def update_restoration_checkpoint(self, checkpoint: RestorationCheckpoint) -> None:
+        """Update existing restoration checkpoint with thread-safe transaction control.
+
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
+        Args:
+            checkpoint: RestorationCheckpoint object with updated values
+
+        Raises:
+            StorageError: If update fails after retries
+        """
+
+        def _update_operation() -> None:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Thread-safe checkpoint updates
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        UPDATE restoration_checkpoints
+                        SET checkpoint_data = ?, completed_at = ?,
+                            item_count = ?, error_count = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            json.dumps(checkpoint.checkpoint_data),
+                            checkpoint.completed_at.isoformat()
+                            if checkpoint.completed_at
+                            else None,
+                            checkpoint.item_count,
+                            checkpoint.error_count,
+                            checkpoint.id,
+                        ),
+                    )
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to update restoration checkpoint: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_update_operation)
+
+    def get_latest_restoration_checkpoint(
+        self, content_type: int, session_id: str | None = None
+    ) -> RestorationCheckpoint | None:
+        """Get most recent incomplete checkpoint for content type.
+
+        Args:
+            content_type: ContentType enum value
+            session_id: Optional session filter
+
+        Returns:
+            Latest RestorationCheckpoint or None
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT id, session_id, content_type, checkpoint_data,
+                       started_at, completed_at, item_count, error_count
+                FROM restoration_checkpoints
+                WHERE content_type = ? AND completed_at IS NULL
+            """
+
+            params: list[int | str] = [content_type]
+
+            if session_id:
+                query += " AND session_id = ?"
+                params.append(session_id)
+
+            query += " ORDER BY started_at DESC LIMIT 1"
+
+            cursor.execute(query, params)
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return RestorationCheckpoint(
+                id=row["id"],
+                session_id=row["session_id"],
+                content_type=row["content_type"],
+                checkpoint_data=json.loads(row["checkpoint_data"]),
+                started_at=datetime.fromisoformat(row["started_at"]),
+                completed_at=datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None,
+                item_count=row["item_count"],
+                error_count=row["error_count"],
+            )
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get restoration checkpoint: {e}") from e
+
+    def create_restoration_session(self, session: RestorationSession) -> None:
+        """Create new restoration session with thread-safe transaction control.
+
+        Uses BEGIN IMMEDIATE to prevent write-after-read deadlocks in parallel execution.
+
+        Args:
+            session: RestorationSession object
+
+        Raises:
+            StorageError: If creation fails after retries
+        """
+
+        def _create_operation() -> None:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO restoration_sessions (
+                            id, started_at, completed_at, status,
+                            total_items, success_count, error_count,
+                            source_instance, destination_instance,
+                            config, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            session.id,
+                            session.started_at.isoformat(),
+                            session.completed_at.isoformat() if session.completed_at else None,
+                            session.status,
+                            session.total_items,
+                            session.success_count,
+                            session.error_count,
+                            session.source_instance,
+                            session.destination_instance,
+                            json.dumps(session.config) if session.config else None,
+                            json.dumps(session.metadata) if session.metadata else None,
+                        ),
+                    )
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to create restoration session: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_create_operation)
+
+    def update_restoration_session(self, session: RestorationSession) -> None:
+        """Update existing restoration session with thread-safe transaction control.
+
+        Uses BEGIN IMMEDIATE to prevent write-after-read deadlocks in parallel execution.
+        Includes retry logic for SQLITE_BUSY errors that can occur in parallel execution.
+
+        Args:
+            session: RestorationSession object with updated values
+
+        Raises:
+            StorageError: If update fails after retries
+        """
+
+        def _update_operation() -> None:
+            try:
+                conn = self._get_connection()
+                # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
+                conn.execute("BEGIN IMMEDIATE")
+
+                try:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        UPDATE restoration_sessions
+                        SET completed_at = ?, status = ?,
+                            total_items = ?, success_count = ?,
+                            error_count = ?, source_instance = ?,
+                            destination_instance = ?, config = ?, metadata = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            session.completed_at.isoformat() if session.completed_at else None,
+                            session.status,
+                            session.total_items,
+                            session.success_count,
+                            session.error_count,
+                            session.source_instance,
+                            session.destination_instance,
+                            json.dumps(session.config) if session.config else None,
+                            json.dumps(session.metadata) if session.metadata else None,
+                            session.id,
+                        ),
+                    )
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            except sqlite3.Error as e:
+                raise StorageError(f"Failed to update restoration session: {e}") from e
+
+        # Retry operation on SQLITE_BUSY
+        self._retry_on_busy(_update_operation)
+
+    def get_restoration_session(self, session_id: str) -> RestorationSession | None:
+        """Retrieve restoration session by ID.
+
+        Args:
+            session_id: Unique session identifier
+
+        Returns:
+            RestorationSession if found, None otherwise
+
+        Raises:
+            StorageError: If query fails
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT id, started_at, completed_at, status,
+                       total_items, success_count, error_count,
+                       source_instance, destination_instance,
+                       config, metadata
+                FROM restoration_sessions
+                WHERE id = ?
+            """,
+                (session_id,),
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return RestorationSession(
+                id=row["id"],
+                started_at=datetime.fromisoformat(row["started_at"]),
+                completed_at=datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None,
+                status=row["status"],
+                total_items=row["total_items"],
+                success_count=row["success_count"],
+                error_count=row["error_count"],
+                source_instance=row["source_instance"],
+                destination_instance=row["destination_instance"],
+                config=json.loads(row["config"]) if row["config"] else None,
+                metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+            )
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get restoration session: {e}") from e
+
+    def list_restoration_sessions(
+        self,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[RestorationSession]:
+        """List restoration sessions with optional status filter.
+
+        Args:
+            status: Optional status filter (e.g., 'pending', 'running', 'completed')
+            limit: Maximum sessions to return (default: 100)
+            offset: Pagination offset (default: 0)
+
+        Returns:
+            Sequence of RestorationSession objects ordered by started_at DESC
+
+        Raises:
+            StorageError: If query fails
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT id, started_at, completed_at, status,
+                       total_items, success_count, error_count,
+                       source_instance, destination_instance,
+                       config, metadata
+                FROM restoration_sessions
+            """
+
+            params: list[str | int] = []
+
+            if status:
+                query += " WHERE status = ?"
+                params.append(status)
+
+            query += " ORDER BY started_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+            cursor.execute(query, params)
+
+            sessions = []
+            for row in cursor.fetchall():
+                sessions.append(
+                    RestorationSession(
+                        id=row["id"],
+                        started_at=datetime.fromisoformat(row["started_at"]),
+                        completed_at=datetime.fromisoformat(row["completed_at"])
+                        if row["completed_at"]
+                        else None,
+                        status=row["status"],
+                        total_items=row["total_items"],
+                        success_count=row["success_count"],
+                        error_count=row["error_count"],
+                        source_instance=row["source_instance"],
+                        destination_instance=row["destination_instance"],
+                        config=json.loads(row["config"]) if row["config"] else None,
+                        metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+                    )
+                )
+
+            return sessions
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to list restoration sessions: {e}") from e

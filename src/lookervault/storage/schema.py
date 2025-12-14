@@ -126,6 +126,115 @@ def create_schema(conn: sqlite3.Connection) -> None:
         ON extraction_sessions(status)
     """)
 
+    # Create restoration_sessions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS restoration_sessions (
+            id TEXT PRIMARY KEY,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT NOT NULL,
+            total_items INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            source_instance TEXT,
+            destination_instance TEXT NOT NULL,
+            config TEXT,
+            metadata TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_restoration_session_status
+        ON restoration_sessions(status)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_restoration_session_started
+        ON restoration_sessions(started_at DESC)
+    """)
+
+    # Create restoration_checkpoints table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS restoration_checkpoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            content_type INTEGER NOT NULL,
+            checkpoint_data TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            item_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_restoration_checkpoint_session
+        ON restoration_checkpoints(session_id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_restoration_checkpoint_type
+        ON restoration_checkpoints(content_type)
+    """)
+
+    # Create id_mappings table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS id_mappings (
+            source_instance TEXT NOT NULL,
+            content_type INTEGER NOT NULL,
+            source_id TEXT NOT NULL,
+            destination_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            session_id TEXT,
+            PRIMARY KEY (source_instance, content_type, source_id),
+            FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE SET NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_id_mapping_dest
+        ON id_mappings(destination_id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_id_mapping_session
+        ON id_mappings(session_id)
+    """)
+
+    # Create dead_letter_queue table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dead_letter_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            content_id TEXT NOT NULL,
+            content_type INTEGER NOT NULL,
+            content_data BLOB NOT NULL,
+            error_message TEXT NOT NULL,
+            error_type TEXT NOT NULL,
+            stack_trace TEXT,
+            retry_count INTEGER NOT NULL,
+            failed_at TEXT NOT NULL,
+            metadata TEXT,
+            FOREIGN KEY (session_id) REFERENCES restoration_sessions(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dlq_session
+        ON dead_letter_queue(session_id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dlq_content
+        ON dead_letter_queue(content_type, content_id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dlq_failed_at
+        ON dead_letter_queue(failed_at DESC)
+    """)
+
     # Record schema version if not already recorded
     cursor.execute(
         "SELECT version FROM schema_version WHERE version = ?",

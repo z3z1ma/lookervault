@@ -268,5 +268,68 @@ def cleanup(
     cleanup_module.run(retention_days, db, dry_run, verbose, debug)
 
 
+# Restore command group
+restore_app = typer.Typer(
+    help="Restore content from backup to Looker instance",
+    no_args_is_help=True,
+)
+app.add_typer(restore_app, name="restore")
+
+
+@restore_app.command("single")
+def restore_single_cmd(
+    content_type: Annotated[
+        str,
+        typer.Argument(help="Content type to restore (dashboard, look, folder, etc.)"),
+    ],
+    content_id: Annotated[
+        str,
+        typer.Argument(help="ID of the content item to restore"),
+    ],
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to configuration file"),
+    ] = None,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Validate without making changes"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Skip confirmation prompts"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Restore a single content item by type and ID."""
+    from .commands import restore as restore_module
+
+    restore_module.restore_single(
+        content_type,
+        content_id,
+        config,
+        db_path,
+        dry_run,
+        force,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
 if __name__ == "__main__":
     app()

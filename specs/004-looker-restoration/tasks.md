@@ -24,13 +24,13 @@
 
 **Purpose**: Project initialization and database schema foundation
 
-- [ ] T001 Add restoration exceptions to src/lookervault/exceptions.py (RestorationError, DeserializationError, ValidationError, DependencyError, IDMappingError)
-- [ ] T002 [P] Create restoration module directory src/lookervault/restoration/ with __init__.py
-- [ ] T003 [P] Add restoration_sessions table SQL to src/lookervault/storage/schema.py
-- [ ] T004 [P] Add restoration_checkpoints table SQL to src/lookervault/storage/schema.py
-- [ ] T005 [P] Add id_mappings table SQL to src/lookervault/storage/schema.py
-- [ ] T006 [P] Add dead_letter_queue table SQL to src/lookervault/storage/schema.py
-- [ ] T007 Add database indexes for restoration tables in src/lookervault/storage/schema.py
+- [X] T001 Add restoration exceptions to src/lookervault/exceptions.py (RestorationError, DeserializationError, ValidationError, DependencyError, IDMappingError)
+- [X] T002 [P] Create restoration module directory src/lookervault/restoration/ with __init__.py
+- [X] T003 [P] Add restoration_sessions table SQL to src/lookervault/storage/schema.py
+- [X] T004 [P] Add restoration_checkpoints table SQL to src/lookervault/storage/schema.py
+- [X] T005 [P] Add id_mappings table SQL to src/lookervault/storage/schema.py
+- [X] T006 [P] Add dead_letter_queue table SQL to src/lookervault/storage/schema.py
+- [X] T007 Add database indexes for restoration tables in src/lookervault/storage/schema.py
 
 **Checkpoint**: Database schema ready for restoration operations
 
@@ -44,46 +44,46 @@
 
 ### Data Models
 
-- [ ] T008 [P] Add RestorationSession dataclass to src/lookervault/storage/models.py
-- [ ] T009 [P] Add RestorationCheckpoint dataclass to src/lookervault/storage/models.py
-- [ ] T010 [P] Add IDMapping dataclass to src/lookervault/storage/models.py
-- [ ] T011 [P] Add DeadLetterItem dataclass to src/lookervault/storage/models.py
-- [ ] T012 [P] Add RestorationTask dataclass to src/lookervault/storage/models.py
-- [ ] T013 [P] Add DependencyOrder enum to src/lookervault/storage/models.py
+- [X] T008 [P] Add RestorationSession dataclass to src/lookervault/storage/models.py
+- [X] T009 [P] Add RestorationCheckpoint dataclass to src/lookervault/storage/models.py
+- [X] T010 [P] Add IDMapping dataclass to src/lookervault/storage/models.py
+- [X] T011 [P] Add DeadLetterItem dataclass to src/lookervault/storage/models.py
+- [X] T012 [P] Add RestorationTask dataclass to src/lookervault/storage/models.py
+- [X] T013 [P] Add DependencyOrder enum to src/lookervault/storage/models.py
 
 ### Repository Extensions
 
-- [ ] T014 [P] Implement create_restoration_session() in src/lookervault/storage/repository.py
-- [ ] T015 [P] Implement update_restoration_session() in src/lookervault/storage/repository.py
-- [ ] T016 [P] Implement get_restoration_session() in src/lookervault/storage/repository.py
-- [ ] T017 [P] Implement list_restoration_sessions() in src/lookervault/storage/repository.py
-- [ ] T018 [P] Implement save_restoration_checkpoint() in src/lookervault/storage/repository.py
-- [ ] T019 [P] Implement update_restoration_checkpoint() in src/lookervault/storage/repository.py
-- [ ] T020 [P] Implement get_latest_restoration_checkpoint() in src/lookervault/storage/repository.py
-- [ ] T021 [P] Implement save_id_mapping() in src/lookervault/storage/repository.py
-- [ ] T022 [P] Implement get_id_mapping() in src/lookervault/storage/repository.py
-- [ ] T023 [P] Implement get_destination_id() in src/lookervault/storage/repository.py
-- [ ] T024 [P] Implement batch_get_mappings() in src/lookervault/storage/repository.py
-- [ ] T025 [P] Implement clear_mappings() in src/lookervault/storage/repository.py
-- [ ] T026 [P] Implement save_dead_letter_item() in src/lookervault/storage/repository.py
-- [ ] T027 [P] Implement get_dead_letter_item() in src/lookervault/storage/repository.py
-- [ ] T028 [P] Implement list_dead_letter_items() in src/lookervault/storage/repository.py
-- [ ] T029 [P] Implement count_dead_letter_items() in src/lookervault/storage/repository.py
-- [ ] T030 [P] Implement delete_dead_letter_item() in src/lookervault/storage/repository.py
+- [X] T014 [P] Implement create_restoration_session() in src/lookervault/storage/repository.py
+- [X] T015 [P] Implement update_restoration_session() in src/lookervault/storage/repository.py
+- [X] T016 [P] Implement get_restoration_session() in src/lookervault/storage/repository.py
+- [X] T017 [P] Implement list_restoration_sessions() in src/lookervault/storage/repository.py
+- [X] T018 [P] Implement save_restoration_checkpoint() in src/lookervault/storage/repository.py
+- [X] T019 [P] Implement update_restoration_checkpoint() in src/lookervault/storage/repository.py
+- [X] T020 [P] Implement get_latest_restoration_checkpoint() in src/lookervault/storage/repository.py
+- [X] T021 [P] Implement save_id_mapping() in src/lookervault/storage/repository.py
+- [X] T022 [P] Implement get_id_mapping() in src/lookervault/storage/repository.py
+- [X] T023 [P] Implement get_destination_id() in src/lookervault/storage/repository.py
+- [X] T024 [P] Implement batch_get_mappings() in src/lookervault/storage/repository.py
+- [X] T025 [P] Implement clear_mappings() in src/lookervault/storage/repository.py
+- [X] T026 [P] Implement save_dead_letter_item() in src/lookervault/storage/repository.py
+- [X] T027 [P] Implement get_dead_letter_item() in src/lookervault/storage/repository.py
+- [X] T028 [P] Implement list_dead_letter_items() in src/lookervault/storage/repository.py
+- [X] T029 [P] Implement count_dead_letter_items() in src/lookervault/storage/repository.py
+- [X] T030 [P] Implement delete_dead_letter_item() in src/lookervault/storage/repository.py
 
 ### Core Restoration Infrastructure
 
-- [ ] T031 [P] Create ContentDeserializer class in src/lookervault/restoration/deserializer.py
-- [ ] T032 Implement ContentDeserializer.deserialize() method with support for all ContentType enum values
-- [ ] T033 [P] Implement ContentDeserializer.validate_schema() method
-- [ ] T034 [P] Create DependencyGraph class in src/lookervault/restoration/dependency_graph.py
-- [ ] T035 Implement DependencyGraph.get_restoration_order() with hardcoded dependency relationships
-- [ ] T036 [P] Implement DependencyGraph.validate_no_cycles() method
-- [ ] T037 [P] Implement DependencyGraph.get_dependencies() method
-- [ ] T038 [P] Create RestorationValidator class in src/lookervault/restoration/validation.py
-- [ ] T039 [P] Implement RestorationValidator.validate_pre_flight() method
-- [ ] T040 [P] Implement RestorationValidator.validate_content() method
-- [ ] T041 [P] Implement RestorationValidator.validate_dependencies() method
+- [X] T031 [P] Create ContentDeserializer class in src/lookervault/restoration/deserializer.py
+- [X] T032 Implement ContentDeserializer.deserialize() method with support for all ContentType enum values
+- [X] T033 [P] Implement ContentDeserializer.validate_schema() method
+- [X] T034 [P] Create DependencyGraph class in src/lookervault/restoration/dependency_graph.py
+- [X] T035 Implement DependencyGraph.get_restoration_order() with hardcoded dependency relationships
+- [X] T036 [P] Implement DependencyGraph.validate_no_cycles() method
+- [X] T037 [P] Implement DependencyGraph.get_dependencies() method
+- [X] T038 [P] Create RestorationValidator class in src/lookervault/restoration/validation.py
+- [X] T039 [P] Implement RestorationValidator.validate_pre_flight() method
+- [X] T040 [P] Implement RestorationValidator.validate_content() method
+- [X] T041 [P] Implement RestorationValidator.validate_dependencies() method
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -102,20 +102,20 @@
 
 ### Implementation for User Story 1
 
-- [ ] T042 [P] [US1] Create LookerContentRestorer class in src/lookervault/restoration/restorer.py
-- [ ] T043 [P] [US1] Implement LookerContentRestorer.__init__() with client, repository, rate_limiter, id_mapper parameters
-- [ ] T044 [US1] Implement LookerContentRestorer.check_exists() method to verify content exists in destination via GET request
-- [ ] T045 [US1] Implement LookerContentRestorer._call_api_update() method with retry_on_rate_limit decorator for PATCH operations
-- [ ] T046 [US1] Implement LookerContentRestorer._call_api_create() method with retry_on_rate_limit decorator for POST operations
-- [ ] T047 [US1] Implement LookerContentRestorer.restore_single() method (fetch from SQLite, deserialize, validate, check exists, call update or create, return RestorationResult)
-- [ ] T048 [P] [US1] Create RestorationConfig Pydantic model in src/lookervault/config/models.py with workers, rate limits, dry_run, filtering options
-- [ ] T049 [P] [US1] Create RestorationResult dataclass in src/lookervault/storage/models.py (content_id, content_type, status, destination_id, error_message, retry_count, duration_ms)
-- [ ] T050 [P] [US1] Create RestorationSummary dataclass in src/lookervault/storage/models.py (session_id, total_items, success_count, created_count, updated_count, error_count, skipped_count, duration_seconds, average_throughput, content_type_breakdown, error_breakdown)
-- [ ] T051 [P] [US1] Create CLI restore command module src/lookervault/cli/commands/restore.py
-- [ ] T052 [US1] Implement restore_single() CLI command in src/lookervault/cli/commands/restore.py with typer (arguments: content_type, content_id; options: --db-path, --dry-run, --force, --json)
-- [ ] T053 [US1] Add rich output formatting for restore_single() showing Found in backup, Checking destination, Restoration successful/failed with duration
-- [ ] T054 [US1] Register restore command group in src/lookervault/cli/main.py
-- [ ] T055 [US1] Add exit code handling (0=success, 1=error, 2=not found, 3=validation error, 4=API error)
+- [X] T042 [P] [US1] Create LookerContentRestorer class in src/lookervault/restoration/restorer.py
+- [X] T043 [P] [US1] Implement LookerContentRestorer.__init__() with client, repository, rate_limiter, id_mapper parameters
+- [X] T044 [US1] Implement LookerContentRestorer.check_exists() method to verify content exists in destination via GET request
+- [X] T045 [US1] Implement LookerContentRestorer._call_api_update() method with retry_on_rate_limit decorator for PATCH operations
+- [X] T046 [US1] Implement LookerContentRestorer._call_api_create() method with retry_on_rate_limit decorator for POST operations
+- [X] T047 [US1] Implement LookerContentRestorer.restore_single() method (fetch from SQLite, deserialize, validate, check exists, call update or create, return RestorationResult)
+- [X] T048 [P] [US1] Create RestorationConfig Pydantic model in src/lookervault/config/models.py with workers, rate limits, dry_run, filtering options
+- [X] T049 [P] [US1] Create RestorationResult dataclass in src/lookervault/storage/models.py (content_id, content_type, status, destination_id, error_message, retry_count, duration_ms)
+- [X] T050 [P] [US1] Create RestorationSummary dataclass in src/lookervault/storage/models.py (session_id, total_items, success_count, created_count, updated_count, error_count, skipped_count, duration_seconds, average_throughput, content_type_breakdown, error_breakdown)
+- [X] T051 [P] [US1] Create CLI restore command module src/lookervault/cli/commands/restore.py
+- [X] T052 [US1] Implement restore_single() CLI command in src/lookervault/cli/commands/restore.py with typer (arguments: content_type, content_id; options: --db-path, --dry-run, --force, --json)
+- [X] T053 [US1] Add rich output formatting for restore_single() showing Found in backup, Checking destination, Restoration successful/failed with duration
+- [X] T054 [US1] Register restore command group in src/lookervault/cli/main.py
+- [X] T055 [US1] Add exit code handling (0=success, 1=error, 2=not found, 3=validation error, 4=API error)
 
 **Checkpoint**: User Story 1 complete - single-item restoration works end-to-end, production-safe testing enabled
 

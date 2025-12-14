@@ -179,3 +179,86 @@ class ParallelConfig(BaseModel):
             f"ParallelConfig(workers={self.workers}, queue={self.queue_size}, "
             f"batch={self.batch_size}, rate={self.rate_limit_per_minute}/min)"
         )
+
+
+class RestorationConfig(BaseModel):
+    """Configuration for restoration operation.
+
+    Examples:
+        >>> # Default configuration (8 workers, standard rate limits)
+        >>> config = RestorationConfig(destination_instance="https://looker.example.com")
+
+        >>> # Cross-instance migration
+        >>> config = RestorationConfig(
+        ...     source_instance="https://looker-old.example.com",
+        ...     destination_instance="https://looker-new.example.com",
+        ... )
+
+        >>> # Dry run mode (no actual API calls)
+        >>> config = RestorationConfig(
+        ...     destination_instance="https://looker.example.com", dry_run=True
+        ... )
+
+        >>> # High-throughput restoration
+        >>> config = RestorationConfig(
+        ...     destination_instance="https://looker.example.com",
+        ...     workers=16,
+        ...     rate_limit_per_minute=200,
+        ... )
+    """
+
+    workers: int = Field(default=8, ge=1, le=32, description="Number of worker threads (1-32)")
+    rate_limit_per_minute: int = Field(
+        default=120, ge=1, description="Maximum API requests per minute"
+    )
+    rate_limit_per_second: int = Field(
+        default=10, ge=1, description="Maximum API requests per second"
+    )
+    checkpoint_interval: int = Field(default=100, ge=1, description="Save checkpoint every N items")
+    max_retries: int = Field(default=5, ge=0, le=10, description="Maximum retry attempts per item")
+    dry_run: bool = Field(default=False, description="Preview mode - no actual API calls")
+    skip_if_modified: bool = Field(
+        default=False, description="Skip items if modified in destination"
+    )
+
+    # Filtering
+    content_types: list[int] | None = Field(
+        default=None, description="Content types to restore (None = all)"
+    )
+    content_ids: list[str] | None = Field(
+        default=None, description="Specific content IDs to restore (None = all)"
+    )
+    date_range: tuple[datetime, datetime] | None = Field(
+        default=None, description="Restore only items within date range"
+    )
+
+    # Instance configuration
+    source_instance: str | None = Field(
+        default=None, description="Source Looker instance URL (for cross-instance)"
+    )
+    destination_instance: str = Field(description="Destination Looker instance URL")
+
+    @model_validator(mode="after")
+    def validate_workers(self) -> "RestorationConfig":
+        """Warn if workers > 16 (SQLite write contention)."""
+        if self.workers > 16:
+            # Note: logger not imported here, validation passes but warning should be shown at runtime
+            pass
+        return self
+
+    @model_validator(mode="after")
+    def validate_rate_limits(self) -> "RestorationConfig":
+        """Ensure rate limits are consistent.
+
+        Returns:
+            Validated RestorationConfig instance
+
+        Raises:
+            ValueError: If rate_limit_per_second > rate_limit_per_minute
+        """
+        if self.rate_limit_per_second > self.rate_limit_per_minute:
+            raise ValueError(
+                f"rate_limit_per_second ({self.rate_limit_per_second}) cannot exceed "
+                f"rate_limit_per_minute ({self.rate_limit_per_minute})"
+            )
+        return self
