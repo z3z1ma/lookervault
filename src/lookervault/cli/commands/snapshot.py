@@ -159,6 +159,10 @@ def upload(
 
             raise typer.Exit(EXIT_SUCCESS)
 
+        except typer.Exit:
+            # Re-raise exit exceptions (don't catch our own exits!)
+            raise
+
         except FileNotFoundError as e:
             print_error(f"File not found: {e}")
             raise typer.Exit(EXIT_VALIDATION_ERROR)
@@ -343,7 +347,7 @@ def list(
 @app.command()
 def download(
     snapshot_ref: str | None = typer.Argument(
-        None, help="Snapshot reference (index or timestamp). Optional if --interactive is used."
+        "1", help="Snapshot reference (index or timestamp). Optional if --interactive is used."
     ),
     output: str = typer.Option("./looker.db", help="Output path for downloaded file"),
     overwrite: bool = typer.Option(False, help="Overwrite existing file without confirmation"),
