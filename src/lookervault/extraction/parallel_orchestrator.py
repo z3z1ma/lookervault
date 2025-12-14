@@ -159,10 +159,10 @@ class ParallelOrchestrator:
         result = ExtractionResult(session_id=session.id, total_items=0)
 
         try:
-            # Check for cached resolved folder hierarchy on resume
-            if self.config.resume and self.config.folder_ids and self.config.recursive_folders:
-                # Attempt to restore cached hierarchy from session metadata
-                if session.metadata:
+            # Expand folder hierarchy BEFORE any content type extraction
+            if self.config.folder_ids and self.config.recursive_folders:
+                # Check for cached resolved folder hierarchy on resume
+                if self.config.resume and session.metadata:
                     cached_folder_ids = session.metadata.get("resolved_folder_ids")
                     if cached_folder_ids:
                         logger.info(
@@ -170,6 +170,12 @@ class ParallelOrchestrator:
                             f"({len(cached_folder_ids)} folders)"
                         )
                         self.config.folder_ids = set(cached_folder_ids)
+                    else:
+                        # No cache - need to expand
+                        self._expand_folder_hierarchy_early(session)
+                else:
+                    # Not resuming or no metadata - expand from DB or extract folders first
+                    self._expand_folder_hierarchy_early(session)
 
             # Process each content type with appropriate strategy
             for content_type in self.config.content_types:
@@ -244,49 +250,6 @@ class ParallelOrchestrator:
                         fields=self.config.fields,
                         updated_after=updated_after,
                     )
-
-                # After FOLDER extraction: expand folder_ids if recursive
-                if (
-                    content_type == ContentType.FOLDER.value
-                    and self.config.folder_ids
-                    and self.config.recursive_folders
-                ):
-                    from lookervault.folder.hierarchy import FolderHierarchyResolver
-
-                    # Check if we already have cached resolved folder hierarchy
-                    if session.metadata and session.metadata.get("resolved_folder_ids"):
-                        logger.info("Using cached resolved folder hierarchy (already expanded)")
-                    else:
-                        logger.info("Expanding folder IDs recursively after FOLDER extraction")
-
-                        # Build hierarchy resolver from repository
-                        hierarchy_resolver = FolderHierarchyResolver(self.repository)
-
-                        # Get root folder IDs (current config)
-                        root_folder_ids = list(self.config.folder_ids)
-
-                        # Expand to include all descendants
-                        all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
-                            root_folder_ids, include_roots=True
-                        )
-
-                        # Update config with expanded folder IDs
-                        self.config.folder_ids = all_folder_ids
-
-                        # Cache resolved folder hierarchy in session metadata
-                        if session.metadata is None:
-                            session.metadata = {}
-                        session.metadata["resolved_folder_ids"] = sorted(all_folder_ids)
-                        session.metadata["root_folder_ids"] = sorted(root_folder_ids)
-                        session.metadata["folder_expansion_timestamp"] = datetime.now(
-                            UTC
-                        ).isoformat()
-                        self.repository.update_session(session)
-
-                        logger.info(
-                            f"Expanded {len(root_folder_ids)} root folder(s) to "
-                            f"{len(all_folder_ids)} total folder(s) (recursive), cached in session metadata"
-                        )
 
             # Get final metrics snapshot
             final_metrics = self.metrics.snapshot()
@@ -594,8 +557,15 @@ class ParallelOrchestrator:
                 else:
                     # Single-folder or no-folder coordinator (returns tuple of 2)
                     offset, limit = claimed_range  # type: ignore[misc]
-                    folder_id = None
-                    logger.info(f"Worker {worker_id} claimed range: offset={offset}, limit={limit}")
+                    folder_id = (
+                        list(self.config.folder_ids)[0]
+                        if self.config.folder_ids and len(self.config.folder_ids) == 1
+                        else None
+                    )
+                    logger.info(
+                        f"Worker {worker_id} claimed range: offset={offset}, limit={limit}"
+                        + (f", folder_id={folder_id}" if folder_id else "")
+                    )
 
                 # Fetch data from Looker API with SDK-level folder filtering
                 try:
@@ -859,3 +829,106 @@ class ParallelOrchestrator:
             content_data=content_data,
             folder_id=folder_id,
         )
+
+    def _expand_folder_hierarchy_early(self, session: ExtractionSession) -> None:
+        """Expand folder hierarchy BEFORE content extraction.
+
+        This method attempts to expand folder IDs recursively by:
+        1. Checking if folders are already in the repository
+        2. If yes: expanding immediately using cached hierarchy
+        3. If no: extracting folders first, then expanding
+
+        This ensures the correct coordinator (multi-folder vs. single-folder) is chosen.
+
+        Args:
+            session: Current extraction session (for metadata caching)
+        """
+        from lookervault.folder.hierarchy import FolderHierarchyResolver
+
+        root_folder_ids = list(self.config.folder_ids)
+
+        # Try to load folders from repository
+        try:
+            hierarchy_resolver = FolderHierarchyResolver(self.repository)
+
+            # Check if folders exist in repository
+            folder_count = len(
+                self.repository.list_content(
+                    content_type=ContentType.FOLDER.value, include_deleted=False
+                )
+            )
+
+            if folder_count > 0:
+                # Folders exist - expand immediately
+                logger.info(
+                    f"Found {folder_count} folders in repository, expanding hierarchy immediately"
+                )
+                all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                    root_folder_ids, include_roots=True
+                )
+
+                # Update config with expanded folder IDs
+                self.config.folder_ids = all_folder_ids
+
+                # Cache in session metadata
+                if session.metadata is None:
+                    session.metadata = {}
+                session.metadata["resolved_folder_ids"] = sorted(all_folder_ids)
+                session.metadata["root_folder_ids"] = sorted(root_folder_ids)
+                session.metadata["folder_expansion_timestamp"] = datetime.now(UTC).isoformat()
+                self.repository.update_session(session)
+
+                logger.info(
+                    f"Expanded {len(root_folder_ids)} root folder(s) to "
+                    f"{len(all_folder_ids)} total folder(s) recursively (from repository cache)"
+                )
+            else:
+                # No folders in DB - must extract them first
+                logger.info(
+                    "No folders in repository, extracting folders first for recursive expansion"
+                )
+
+                # Ensure FOLDER content type is in extraction list
+                if ContentType.FOLDER.value not in self.config.content_types:
+                    logger.warning(
+                        "Adding ContentType.FOLDER to extraction list for recursive folder expansion"
+                    )
+                    # Prepend folders to ensure they're extracted first
+                    self.config.content_types.insert(0, ContentType.FOLDER.value)
+
+                # Extract folders using sequential strategy (folders are non-paginated)
+                logger.info("Extracting folders for hierarchy expansion")
+                self._extract_sequential(
+                    content_type=ContentType.FOLDER.value,
+                    session_id=session.id,
+                    fields=self.config.fields,
+                    updated_after=None,
+                )
+
+                # Now expand hierarchy
+                hierarchy_resolver = FolderHierarchyResolver(
+                    self.repository
+                )  # Reload with fresh data
+                all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                    root_folder_ids, include_roots=True
+                )
+
+                # Update config with expanded folder IDs
+                self.config.folder_ids = all_folder_ids
+
+                # Cache in session metadata
+                if session.metadata is None:
+                    session.metadata = {}
+                session.metadata["resolved_folder_ids"] = sorted(all_folder_ids)
+                session.metadata["root_folder_ids"] = sorted(root_folder_ids)
+                session.metadata["folder_expansion_timestamp"] = datetime.now(UTC).isoformat()
+                self.repository.update_session(session)
+
+                logger.info(
+                    f"Expanded {len(root_folder_ids)} root folder(s) to "
+                    f"{len(all_folder_ids)} total folder(s) recursively (after extracting folders)"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to expand folder hierarchy: {e}")
+            raise OrchestrationError(f"Folder hierarchy expansion failed: {e}") from e

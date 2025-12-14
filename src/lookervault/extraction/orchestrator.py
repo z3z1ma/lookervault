@@ -1,5 +1,6 @@
 """Orchestration of content extraction workflow."""
 
+import itertools
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -108,6 +109,10 @@ class ExtractionOrchestrator:
         result = ExtractionResult(session_id=session.id, total_items=0)
 
         try:
+            # Expand folder hierarchy BEFORE any content type extraction
+            if self.config.folder_ids and self.config.recursive_folders:
+                self._expand_folder_hierarchy_early(session)
+
             # Extract each content type
             for content_type in self.config.content_types:
                 items_extracted = self._extract_content_type(content_type, session.id)
@@ -188,12 +193,59 @@ class ExtractionOrchestrator:
                     )
 
             # Extract items from Looker API
-            items_iterator = self.extractor.extract_all(
-                ContentType(content_type),
-                fields=self.config.fields,
-                batch_size=self.config.batch_size,
-                updated_after=updated_after,
-            )
+            # Handle folder-level filtering for dashboards and looks
+            content_type_enum = ContentType(content_type)
+            supports_folder_filtering = content_type_enum in [
+                ContentType.DASHBOARD,
+                ContentType.LOOK,
+            ]
+
+            if (
+                self.config.folder_ids
+                and supports_folder_filtering
+                and len(self.config.folder_ids) > 1
+            ):
+                # Multi-folder: Chain iterators (one per folder_id)
+                logger.info(
+                    f"Using sequential multi-folder extraction for {content_type_name} "
+                    f"({len(self.config.folder_ids)} folders)"
+                )
+                iterators = [
+                    self.extractor.extract_all(
+                        content_type_enum,
+                        fields=self.config.fields,
+                        batch_size=self.config.batch_size,
+                        updated_after=updated_after,
+                        folder_id=folder_id,
+                    )
+                    for folder_id in self.config.folder_ids
+                ]
+                items_iterator = itertools.chain(*iterators)
+            elif (
+                self.config.folder_ids
+                and supports_folder_filtering
+                and len(self.config.folder_ids) == 1
+            ):
+                # Single folder: SDK-level filtering
+                folder_id = list(self.config.folder_ids)[0]
+                logger.info(
+                    f"Using SDK-level folder filtering for {content_type_name} (folder_id={folder_id})"
+                )
+                items_iterator = self.extractor.extract_all(
+                    content_type_enum,
+                    fields=self.config.fields,
+                    batch_size=self.config.batch_size,
+                    updated_after=updated_after,
+                    folder_id=folder_id,
+                )
+            else:
+                # No folder filtering or content type doesn't support it
+                items_iterator = self.extractor.extract_all(
+                    content_type_enum,
+                    fields=self.config.fields,
+                    batch_size=self.config.batch_size,
+                    updated_after=updated_after,
+                )
 
             # For incremental mode, get existing IDs for soft delete detection
             existing_ids = set()
@@ -449,3 +501,85 @@ class ExtractionOrchestrator:
             )
         except Exception as e:
             raise OrchestrationError(f"Failed to convert item to ContentItem: {e}") from e
+
+    def _expand_folder_hierarchy_early(self, session: ExtractionSession) -> None:
+        """Expand folder hierarchy BEFORE content extraction.
+
+        This method attempts to expand folder IDs recursively by:
+        1. Checking if folders are already in the repository
+        2. If yes: expanding immediately using cached hierarchy
+        3. If no: extracting folders first, then expanding
+
+        This ensures multi-folder iterator chaining works correctly.
+
+        Args:
+            session: Current extraction session (for metadata caching)
+        """
+        from lookervault.folder.hierarchy import FolderHierarchyResolver
+
+        root_folder_ids = list(self.config.folder_ids)
+
+        # Try to load folders from repository
+        try:
+            hierarchy_resolver = FolderHierarchyResolver(self.repository)
+
+            # Check if folders exist in repository
+            folder_count = len(
+                self.repository.list_content(
+                    content_type=ContentType.FOLDER.value, include_deleted=False
+                )
+            )
+
+            if folder_count > 0:
+                # Folders exist - expand immediately
+                logger.info(
+                    f"Found {folder_count} folders in repository, expanding hierarchy immediately"
+                )
+                all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                    root_folder_ids, include_roots=True
+                )
+
+                # Update config with expanded folder IDs
+                self.config.folder_ids = all_folder_ids
+
+                logger.info(
+                    f"Expanded {len(root_folder_ids)} root folder(s) to "
+                    f"{len(all_folder_ids)} total folder(s) recursively (from repository cache)"
+                )
+            else:
+                # No folders in DB - must extract them first
+                logger.info(
+                    "No folders in repository, extracting folders first for recursive expansion"
+                )
+
+                # Ensure FOLDER content type is in extraction list
+                if ContentType.FOLDER.value not in self.config.content_types:
+                    logger.warning(
+                        "Adding ContentType.FOLDER to extraction list for recursive folder expansion"
+                    )
+                    # Prepend folders to ensure they're extracted first
+                    self.config.content_types.insert(0, ContentType.FOLDER.value)
+
+                # Extract folders
+                logger.info("Extracting folders for hierarchy expansion")
+                self._extract_content_type(ContentType.FOLDER.value, session.id)
+
+                # Now expand hierarchy
+                hierarchy_resolver = FolderHierarchyResolver(
+                    self.repository
+                )  # Reload with fresh data
+                all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                    root_folder_ids, include_roots=True
+                )
+
+                # Update config with expanded folder IDs
+                self.config.folder_ids = all_folder_ids
+
+                logger.info(
+                    f"Expanded {len(root_folder_ids)} root folder(s) to "
+                    f"{len(all_folder_ids)} total folder(s) recursively (after extracting folders)"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to expand folder hierarchy: {e}")
+            raise OrchestrationError(f"Folder hierarchy expansion failed: {e}") from e

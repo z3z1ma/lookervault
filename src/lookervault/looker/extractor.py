@@ -24,6 +24,7 @@ class ContentExtractor(Protocol):
         fields: str | None = None,
         batch_size: int = 100,
         updated_after: datetime | None = None,
+        folder_id: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Extract all content of given type.
 
@@ -32,6 +33,7 @@ class ContentExtractor(Protocol):
             fields: Comma-separated field list (Looker API format)
             batch_size: Items per batch for paginated endpoints
             updated_after: Only return items updated after this timestamp (for incremental)
+            folder_id: Folder ID for SDK-level filtering (dashboards/looks only)
 
         Yields:
             Individual content items as dicts
@@ -135,6 +137,7 @@ class LookerContentExtractor:
         fields: str | None = None,
         batch_size: int = 100,
         updated_after: datetime | None = None,
+        folder_id: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Extract all content of given type.
 
@@ -143,6 +146,7 @@ class LookerContentExtractor:
             fields: Comma-separated field list
             batch_size: Items per batch for paginated endpoints
             updated_after: Only return items updated after this timestamp (for incremental)
+            folder_id: Folder ID for SDK-level filtering (dashboards/looks only)
 
         Yields:
             Individual content items as dicts
@@ -154,11 +158,11 @@ class LookerContentExtractor:
         try:
             if content_type == ContentType.DASHBOARD:
                 # Dashboards require pagination for large instances
-                yield from self._paginate_dashboards(fields, batch_size, updated_after)
+                yield from self._paginate_dashboards(fields, batch_size, updated_after, folder_id)
 
             elif content_type == ContentType.LOOK:
                 # Looks require pagination for large instances
-                yield from self._paginate_looks(fields, batch_size, updated_after)
+                yield from self._paginate_looks(fields, batch_size, updated_after, folder_id)
 
             elif content_type == ContentType.LOOKML_MODEL:
                 models = self._call_api("all_lookml_models", fields=fields)
@@ -306,7 +310,11 @@ class LookerContentExtractor:
             ) from e
 
     def _paginate_dashboards(
-        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+        self,
+        fields: str | None,
+        batch_size: int,
+        updated_after: datetime | None = None,
+        folder_id: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Paginate through all dashboards.
 
@@ -314,15 +322,18 @@ class LookerContentExtractor:
             fields: Field filter
             batch_size: Items per page
             updated_after: Only return items updated after this timestamp
+            folder_id: Folder ID for SDK-level filtering (optional)
 
         Yields:
             Dashboard dicts
         """
         offset = 0
         while True:
-            dashboards = self._call_api(
-                "search_dashboards", fields=fields, limit=batch_size, offset=offset
-            )
+            api_kwargs = {"fields": fields, "limit": batch_size, "offset": offset}
+            if folder_id:
+                api_kwargs["folder_id"] = folder_id
+
+            dashboards = self._call_api("search_dashboards", **api_kwargs)
             if not dashboards or len(dashboards) == 0:
                 break
 
@@ -337,7 +348,11 @@ class LookerContentExtractor:
             offset += batch_size
 
     def _paginate_looks(
-        self, fields: str | None, batch_size: int, updated_after: datetime | None = None
+        self,
+        fields: str | None,
+        batch_size: int,
+        updated_after: datetime | None = None,
+        folder_id: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Paginate through all looks.
 
@@ -345,13 +360,18 @@ class LookerContentExtractor:
             fields: Field filter
             batch_size: Items per page
             updated_after: Only return items updated after this timestamp
+            folder_id: Folder ID for SDK-level filtering (optional)
 
         Yields:
             Look dicts
         """
         offset = 0
         while True:
-            looks = self._call_api("search_looks", fields=fields, limit=batch_size, offset=offset)
+            api_kwargs = {"fields": fields, "limit": batch_size, "offset": offset}
+            if folder_id:
+                api_kwargs["folder_id"] = folder_id
+
+            looks = self._call_api("search_looks", **api_kwargs)
             if not looks or len(looks) == 0:
                 break
 

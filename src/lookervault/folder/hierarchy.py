@@ -70,9 +70,9 @@ class FolderHierarchyResolver:
         logger.debug(f"Loaded {len(folders)} folders from repository")
 
         # Deserialize and cache
-        decoder = msgspec.json.Decoder()
+        decoder = msgspec.msgpack.Decoder()
         for folder_item in folders:
-            # Deserialize content_data BLOB
+            # Deserialize content_data BLOB (msgpack-encoded binary)
             folder_metadata = decoder.decode(folder_item.content_data)
 
             # Cache metadata
