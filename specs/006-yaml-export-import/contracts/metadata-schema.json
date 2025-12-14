@@ -1,0 +1,196 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lookervault.io/schemas/export-metadata.json",
+  "title": "LookerVault Export Metadata",
+  "description": "Metadata manifest for YAML export directory",
+  "type": "object",
+  "required": [
+    "version",
+    "export_timestamp",
+    "strategy",
+    "database_schema_version",
+    "content_type_counts",
+    "total_items"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Metadata format version (semantic versioning)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "export_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when export was created",
+      "examples": ["2025-12-14T10:30:00Z"]
+    },
+    "strategy": {
+      "type": "string",
+      "enum": ["full", "folder"],
+      "description": "Export organization strategy"
+    },
+    "database_schema_version": {
+      "type": "integer",
+      "description": "SQLite schema version from source database",
+      "minimum": 1,
+      "examples": [3]
+    },
+    "content_type_counts": {
+      "type": "object",
+      "description": "Count of items per content type",
+      "patternProperties": {
+        "^[A-Z_]+$": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "DASHBOARD": 1250,
+          "LOOK": 834,
+          "USER": 156
+        }
+      ]
+    },
+    "total_items": {
+      "type": "integer",
+      "description": "Total number of content items exported",
+      "minimum": 0,
+      "examples": [2405]
+    },
+    "folder_map": {
+      "type": ["object", "null"],
+      "description": "Folder hierarchy metadata (required for folder strategy, null for full strategy)",
+      "patternProperties": {
+        "^[0-9]+$": {
+          "type": "object",
+          "required": ["id", "name", "parent_id", "path", "depth", "child_count"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Looker folder ID"
+            },
+            "name": {
+              "type": "string",
+              "description": "Folder display name"
+            },
+            "parent_id": {
+              "type": ["string", "null"],
+              "description": "Parent folder ID (null for root folders)"
+            },
+            "path": {
+              "type": "string",
+              "description": "Sanitized filesystem path",
+              "examples": ["Sales/Regional/West"]
+            },
+            "depth": {
+              "type": "integer",
+              "description": "Nesting level (0 = root)",
+              "minimum": 0
+            },
+            "child_count": {
+              "type": "integer",
+              "description": "Number of direct children (folders + content)",
+              "minimum": 0
+            },
+            "original_name": {
+              "type": ["string", "null"],
+              "description": "Original folder name if sanitized"
+            },
+            "sanitized": {
+              "type": "boolean",
+              "description": "True if path was modified for filesystem safety",
+              "default": false
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "789": {
+            "id": "789",
+            "name": "Sales",
+            "parent_id": null,
+            "path": "Sales",
+            "depth": 0,
+            "child_count": 2,
+            "original_name": null,
+            "sanitized": false
+          }
+        }
+      ]
+    },
+    "content_type_filter": {
+      "type": ["array", "null"],
+      "description": "Content type filter applied during export (null if no filter)",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z_]+$"
+      },
+      "examples": [["DASHBOARD", "LOOK"]]
+    },
+    "source_database": {
+      "type": ["string", "null"],
+      "description": "Original database file path",
+      "examples": ["/backups/looker.db"]
+    },
+    "checksum": {
+      "type": ["string", "null"],
+      "description": "SHA-256 checksum of all YAML files combined",
+      "pattern": "^[a-f0-9]{64}$",
+      "examples": ["a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"]
+    }
+  },
+  "if": {
+    "properties": {
+      "strategy": {
+        "const": "folder"
+      }
+    }
+  },
+  "then": {
+    "required": ["folder_map"],
+    "properties": {
+      "folder_map": {
+        "type": "object",
+        "minProperties": 1
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "folder_map": {
+        "type": "null"
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "export_timestamp": "2025-12-14T10:30:00Z",
+      "strategy": "full",
+      "database_schema_version": 3,
+      "content_type_counts": {
+        "DASHBOARD": 1250,
+        "LOOK": 834,
+        "USER": 156,
+        "FOLDER": 47,
+        "GROUP": 23,
+        "ROLE": 12,
+        "BOARD": 8,
+        "LOOKML_MODEL": 5,
+        "EXPLORE": 42,
+        "PERMISSION_SET": 7,
+        "MODEL_SET": 3,
+        "SCHEDULED_PLAN": 18
+      },
+      "total_items": 2405,
+      "folder_map": null,
+      "content_type_filter": null,
+      "source_database": "/backups/looker.db",
+      "checksum": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+    }
+  ]
+}

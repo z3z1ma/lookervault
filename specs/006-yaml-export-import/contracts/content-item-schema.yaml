@@ -1,0 +1,345 @@
+# YAML Content Item Schema
+#
+# This document describes the structure of individual content item YAML files
+# exported by LookerVault. Each content type (Dashboard, Look, User, etc.)
+# includes an internal _metadata section plus fields from the Looker SDK model.
+
+---
+
+# Common _metadata section (present in all content types)
+_metadata:
+  db_id:
+    type: string
+    description: "Original SQLite row ID (for tracking during pack)"
+    example: "abc123def456"
+    required: true
+
+  content_type:
+    type: string
+    description: "ContentType enum name"
+    enum: [
+      "DASHBOARD", "LOOK", "LOOKML_MODEL", "EXPLORE", "FOLDER",
+      "BOARD", "USER", "GROUP", "ROLE", "PERMISSION_SET",
+      "MODEL_SET", "SCHEDULED_PLAN"
+    ]
+    required: true
+
+  exported_at:
+    type: string
+    format: date-time
+    description: "ISO 8601 timestamp when item was exported"
+    example: "2025-12-14T10:30:15Z"
+    required: true
+
+  content_size:
+    type: integer
+    description: "Original msgpack blob size in bytes"
+    example: 12845
+    required: true
+
+  checksum:
+    type: string
+    description: "SHA-256 hash of original msgpack blob (for integrity verification)"
+    pattern: "^sha256:[a-f0-9]{64}$"
+    example: "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+    required: true
+
+  folder_path:
+    type: string
+    description: "Filesystem path to folder (only for folder strategy exports)"
+    example: "Sales/Regional/West"
+    required: false
+
+---
+
+# Example: Dashboard Content Item
+dashboard_example:
+  _metadata:
+    db_id: "abc123def456"
+    content_type: "DASHBOARD"
+    exported_at: "2025-12-14T10:30:15Z"
+    content_size: 12845
+    checksum: "sha256:a1b2c3d4..."
+    folder_path: "Sales/Regional/West"  # Only for folder strategy
+
+  # Looker SDK Dashboard model fields
+  id: "42"
+  title: "Sales Performance Dashboard"
+  description: "Q4 sales metrics by region"
+  user_id: "123"
+  view_count: 1247
+  favorite_count: 32
+  last_accessed_at: "2025-12-13T15:30:00Z"
+  last_viewed_at: "2025-12-13T15:30:00Z"
+  created_at: "2024-01-15T08:00:00Z"
+  updated_at: "2025-12-10T14:22:00Z"
+  deleted_at: null
+  deleted: false
+  folder_id: "791"
+  folder:
+    id: "791"
+    name: "West"
+    parent_id: "790"
+
+  dashboard_filters:
+    - id: "filter_1"
+      dashboard_id: "42"
+      name: "date_range"
+      title: "Date Range"
+      type: "date_filter"
+      default_value: "30 days"
+      model: "sales_model"
+      explore: "orders"
+      dimension: "orders.created_date"
+
+  dashboard_elements:
+    - id: "elem_1"
+      dashboard_id: "42"
+      title: "Total Revenue"
+      type: "vis"
+      subtitle_text: "Last 30 days"
+      query_id: "456"
+      # Embedded query definition (may be present or absent)
+      query:
+        model: "sales_model"
+        view: "orders"
+        fields:
+          - "orders.count"
+          - "orders.total_revenue"
+        filters:
+          orders.created_date: "30 days"
+        sorts:
+          - "orders.total_revenue desc"
+        limit: "100"
+        vis_config:
+          type: "looker_column"
+          # ... (visualization configuration)
+
+    - id: "elem_2"
+      dashboard_id: "42"
+      title: "Revenue by Region"
+      type: "vis"
+      query_id: "457"
+      # Query may be embedded or just referenced by ID
+      # If modified during pack, new query will be created
+
+  dashboard_layouts:
+    - id: "layout_1"
+      dashboard_id: "42"
+      type: "newspaper"
+      active: true
+      column_width: 12
+      width: 12
+      dashboard_layout_components:
+        - id: "comp_1"
+          dashboard_layout_id: "layout_1"
+          dashboard_element_id: "elem_1"
+          row: 0
+          column: 0
+          width: 6
+          height: 4
+
+---
+
+# Example: Look Content Item
+look_example:
+  _metadata:
+    db_id: "def456abc789"
+    content_type: "LOOK"
+    exported_at: "2025-12-14T10:30:20Z"
+    content_size: 3421
+    checksum: "sha256:b2c3d4e5..."
+
+  # Looker SDK Look model fields
+  id: "100"
+  title: "Weekly Sales Summary"
+  description: "Sales summary for the past week"
+  user_id: "123"
+  query_id: "500"
+  view_count: 456
+  favorite_count: 12
+  created_at: "2024-06-10T09:00:00Z"
+  updated_at: "2025-12-09T11:15:00Z"
+  deleted_at: null
+  deleted: false
+  folder_id: "791"
+
+  # Embedded query (similar to dashboard query structure)
+  query:
+    model: "sales_model"
+    view: "orders"
+    fields:
+      - "orders.created_date"
+      - "orders.total_revenue"
+      - "orders.count"
+    filters:
+      orders.created_date: "7 days"
+    sorts:
+      - "orders.created_date desc"
+    limit: "500"
+
+---
+
+# Example: User Content Item
+user_example:
+  _metadata:
+    db_id: "ghi789jkl012"
+    content_type: "USER"
+    exported_at: "2025-12-14T10:30:25Z"
+    content_size: 1234
+    checksum: "sha256:c3d4e5f6..."
+
+  # Looker SDK User model fields
+  id: "123"
+  first_name: "Jane"
+  last_name: "Smith"
+  email: "jane.smith@company.com"
+  is_disabled: false
+  personal_folder_id: "999"
+  home_folder_id: "791"
+  created_at: "2023-01-01T00:00:00Z"
+  credentials_email:
+    email: "jane.smith@company.com"
+    logged_in_at: "2025-12-14T08:00:00Z"
+  role_ids:
+    - "1"
+    - "5"
+  group_ids:
+    - "10"
+    - "15"
+  avatar_url: "https://gravatar.com/..."
+
+---
+
+# Example: Folder Content Item
+folder_example:
+  _metadata:
+    db_id: "mno345pqr678"
+    content_type: "FOLDER"
+    exported_at: "2025-12-14T10:30:30Z"
+    content_size: 456
+    checksum: "sha256:d4e5f6g7..."
+
+  # Looker SDK Folder model fields
+  id: "791"
+  name: "West"
+  parent_id: "790"
+  child_count: 5
+  dashboards:
+    - id: "42"
+      title: "Sales Performance Dashboard"
+  looks:
+    - id: "100"
+      title: "Weekly Sales Summary"
+  created_at: "2023-05-01T10:00:00Z"
+
+---
+
+# Example: Group Content Item
+group_example:
+  _metadata:
+    db_id: "stu901vwx234"
+    content_type: "GROUP"
+    exported_at: "2025-12-14T10:30:35Z"
+    content_size: 789
+    checksum: "sha256:e5f6g7h8..."
+
+  # Looker SDK Group model fields
+  id: "10"
+  name: "Sales Team"
+  can_add_to_content_metadata: true
+  user_count: 23
+  created_at: "2023-02-15T12:00:00Z"
+
+---
+
+# Schema Validation Notes
+
+validation_stages:
+  1_syntax:
+    description: "YAML syntax validation using ruamel.yaml"
+    checks:
+      - "Valid YAML 1.2 syntax"
+      - "No duplicate keys"
+      - "Proper indentation"
+      - "Quoted strings where needed"
+
+  2_metadata:
+    description: "_metadata section validation"
+    checks:
+      - "All required fields present (db_id, content_type, exported_at, content_size, checksum)"
+      - "content_type matches valid ContentType enum"
+      - "exported_at is valid ISO 8601 timestamp"
+      - "checksum matches pattern 'sha256:[a-f0-9]{64}'"
+
+  3_looker_sdk:
+    description: "Looker SDK model validation"
+    checks:
+      - "Fields match Looker SDK model for content_type"
+      - "Required fields present (id, created_at, updated_at, etc.)"
+      - "Field types match expected types (string, int, bool, etc.)"
+      - "Enum fields have valid values"
+
+  4_business_rules:
+    description: "Business rule validation (optional)"
+    checks:
+      - "Referenced folder_id exists in folder_map (for folder strategy)"
+      - "Referenced user_id exists in users (if strict mode enabled)"
+      - "No orphaned references (query_id, model, etc.)"
+
+---
+
+# Modification Detection (for pack operations)
+
+query_modification_detection:
+  purpose: "Detect when embedded query definitions are modified"
+  algorithm: "SHA-256 hashing of normalized query JSON"
+  triggers_new_query:
+    - "Any field in query object modified (model, view, fields, filters, sorts, limit)"
+    - "Query object added to dashboard element that previously only had query_id"
+  preserves_existing_query:
+    - "Query object removed from dashboard element (only query_id remains)"
+    - "Query fields unchanged"
+    - "Non-query fields modified (title, description, etc.)"
+
+shared_query_deduplication:
+  purpose: "Prevent duplicate query creation when multiple elements share same query"
+  algorithm: |
+    1. Hash query definition
+    2. Check if hash already exists in QueryRemappingTable
+    3. If exists, reuse existing new_query_id
+    4. If not exists, create new query and store hash → new_query_id mapping
+
+---
+
+# File Naming Conventions
+
+file_naming:
+  full_strategy:
+    pattern: "<content_type_plural>/<id>.yaml"
+    examples:
+      - "dashboards/42.yaml"
+      - "looks/100.yaml"
+      - "users/123.yaml"
+      - "folders/791.yaml"
+
+  folder_strategy:
+    pattern: "<folder_path>/<id>.yaml"
+    examples:
+      - "Sales/Regional/West/42.yaml"
+      - "Sales/Regional/West/100.yaml"
+      - "_orphaned/999.yaml"  # Items with missing folder_id
+
+  content_type_mapping:
+    DASHBOARD: "dashboards"
+    LOOK: "looks"
+    USER: "users"
+    GROUP: "groups"
+    FOLDER: "folders"
+    ROLE: "roles"
+    BOARD: "boards"
+    LOOKML_MODEL: "lookml_models"
+    EXPLORE: "explores"
+    PERMISSION_SET: "permission_sets"
+    MODEL_SET: "model_sets"
+    SCHEDULED_PLAN: "scheduled_plans"

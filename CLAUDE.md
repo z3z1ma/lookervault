@@ -152,6 +152,8 @@ All checks must pass before committing. If any check fails, fix the issues befor
 - SQLite database (existing repository pattern with thread-local connections, BEGIN IMMEDIATE transactions) (004-looker-restoration)
 - Python 3.13 + google-cloud-storage (GCS SDK), google-crc32c (checksum verification), typer (CLI), rich (UI/progress), tenacity (retry logic), pydantic (config validation) (005-cloud-snapshot-storage)
 - Google Cloud Storage (GCS) buckets for snapshot storage; existing SQLite database for local operations (005-cloud-snapshot-storage)
+- Python 3.13 (per pyproject.toml) + msgspec (msgpack), PyYAML (new - YAML serialization), typer (CLI), pydantic (validation), rich (progress/output) (006-yaml-export-import)
+- SQLite database with content_items table (existing schema), YAML files on filesystem (new) (006-yaml-export-import)
 
 ## Recent Changes
 - **Multi-Folder SDK Optimization** (2025-12-14): Replaced multi-folder in-memory filtering with parallel SDK API calls for 10-100x performance improvement. Uses MultiFolderOffsetCoordinator to distribute work across N folders using round-robin selection. For 3 folders × 1,000 dashboards: 20s → 2s (10x faster). See history/multi-folder-sdk-optimization-plan.md for detailed design.
