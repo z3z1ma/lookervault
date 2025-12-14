@@ -116,26 +116,62 @@ class ParallelOrchestrator:
         """
         start_time = datetime.now()
 
-        # Create extraction session
-        session = ExtractionSession(
-            status=SessionStatus.RUNNING,
-            config={
-                "content_types": self.config.content_types,
-                "batch_size": self.config.batch_size,
-                "fields": self.config.fields,
-                "workers": self.parallel_config.workers,
-                "queue_size": self.parallel_config.queue_size,
-            },
-        )
-        self.repository.create_session(session)
+        # Try to find existing session for resume
+        session: ExtractionSession | None = None
+        if self.config.resume:
+            # Check if we have any incomplete checkpoints to determine session_id
+            for content_type in self.config.content_types:
+                checkpoint = self.repository.get_latest_checkpoint(content_type, session_id=None)
+                if checkpoint and checkpoint.session_id:
+                    # Found checkpoint with session - try to load session
+                    session = self.repository.get_extraction_session(checkpoint.session_id)
+                    if session:
+                        logger.info(
+                            f"Resume: Found existing session {session.id} "
+                            f"from checkpoint (started {session.started_at.isoformat()})"
+                        )
+                        break
 
-        logger.info(
-            f"Starting extraction session {session.id} with {self.parallel_config.workers} workers"
-        )
+        # Create new session if not resuming or no existing session found
+        if session is None:
+            session = ExtractionSession(
+                status=SessionStatus.RUNNING,
+                config={
+                    "content_types": self.config.content_types,
+                    "batch_size": self.config.batch_size,
+                    "fields": self.config.fields,
+                    "workers": self.parallel_config.workers,
+                    "queue_size": self.parallel_config.queue_size,
+                },
+                metadata={},
+            )
+            self.repository.create_session(session)
+            logger.info(
+                f"Starting new extraction session {session.id} with {self.parallel_config.workers} workers"
+            )
+        else:
+            # Resuming existing session - update status
+            session.status = SessionStatus.RUNNING
+            self.repository.update_session(session)
+            logger.info(
+                f"Resuming extraction session {session.id} with {self.parallel_config.workers} workers"
+            )
 
         result = ExtractionResult(session_id=session.id, total_items=0)
 
         try:
+            # Check for cached resolved folder hierarchy on resume
+            if self.config.resume and self.config.folder_ids and self.config.recursive_folders:
+                # Attempt to restore cached hierarchy from session metadata
+                if session.metadata:
+                    cached_folder_ids = session.metadata.get("resolved_folder_ids")
+                    if cached_folder_ids:
+                        logger.info(
+                            f"Resume: Using cached folder hierarchy from session metadata "
+                            f"({len(cached_folder_ids)} folders)"
+                        )
+                        self.config.folder_ids = set(cached_folder_ids)
+
             # Process each content type with appropriate strategy
             for content_type in self.config.content_types:
                 content_type_name = ContentType(content_type).name.lower()
@@ -218,26 +254,40 @@ class ParallelOrchestrator:
                 ):
                     from lookervault.folder.hierarchy import FolderHierarchyResolver
 
-                    logger.info("Expanding folder IDs recursively after FOLDER extraction")
+                    # Check if we already have cached resolved folder hierarchy
+                    if session.metadata and session.metadata.get("resolved_folder_ids"):
+                        logger.info("Using cached resolved folder hierarchy (already expanded)")
+                    else:
+                        logger.info("Expanding folder IDs recursively after FOLDER extraction")
 
-                    # Build hierarchy resolver from repository
-                    hierarchy_resolver = FolderHierarchyResolver(self.repository)
+                        # Build hierarchy resolver from repository
+                        hierarchy_resolver = FolderHierarchyResolver(self.repository)
 
-                    # Get root folder IDs (current config)
-                    root_folder_ids = list(self.config.folder_ids)
+                        # Get root folder IDs (current config)
+                        root_folder_ids = list(self.config.folder_ids)
 
-                    # Expand to include all descendants
-                    all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
-                        root_folder_ids, include_roots=True
-                    )
+                        # Expand to include all descendants
+                        all_folder_ids = hierarchy_resolver.get_all_descendant_ids(
+                            root_folder_ids, include_roots=True
+                        )
 
-                    # Update config with expanded folder IDs
-                    self.config.folder_ids = all_folder_ids
+                        # Update config with expanded folder IDs
+                        self.config.folder_ids = all_folder_ids
 
-                    logger.info(
-                        f"Expanded {len(root_folder_ids)} root folder(s) to "
-                        f"{len(all_folder_ids)} total folder(s) (recursive)"
-                    )
+                        # Cache resolved folder hierarchy in session metadata
+                        if session.metadata is None:
+                            session.metadata = {}
+                        session.metadata["resolved_folder_ids"] = sorted(all_folder_ids)
+                        session.metadata["root_folder_ids"] = sorted(root_folder_ids)
+                        session.metadata["folder_expansion_timestamp"] = datetime.now(
+                            UTC
+                        ).isoformat()
+                        self.repository.update_session(session)
+
+                        logger.info(
+                            f"Expanded {len(root_folder_ids)} root folder(s) to "
+                            f"{len(all_folder_ids)} total folder(s) (recursive), cached in session metadata"
+                        )
 
             # Get final metrics snapshot
             final_metrics = self.metrics.snapshot()

@@ -825,6 +825,51 @@ class SQLiteContentRepository:
         except sqlite3.Error as e:
             raise StorageError(f"Failed to update session: {e}") from e
 
+    def get_extraction_session(self, session_id: str) -> ExtractionSession | None:
+        """Retrieve extraction session by ID.
+
+        Args:
+            session_id: Unique session identifier
+
+        Returns:
+            ExtractionSession if found, None otherwise
+
+        Raises:
+            StorageError: If query fails
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT id, started_at, completed_at, status,
+                       total_items, error_count, config, metadata
+                FROM extraction_sessions
+                WHERE id = ?
+            """,
+                (session_id,),
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return ExtractionSession(
+                id=row["id"],
+                started_at=datetime.fromisoformat(row["started_at"]),
+                completed_at=datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None,
+                status=row["status"],
+                total_items=row["total_items"],
+                error_count=row["error_count"],
+                config=json.loads(row["config"]) if row["config"] else None,
+                metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+            )
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to get extraction session: {e}") from e
+
     def get_last_sync_timestamp(self, content_type: int) -> datetime | None:
         """Get the timestamp of the last successful extraction for a content type.
 

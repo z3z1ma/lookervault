@@ -17,6 +17,7 @@ from lookervault.config.models import RestorationConfig
 from lookervault.exceptions import (
     ConfigError,
     DeserializationError,
+    NotFoundError,
     RestorationError,
     ValidationError,
 )
@@ -57,6 +58,8 @@ def restore_all(
     verbose: bool = False,
     quiet: bool = False,
     debug: bool = False,
+    folder_ids: str | None = None,
+    recursive: bool = False,
 ) -> None:
     """Restore all content types in dependency order.
 
@@ -78,6 +81,8 @@ def restore_all(
         verbose: Enable verbose logging
         quiet: Suppress all non-error output
         debug: Enable debug logging
+        folder_ids: Comma-separated folder IDs to filter restoration (only dashboard, look, board, folder)
+        recursive: Include subfolders when using folder_ids
 
     Environment Variables:
         LOOKERVAULT_DB_PATH: Default database path
@@ -182,6 +187,32 @@ def restore_all(
     start_time = time.time()
 
     try:
+        # Parse and validate folder_ids if provided
+        parsed_folder_ids: list[str] | None = None
+        if folder_ids:
+            # Content types that support folder filtering
+            folder_filterable_types = {
+                ContentType.DASHBOARD,
+                ContentType.LOOK,
+                ContentType.BOARD,
+                ContentType.FOLDER,
+            }
+
+            # Parse comma-separated folder IDs
+            parsed_folder_ids = [fid.strip() for fid in folder_ids.split(",") if fid.strip()]
+
+            if not parsed_folder_ids:
+                if not json_output:
+                    console.print("[red]✗ No valid folder IDs provided[/red]")
+                else:
+                    error_output = {
+                        "status": "error",
+                        "error_type": "ValidationError",
+                        "error_message": "No valid folder IDs provided",
+                    }
+                    console.print(json.dumps(error_output, indent=2))
+                raise typer.Exit(EXIT_VALIDATION_ERROR)
+
         # Load configuration
         cfg = load_config(config)
 
@@ -223,6 +254,89 @@ def restore_all(
         )
 
         repository = SQLiteContentRepository(db_path=resolved_db_path)
+
+        # Resolve folder hierarchy if recursive=True
+        if parsed_folder_ids and recursive:
+            try:
+                from lookervault.folder.hierarchy import FolderHierarchyResolver
+
+                resolver = FolderHierarchyResolver(repository)
+
+                # Validate folders exist
+                resolver.validate_folders_exist(parsed_folder_ids)
+
+                # Track original count before expansion
+                original_folder_count = len(parsed_folder_ids)
+
+                # Expand to include all descendant folders
+                all_folder_ids = resolver.get_all_descendant_ids(
+                    parsed_folder_ids, include_roots=True
+                )
+                parsed_folder_ids = list(all_folder_ids)
+
+                if not json_output and verbose:
+                    console.print(
+                        f"[dim]Expanded {original_folder_count} folder(s) to "
+                        f"{len(parsed_folder_ids)} total folder(s) (recursive)[/dim]"
+                    )
+
+            except NotFoundError as e:
+                if not json_output:
+                    console.print(f"[red]✗ Folder validation failed: {e}[/red]")
+                else:
+                    error_output = {
+                        "status": "error",
+                        "error_type": "NotFoundError",
+                        "error_message": str(e),
+                    }
+                    console.print(json.dumps(error_output, indent=2))
+                raise typer.Exit(EXIT_NOT_FOUND) from e
+        elif parsed_folder_ids:
+            # Non-recursive mode: just validate folders exist
+            try:
+                from lookervault.folder.hierarchy import FolderHierarchyResolver
+
+                resolver = FolderHierarchyResolver(repository)
+                resolver.validate_folders_exist(parsed_folder_ids)
+
+            except NotFoundError as e:
+                if not json_output:
+                    console.print(f"[red]✗ Folder validation failed: {e}[/red]")
+                else:
+                    error_output = {
+                        "status": "error",
+                        "error_type": "NotFoundError",
+                        "error_message": str(e),
+                    }
+                    console.print(json.dumps(error_output, indent=2))
+                raise typer.Exit(EXIT_NOT_FOUND) from e
+
+        # Validate folder filtering only applies to supported content types
+        if parsed_folder_ids:
+            folder_filterable_types = {
+                ContentType.DASHBOARD,
+                ContentType.LOOK,
+                ContentType.BOARD,
+                ContentType.FOLDER,
+            }
+
+            # Check if only_types is specified - warn if any type doesn't support folders
+            if only_types:
+                only_type_ints = [parse_content_type(ct) for ct in only_types]
+                only_type_enums = [ContentType(ct) for ct in only_type_ints]
+                unsupported_types = [
+                    ct for ct in only_type_enums if ct not in folder_filterable_types
+                ]
+
+                if unsupported_types and not json_output:
+                    console.print(
+                        f"[yellow]⚠ Warning: Folder filtering will be ignored for: "
+                        f"{', '.join(t.name.lower() for t in unsupported_types)}[/yellow]"
+                    )
+                    console.print(
+                        f"[dim]Folder filtering only works with: "
+                        f"{', '.join(t.name.lower() for t in folder_filterable_types)}[/dim]"
+                    )
 
         # Create rate limiter
         rate_limiter = AdaptiveRateLimiter(
@@ -306,6 +420,8 @@ def restore_all(
             max_retries=final_max_retries,
             dry_run=dry_run,
             skip_if_modified=skip_if_modified,
+            folder_ids=parsed_folder_ids,
+            destination_instance=str(cfg.looker.api_url),
         )
 
         # Add session_id to config (if not already present)
