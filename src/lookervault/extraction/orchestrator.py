@@ -367,37 +367,70 @@ class ExtractionOrchestrator:
             item_id = str(item_id)
             name = item_dict.get("title") or item_dict.get("name") or item_id
 
-            # Handle owner fields
-            owner_id = None
+            # Extract metadata
+            owner_id = item_dict.get("user_id")
+            # Convert owner_id to int if present (Looker API may return as string)
+            if owner_id is not None:
+                try:
+                    owner_id = int(owner_id)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Could not convert owner_id '{owner_id}' to int for item {item_id}"
+                    )
+                    owner_id = None
+
             owner_email = None
-            if "user_id" in item_dict:
-                owner_id = item_dict["user_id"]
-            if "owner_id" in item_dict:
-                owner_id = item_dict["owner_id"]
-            if "email" in item_dict:
-                owner_email = item_dict["email"]
+            if "user" in item_dict and isinstance(item_dict["user"], dict):
+                owner_email = item_dict["user"].get("email")
 
-            # Handle timestamps - API can return None or datetime objects
-            def parse_timestamp(value: str | datetime | None) -> datetime:
-                """Parse timestamp from various formats, returns timezone-aware datetime."""
-                if value is None:
-                    return datetime.now(UTC)
-                if isinstance(value, datetime):
-                    # Add UTC timezone if naive
-                    if value.tzinfo is None:
-                        return value.replace(tzinfo=UTC)
-                    return value
-                if isinstance(value, str):
-                    # Parse ISO format, handle 'Z' suffix
-                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                    # Add UTC timezone if naive
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=UTC)
-                    return dt
-                return datetime.now(UTC)
+            # Extract folder_id if present (dashboards, looks, boards)
+            folder_id = None
+            if "folder_id" in item_dict and item_dict["folder_id"] is not None:
+                folder_id = str(item_dict["folder_id"])
 
-            created_at = parse_timestamp(item_dict.get("created_at"))
-            updated_at = parse_timestamp(item_dict.get("updated_at"))
+            # Parse timestamps
+            created_at = datetime.now(UTC)
+            updated_at = datetime.now(UTC)
+
+            if "created_at" in item_dict and item_dict["created_at"]:
+                try:
+                    created_at_val = item_dict["created_at"]
+                    if isinstance(created_at_val, str):
+                        created_at = datetime.fromisoformat(created_at_val.replace("Z", "+00:00"))
+                    elif isinstance(created_at_val, datetime):
+                        created_at = created_at_val
+                    elif isinstance(created_at_val, (int, float)):
+                        # Unix timestamp
+                        created_at = datetime.fromtimestamp(created_at_val, tz=UTC)
+                    else:
+                        logger.warning(
+                            f"Unexpected type for created_at: {type(created_at_val).__name__} = {created_at_val}"
+                        )
+                except (ValueError, AttributeError, TypeError) as e:
+                    logger.warning(
+                        f"Could not parse created_at (type: {type(item_dict['created_at']).__name__}) "
+                        f"'{item_dict['created_at']}' for item {item_id}: {e}"
+                    )
+
+            if "updated_at" in item_dict and item_dict["updated_at"]:
+                try:
+                    updated_at_val = item_dict["updated_at"]
+                    if isinstance(updated_at_val, str):
+                        updated_at = datetime.fromisoformat(updated_at_val.replace("Z", "+00:00"))
+                    elif isinstance(updated_at_val, datetime):
+                        updated_at = updated_at_val
+                    elif isinstance(updated_at_val, (int, float)):
+                        # Unix timestamp
+                        updated_at = datetime.fromtimestamp(updated_at_val, tz=UTC)
+                    else:
+                        logger.warning(
+                            f"Unexpected type for updated_at: {type(updated_at_val).__name__} = {updated_at_val}"
+                        )
+                except (ValueError, AttributeError, TypeError) as e:
+                    logger.warning(
+                        f"Could not parse updated_at (type: {type(item_dict['updated_at']).__name__}) "
+                        f"'{item_dict['updated_at']}' for item {item_id}: {e}"
+                    )
 
             # Create composite ID
             content_type_name = ContentType(content_type).name.lower()
@@ -412,6 +445,7 @@ class ExtractionOrchestrator:
                 created_at=created_at,
                 updated_at=updated_at,
                 content_data=content_data,
+                folder_id=folder_id,
             )
         except Exception as e:
             raise OrchestrationError(f"Failed to convert item to ContentItem: {e}") from e
