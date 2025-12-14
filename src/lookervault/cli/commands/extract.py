@@ -43,6 +43,8 @@ def run(
     rate_limit_per_second: int | None = None,
     verbose: bool = False,
     debug: bool = False,
+    folder_ids: str | None = None,
+    recursive: bool = False,
 ) -> None:
     """Run content extraction from Looker instance.
 
@@ -59,6 +61,8 @@ def run(
         rate_limit_per_second: Max API requests per second burst (default: 10)
         verbose: Enable verbose logging
         debug: Enable debug logging
+        folder_ids: Comma-separated folder IDs to filter extraction (only dashboard, look, board, folder)
+        recursive: Include subfolders when using folder_ids
     """
     # Configure rich logging - default to INFO for extraction to show progress
     log_level = logging.DEBUG if debug else logging.INFO
@@ -88,6 +92,42 @@ def run(
 
         # Parse content types
         content_types = parse_content_types(types)
+
+        # Parse and validate folder_ids
+        parsed_folder_ids: set[str] | None = None
+        if folder_ids:
+            # Parse comma-separated folder IDs
+            parsed_folder_ids = {fid.strip() for fid in folder_ids.split(",") if fid.strip()}
+
+            if not parsed_folder_ids:
+                console.print("[red]✗ Invalid --folder-ids: empty after parsing[/red]")
+                raise typer.Exit(2)
+
+            # Validate that content types support folder filtering
+            # Only DASHBOARD, LOOK, BOARD, FOLDER support folder filtering
+            supported_types = {
+                ContentType.DASHBOARD,
+                ContentType.LOOK,
+                ContentType.BOARD,
+                ContentType.FOLDER,
+            }
+            unsupported_types = set(content_types) - supported_types
+
+            if unsupported_types:
+                type_names = [ContentType(ct).name.lower() for ct in unsupported_types]
+                console.print(
+                    f"[red]✗ Folder filtering not supported for: {', '.join(type_names)}[/red]"
+                )
+                console.print(
+                    "[yellow]Folder filtering only works with: dashboard, look, board, folder[/yellow]"
+                )
+                raise typer.Exit(2)
+
+            if verbose:
+                console.print(
+                    f"[dim]Filtering to folder IDs: {', '.join(sorted(parsed_folder_ids))} "
+                    f"(recursive={recursive})[/dim]"
+                )
 
         # Create components
         looker_client = LookerClient(
@@ -155,6 +195,8 @@ def run(
             resume=resume,
             incremental=incremental,
             output_mode=output,
+            folder_ids=parsed_folder_ids,
+            recursive_folders=recursive,
         )
 
         # Choose orchestrator based on worker count
