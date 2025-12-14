@@ -96,6 +96,7 @@ def config():
     config.checkpoint_interval = 10  # Lower interval for testing
     config.max_retries = 3
     config.dry_run = False
+    config.folder_ids = None
     return config
 
 
@@ -123,10 +124,12 @@ class TestParallelRestorationEndToEnd:
         content_items = []
         for i in range(1, 21):  # 20 items
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s", "title": "Dashboard %s"}' % (i, i),
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}", "title": "Dashboard {i}"}}'.encode(),
             )
             repository.save_content(content)
             content_items.append(content)
@@ -136,7 +139,7 @@ class TestParallelRestorationEndToEnd:
         mock_client.sdk.create_dashboard.side_effect = [{"id": f"new-{i}"} for i in range(1, 21)]
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert
         assert result.total_items == 20
@@ -148,10 +151,12 @@ class TestParallelRestorationEndToEnd:
         # Setup: Insert 50 items to ensure parallel processing
         for i in range(1, 51):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s", "title": "Dashboard %s"}' % (i, i),
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}", "title": "Dashboard {i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -167,7 +172,7 @@ class TestParallelRestorationEndToEnd:
         mock_client.sdk.create_dashboard.side_effect = track_thread
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Multiple threads were used
         assert len(thread_ids) > 1, "Expected multiple worker threads to be used"
@@ -177,10 +182,12 @@ class TestParallelRestorationEndToEnd:
         # Setup: Insert 30 items
         for i in range(1, 31):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s", "title": "Dashboard %s"}' % (i, i),
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}", "title": "Dashboard {i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -198,7 +205,7 @@ class TestParallelRestorationEndToEnd:
 
         # Execute first restoration (will fail partway through)
         try:
-            orchestrator.restore(ContentType.DASHBOARD)
+            orchestrator.restore(ContentType.DASHBOARD, config.session_id)
         except Exception:
             pass  # Expected to fail
 
@@ -211,7 +218,7 @@ class TestParallelRestorationEndToEnd:
         mock_client.sdk.create_dashboard.side_effect = lambda *args, **kwargs: {"id": "new-123"}
 
         # Execute resume
-        result = orchestrator.resume(ContentType.DASHBOARD)
+        result = orchestrator.resume(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Resume completed remaining items
         assert result.total_items > 0
@@ -222,10 +229,12 @@ class TestParallelRestorationEndToEnd:
         # Setup: Insert 10 items
         for i in range(1, 11):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s", "title": "Dashboard %s"}' % (i, i),
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}", "title": "Dashboard {i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -245,7 +254,7 @@ class TestParallelRestorationEndToEnd:
         mock_client.sdk.create_dashboard.side_effect = create_with_failures
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Errors tracked
         assert result.error_count >= 0
@@ -274,7 +283,6 @@ class TestThreadSafeDatabaseOperations:
                     checkpoint_data={"completed_ids": [f"{thread_id}-1", f"{thread_id}-2"]},
                     item_count=2,
                     error_count=0,
-                    created_at=datetime.now(UTC),
                 )
                 repository.save_restoration_checkpoint(checkpoint)
             except Exception as e:
@@ -333,10 +341,12 @@ class TestThreadSafeDatabaseOperations:
         # Setup: Insert content
         for i in range(1, 11):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s"}' % i,
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -378,10 +388,12 @@ class TestParallelRestorationPerformance:
         # Setup: Insert 100 items
         for i in range(1, 101):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s"}' % i,
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -451,10 +463,12 @@ class TestParallelRestorationPerformance:
         # Setup: Insert 1000 items
         for i in range(1, 1001):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s"}' % i,
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -487,7 +501,7 @@ class TestParallelRestorationPerformance:
             dlq=dlq,
         )
 
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Completed successfully
         assert result.total_items == 1000
@@ -501,10 +515,12 @@ class TestErrorRecoveryScenarios:
         # Setup: Insert items
         for i in range(1, 11):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s"}' % i,
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -523,7 +539,7 @@ class TestErrorRecoveryScenarios:
         mock_client.sdk.create_dashboard.side_effect = create_with_intermittent_failures
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Should handle transient errors gracefully
         assert result.total_items == 10
@@ -535,10 +551,12 @@ class TestErrorRecoveryScenarios:
         # Setup: Insert items
         for i in range(1, 21):
             content = ContentItem(
-                content_id=str(i),
+                id=str(i),
                 content_type=ContentType.DASHBOARD.value,
-                content_data=b'{"id": "%s"}' % i,
-                extracted_at=datetime.now(UTC),
+                name=f"Dashboard {i}",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                content_data=f'{{"id": "{i}"}}'.encode(),
             )
             repository.save_content(content)
 
@@ -557,7 +575,7 @@ class TestErrorRecoveryScenarios:
         mock_client.sdk.create_dashboard.side_effect = create_with_rate_limits
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, config.session_id)
 
         # Assert: Should detect and handle rate limit
         # Rate limiter should have been notified

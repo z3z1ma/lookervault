@@ -78,6 +78,7 @@ def mock_config():
     config.checkpoint_interval = 100
     config.max_retries = 5
     config.dry_run = False
+    config.folder_ids = None
     return config
 
 
@@ -165,7 +166,7 @@ class TestParallelOrchestratorRestore:
         mock_repository.get_latest_restoration_checkpoint.return_value = None
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert
         mock_repository.get_content_ids.assert_called_once_with(ContentType.DASHBOARD.value)
@@ -192,7 +193,7 @@ class TestParallelOrchestratorRestore:
             mock_executor = MagicMock()
             mock_executor_class.return_value.__enter__.return_value = mock_executor
 
-            orchestrator.restore(ContentType.DASHBOARD)
+            orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
             # Assert: ThreadPoolExecutor created with config.workers
             mock_executor_class.assert_called_once_with(max_workers=mock_config.workers)
@@ -216,7 +217,7 @@ class TestParallelOrchestratorRestore:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: restore_single called for each content ID
         assert mock_restorer.restore_single.call_count == len(content_ids)
@@ -259,7 +260,7 @@ class TestParallelOrchestratorRestore:
         ]
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert
         assert isinstance(result, RestorationSummary)
@@ -290,7 +291,7 @@ class TestParallelOrchestratorRestore:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: checkpoints saved at 100, 200, and final (250)
         # Note: actual implementation may vary - this defines expected behavior
@@ -305,7 +306,7 @@ class TestParallelOrchestratorRestore:
         mock_repository.get_latest_restoration_checkpoint.return_value = None
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert
         assert result.total_items == 0
@@ -329,7 +330,7 @@ class TestParallelOrchestratorRestore:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: rate limiter acquire() called for each item
         # Note: actual implementation may call from restorer, not orchestrator
@@ -368,7 +369,7 @@ class TestParallelOrchestratorErrorHandling:
         ]
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: DLQ.add() called for failed item
         mock_dlq.add.assert_called_once()
@@ -400,7 +401,7 @@ class TestParallelOrchestratorErrorHandling:
         mock_restorer.restore_single.side_effect = restore_side_effect
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: 2 succeeded, 1 failed
         assert result.success_count == 2
@@ -447,7 +448,7 @@ class TestParallelOrchestratorErrorHandling:
         ]
 
         # Execute
-        result = orchestrator.restore(ContentType.DASHBOARD)
+        result = orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert
         assert result.error_breakdown["ValidationError"] == 2
@@ -592,12 +593,11 @@ class TestParallelOrchestratorResume:
             checkpoint_data={"completed_ids": ["1", "2", "3"]},
             item_count=3,
             error_count=0,
-            created_at=datetime.now(UTC),
         )
         mock_repository.get_latest_restoration_checkpoint.return_value = checkpoint
 
         # Execute
-        orchestrator.resume(ContentType.DASHBOARD)
+        orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert
         mock_repository.get_latest_restoration_checkpoint.assert_called_once_with(
@@ -615,7 +615,6 @@ class TestParallelOrchestratorResume:
             checkpoint_data={"completed_ids": ["1", "2"]},
             item_count=2,
             error_count=0,
-            created_at=datetime.now(UTC),
         )
         mock_repository.get_latest_restoration_checkpoint.return_value = checkpoint
 
@@ -631,7 +630,7 @@ class TestParallelOrchestratorResume:
         )
 
         # Execute
-        result = orchestrator.resume(ContentType.DASHBOARD)
+        result = orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: only IDs ["3", "4"] should be processed
         assert mock_restorer.restore_single.call_count == 2
@@ -649,7 +648,6 @@ class TestParallelOrchestratorResume:
             checkpoint_data={"completed_ids": ["1", "2", "3"]},
             item_count=3,
             error_count=0,
-            created_at=datetime.now(UTC),
         )
         mock_repository.get_latest_restoration_checkpoint.return_value = checkpoint
 
@@ -657,7 +655,7 @@ class TestParallelOrchestratorResume:
         mock_repository.get_content_ids.return_value = {"1", "2", "3"}
 
         # Execute
-        result = orchestrator.resume(ContentType.DASHBOARD)
+        result = orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: nothing to restore
         assert result.total_items == 0
@@ -671,7 +669,7 @@ class TestParallelOrchestratorResume:
 
         # Execute & Assert
         with pytest.raises(ValueError, match="No checkpoint found"):
-            orchestrator.resume(ContentType.DASHBOARD)
+            orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
 
 
 class TestParallelOrchestratorThreadSafety:
@@ -694,14 +692,14 @@ class TestParallelOrchestratorThreadSafety:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: metrics methods called (implementation should use locks)
         # Note: actual thread-safety verification would require integration tests
         assert mock_metrics.increment_success.call_count >= 0
 
     def test_restore_should_coordinate_checkpoint_saves_safely(
-        self, orchestrator, mock_repository, mock_restorer
+        self, orchestrator, mock_repository, mock_restorer, mock_config
     ):
         """Test restore() coordinates checkpoint saves without race conditions."""
         # Setup: large dataset to trigger multiple checkpoints
@@ -718,7 +716,7 @@ class TestParallelOrchestratorThreadSafety:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: checkpoints saved (thread-safe implementation detail)
         assert mock_repository.save_restoration_checkpoint.call_count >= 0
@@ -728,7 +726,7 @@ class TestParallelOrchestratorCheckpointing:
     """Test checkpoint logic in ParallelRestorationOrchestrator."""
 
     def test_restore_should_save_final_checkpoint_after_completion(
-        self, orchestrator, mock_repository, mock_restorer
+        self, orchestrator, mock_repository, mock_restorer, mock_config
     ):
         """Test restore() saves final checkpoint after all items processed."""
         # Setup
@@ -744,13 +742,13 @@ class TestParallelOrchestratorCheckpointing:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: final checkpoint saved
         assert mock_repository.save_restoration_checkpoint.call_count >= 1
 
     def test_checkpoint_should_include_completed_ids(
-        self, orchestrator, mock_repository, mock_restorer
+        self, orchestrator, mock_repository, mock_restorer, mock_config
     ):
         """Test checkpoints include list of completed content IDs."""
         # Setup
@@ -766,7 +764,7 @@ class TestParallelOrchestratorCheckpointing:
         )
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: checkpoint saved with completed_ids
         if mock_repository.save_restoration_checkpoint.called:
@@ -774,7 +772,7 @@ class TestParallelOrchestratorCheckpointing:
             assert "completed_ids" in checkpoint.checkpoint_data
 
     def test_checkpoint_should_track_error_count(
-        self, orchestrator, mock_repository, mock_restorer
+        self, orchestrator, mock_repository, mock_restorer, mock_config
     ):
         """Test checkpoints track cumulative error count."""
         # Setup
@@ -800,7 +798,7 @@ class TestParallelOrchestratorCheckpointing:
         ]
 
         # Execute
-        orchestrator.restore(ContentType.DASHBOARD)
+        orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: checkpoint includes error_count
         if mock_repository.save_restoration_checkpoint.called:

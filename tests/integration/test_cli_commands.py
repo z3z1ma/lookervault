@@ -41,8 +41,16 @@ def test_info_command_help() -> None:
     assert "instance" in result.stdout.lower()
 
 
-def test_check_command_with_missing_config() -> None:
-    """Test check command when config file doesn't exist."""
+def test_check_command_with_missing_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test check command when config file doesn't exist and no env vars set."""
+    # Clear environment variables to ensure test isolation
+    monkeypatch.delenv("LOOKERVAULT_API_URL", raising=False)
+    monkeypatch.delenv("LOOKER_BASE_URL", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_SECRET", raising=False)
+
     result = runner.invoke(app, ["check", "--config", "/nonexistent/config.toml"])
 
     # Should exit with error code (config not found = exit 2)

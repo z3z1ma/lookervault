@@ -26,6 +26,7 @@ def mock_config():
     config = Mock()
     config.session_id = "test_session"
     config.dry_run = False
+    config.checkpoint_interval = 100
     return config
 
 

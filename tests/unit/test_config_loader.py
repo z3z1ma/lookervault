@@ -9,8 +9,16 @@ from lookervault.config.models import Configuration
 from lookervault.exceptions import ConfigError
 
 
-def test_load_valid_config(tmp_path: Path) -> None:
+def test_load_valid_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test loading valid TOML configuration."""
+    # Clear environment variables to ensure test isolation
+    monkeypatch.delenv("LOOKERVAULT_API_URL", raising=False)
+    monkeypatch.delenv("LOOKER_BASE_URL", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_SECRET", raising=False)
+
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
 [lookervault]
@@ -55,8 +63,16 @@ client_secret = "file_secret"
     assert config.looker.client_secret == "env_secret"
 
 
-def test_load_config_file_not_found() -> None:
-    """Test error when config file doesn't exist."""
+def test_load_config_file_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test error when config file doesn't exist and no env vars set."""
+    # Clear environment variables to ensure test isolation
+    monkeypatch.delenv("LOOKERVAULT_API_URL", raising=False)
+    monkeypatch.delenv("LOOKER_BASE_URL", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_SECRET", raising=False)
+
     with pytest.raises(ConfigError, match="No config file found"):
         load_config(Path("/nonexistent/config.toml"))
 
