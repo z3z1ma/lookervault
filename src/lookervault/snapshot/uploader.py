@@ -1,0 +1,353 @@
+"""Snapshot upload functionality with compression and integrity verification."""
+
+import gzip
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+
+import google_crc32c
+from google.api_core import retry
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+    TransferSpeedColumn,
+)
+from tenacity import (
+    retry as tenacity_retry,
+)
+from tenacity import (
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from lookervault.cli.rich_logging import console
+from lookervault.snapshot.client import create_storage_client, validate_bucket_access
+from lookervault.snapshot.models import GCSStorageProvider, SnapshotMetadata
+
+logger = logging.getLogger(__name__)
+
+# Chunk size for compression and upload (8 MB recommended by GCS)
+CHUNK_SIZE = 8 * 1024 * 1024
+
+# Production retry policy for GCS operations
+PRODUCTION_RETRY = retry.Retry(
+    initial=1.0,  # 1 second initial delay
+    maximum=60.0,  # Max 60 seconds between retries
+    multiplier=2.0,  # Exponential backoff
+    deadline=600.0,  # 10 minute total timeout
+    predicate=retry.if_exception_type(
+        Exception,  # Retry on any transient error
+    ),
+)
+
+
+def generate_snapshot_filename(prefix: str, compress: bool) -> str:
+    """
+    Generate snapshot filename using UTC timestamp.
+
+    Args:
+        prefix: Filename prefix (e.g., "looker")
+        compress: Whether compression is enabled (adds .gz extension)
+
+    Returns:
+        Filename in format: {prefix}-YYYY-MM-DDTHH-MM-SS.db[.gz]
+
+    Examples:
+        >>> generate_snapshot_filename("looker", True)
+        'looker-2025-12-13T14-30-00.db.gz'
+        >>> generate_snapshot_filename("looker", False)
+        'looker-2025-12-13T14-30-00.db'
+    """
+    now = datetime.now(UTC)
+    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S")
+    extension = ".db.gz" if compress else ".db"
+    return f"{prefix}-{timestamp}{extension}"
+
+
+def compute_crc32c(file_path: Path) -> str:
+    """
+    Compute CRC32C checksum for file integrity verification.
+
+    Args:
+        file_path: Path to file to checksum
+
+    Returns:
+        Base64-encoded CRC32C checksum (compatible with GCS)
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        IOError: If file cannot be read
+    """
+    import base64
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    crc32c_hash = google_crc32c.Checksum()
+
+    with file_path.open("rb") as f:
+        while chunk := f.read(CHUNK_SIZE):
+            crc32c_hash.update(chunk)
+
+    # GCS expects base64-encoded checksum
+    return base64.b64encode(crc32c_hash.digest()).decode("utf-8")
+
+
+def compress_file(
+    source_path: Path,
+    dest_path: Path,
+    compression_level: int = 6,
+    show_progress: bool = True,
+) -> int:
+    """
+    Compress file using gzip with progress tracking.
+
+    Args:
+        source_path: Path to source file
+        dest_path: Path to compressed output file
+        compression_level: Gzip compression level (1=fastest, 9=best)
+        show_progress: Whether to show progress bar
+
+    Returns:
+        Size of compressed file in bytes
+
+    Raises:
+        FileNotFoundError: If source file doesn't exist
+        IOError: If compression fails
+        ValueError: If compression level is invalid
+    """
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source file not found: {source_path}")
+
+    if not 1 <= compression_level <= 9:
+        raise ValueError(f"Compression level must be 1-9, got {compression_level}")
+
+    source_size = source_path.stat().st_size
+    compressed_size = 0
+
+    # Create progress bar for compression
+    if show_progress:
+        progress = Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        task_id: TaskID | None = None
+    else:
+        progress = None
+        task_id = None
+
+    try:
+        if progress:
+            progress.start()
+            task_id = progress.add_task(f"Compressing {source_path.name}...", total=source_size)
+
+        with source_path.open("rb") as f_in:
+            with gzip.open(dest_path, "wb", compresslevel=compression_level) as f_out:
+                while chunk := f_in.read(CHUNK_SIZE):
+                    f_out.write(chunk)
+                    compressed_size += len(chunk)
+                    if progress and task_id is not None:
+                        progress.update(task_id, advance=len(chunk))
+
+        if progress:
+            progress.stop()
+
+        # Get actual compressed size
+        actual_compressed_size = dest_path.stat().st_size
+
+        logger.info(
+            f"Compressed {source_path.name}: {source_size:,} → {actual_compressed_size:,} bytes "
+            f"({(1 - actual_compressed_size / source_size) * 100:.1f}% reduction)"
+        )
+
+        return actual_compressed_size
+
+    except Exception as e:
+        # Clean up partial compressed file on error
+        if dest_path.exists():
+            dest_path.unlink()
+        raise OSError(f"Compression failed: {e}") from e
+
+
+@tenacity_retry(
+    retry=retry_if_exception_type((ConnectionError, TimeoutError)),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    reraise=True,
+)
+def upload_snapshot(
+    provider_config: GCSStorageProvider,
+    source_path: Path,
+    dry_run: bool = False,
+    show_progress: bool = True,
+) -> SnapshotMetadata:
+    """
+    Upload snapshot to GCS with compression and integrity verification.
+
+    This function handles the complete upload workflow:
+    1. Compress source file (if compression enabled)
+    2. Compute CRC32C checksum
+    3. Upload to GCS with resumable upload (automatic for files >8MB)
+    4. Verify server-side checksum matches
+    5. Return snapshot metadata
+
+    Args:
+        provider_config: GCS storage provider configuration
+        source_path: Path to local database file to upload
+        dry_run: If True, validate configuration but skip actual upload
+        show_progress: Whether to show progress bars
+
+    Returns:
+        SnapshotMetadata with upload details
+
+    Raises:
+        FileNotFoundError: If source file doesn't exist
+        RuntimeError: If authentication fails or bucket is inaccessible
+        IOError: If compression or upload fails
+        ValueError: If checksum verification fails
+    """
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source file not found: {source_path}")
+
+    # Create GCS client and validate bucket access
+    client = create_storage_client(provider_config.project_id)
+    validate_bucket_access(client, provider_config.bucket_name)
+
+    # Generate snapshot filename
+    snapshot_filename = generate_snapshot_filename(
+        provider_config.filename_prefix, provider_config.compression_enabled
+    )
+    blob_name = f"{provider_config.prefix}{snapshot_filename}"
+
+    if dry_run:
+        logger.info(
+            f"[DRY RUN] Would upload {source_path} to gs://{provider_config.bucket_name}/{blob_name}"
+        )
+
+        # Return mock metadata for dry run
+        now = datetime.now(UTC)
+        return SnapshotMetadata(
+            sequential_index=1,  # Placeholder
+            filename=snapshot_filename,
+            timestamp=now,
+            size_bytes=source_path.stat().st_size,
+            gcs_bucket=provider_config.bucket_name,
+            gcs_path=f"gs://{provider_config.bucket_name}/{blob_name}",
+            crc32c="AAAAAA==",  # Placeholder
+            content_encoding="gzip" if provider_config.compression_enabled else None,
+            tags=[],
+            created=now,
+            updated=now,
+        )
+
+    # Compress file if enabled
+    if provider_config.compression_enabled:
+        compressed_path = source_path.parent / f"{source_path.name}.gz.tmp"
+        try:
+            compress_file(
+                source_path,
+                compressed_path,
+                provider_config.compression_level,
+                show_progress=show_progress,
+            )
+            upload_path = compressed_path
+            content_encoding = "gzip"
+        except Exception as e:
+            if compressed_path.exists():
+                compressed_path.unlink()
+            raise OSError(f"Compression failed: {e}") from e
+    else:
+        upload_path = source_path
+        content_encoding = None
+
+    try:
+        # Compute CRC32C checksum
+        logger.info(f"Computing CRC32C checksum for {upload_path.name}...")
+        expected_crc32c = compute_crc32c(upload_path)
+
+        # Upload to GCS with resumable upload
+        bucket = client.bucket(provider_config.bucket_name)
+        blob = bucket.blob(blob_name)
+
+        # Set content encoding for transparent decompression
+        if content_encoding:
+            blob.content_encoding = content_encoding
+
+        upload_size = upload_path.stat().st_size
+
+        # Create progress bar for upload
+        if show_progress:
+            progress = Progress(
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            )
+            progress.start()
+            task_id = progress.add_task(f"Uploading {snapshot_filename}...", total=upload_size)
+        else:
+            progress = None
+            task_id = None
+
+        # Upload file with automatic resumable upload (files >8MB)
+        with upload_path.open("rb") as f:
+            blob.upload_from_file(
+                f,
+                checksum="crc32c",  # Server-side checksum verification
+                retry=PRODUCTION_RETRY,
+                timeout=3600,  # 1 hour timeout for large files
+            )
+
+            # Update progress (upload is complete at this point)
+            if progress and task_id is not None:
+                progress.update(task_id, completed=upload_size)
+
+        if progress:
+            progress.stop()
+
+        # Reload blob to get server-computed metadata
+        blob.reload()
+
+        # Verify checksum matches
+        if blob.crc32c != expected_crc32c:
+            logger.error(f"Checksum mismatch! Expected: {expected_crc32c}, Got: {blob.crc32c}")
+            raise ValueError("Upload verification failed: CRC32C checksum mismatch")
+
+        logger.info(f"Upload complete: gs://{provider_config.bucket_name}/{blob_name}")
+        logger.info(f"CRC32C checksum verified: {blob.crc32c}")
+
+        # Parse timestamp from filename
+        timestamp_str = snapshot_filename.split("-", 1)[1].rsplit(".", 1)[0]
+        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H-%M-%S").replace(tzinfo=UTC)
+
+        # Return snapshot metadata
+        return SnapshotMetadata(
+            sequential_index=1,  # Will be assigned by lister
+            filename=snapshot_filename,
+            timestamp=timestamp,
+            size_bytes=blob.size,
+            gcs_bucket=provider_config.bucket_name,
+            gcs_path=f"gs://{provider_config.bucket_name}/{blob_name}",
+            crc32c=blob.crc32c,
+            content_encoding=content_encoding,
+            tags=[],
+            created=blob.time_created.replace(tzinfo=UTC),
+            updated=blob.updated.replace(tzinfo=UTC),
+        )
+
+    finally:
+        # Clean up temporary compressed file
+        if provider_config.compression_enabled and upload_path != source_path:
+            if upload_path.exists():
+                upload_path.unlink()

@@ -4,6 +4,7 @@ import json as json_module
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -56,6 +57,7 @@ def restore_single(
     content_id: str,
     config: Path | None = None,
     db_path: str | None = None,
+    from_snapshot: str | None = None,
     dry_run: bool = False,
     force: bool = False,
     json_output: bool = False,
@@ -70,6 +72,7 @@ def restore_single(
         content_id: ID of the content item to restore
         config: Optional path to config file
         db_path: Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or "looker.db")
+        from_snapshot: Restore from cloud snapshot (index like "1" or timestamp like "2025-12-14T10:30:00")
         dry_run: Validate and show what would be restored without making changes
         force: Skip confirmation prompts
         json_output: Output results in JSON format
@@ -90,6 +93,75 @@ def restore_single(
         3: Validation error
         4: API error (rate limit, authentication, etc.)
     """
+    # Handle snapshot download if --from-snapshot provided
+    temp_snapshot_path = None
+    snapshot_metadata = None
+
+    if from_snapshot:
+        try:
+            # Import here to avoid circular dependency
+            from lookervault.restoration.snapshot_integration import (
+                download_snapshot_to_temp,
+            )
+
+            # Download snapshot to temp location
+            if not json_output and not quiet:
+                console.print(f"\nDownloading snapshot: [cyan]{from_snapshot}[/cyan]")
+
+            temp_snapshot_path, snapshot_metadata = download_snapshot_to_temp(
+                snapshot_ref=from_snapshot,
+                verify_checksum=True,
+                show_progress=not quiet and not json_output,
+            )
+
+            # Display snapshot metadata
+            if not json_output and not quiet:
+                console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
+                console.print(
+                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                )
+                console.print(f"  Size: {snapshot_metadata.size_bytes:,} bytes")
+                age_days = (datetime.now(UTC) - snapshot_metadata.created).days
+                console.print(f"  Age: {age_days} days")
+                console.print()
+
+            # Use temporary snapshot path as database
+            db_path = str(temp_snapshot_path)
+
+        except ValueError as e:
+            if not json_output:
+                console.print(f"[red]✗ Invalid snapshot reference: {e}[/red]")
+                console.print("\nRun 'lookervault snapshot list' to see available snapshots.")
+            else:
+                import json
+
+                error_output = {
+                    "status": "error",
+                    "error_type": "ValueError",
+                    "error_message": str(e),
+                }
+                console.print(json.dumps(error_output, indent=2))
+            raise typer.Exit(EXIT_VALIDATION_ERROR) from e
+        except Exception as e:
+            if not json_output:
+                console.print(f"[red]✗ Snapshot download failed: {e}[/red]")
+                console.print(
+                    "\nTroubleshooting:\n"
+                    "  1. Check network connectivity\n"
+                    "  2. Verify GCS credentials (gcloud auth application-default login)\n"
+                    "  3. Ensure snapshot exists (lookervault snapshot list)"
+                )
+            else:
+                import json
+
+                error_output = {
+                    "status": "error",
+                    "error_type": "SnapshotDownloadError",
+                    "error_message": str(e),
+                }
+                console.print(json.dumps(error_output, indent=2))
+            raise typer.Exit(EXIT_GENERAL_ERROR) from e
+
     # Resolve database path from CLI arg > env var > default
     resolved_db_path = get_db_path(db_path)
 
@@ -348,6 +420,15 @@ def restore_single(
 
             # Clean exit
             repository.close()
+
+            # Cleanup temporary snapshot if used
+            if temp_snapshot_path:
+                from lookervault.restoration.snapshot_integration import (
+                    cleanup_temp_snapshot,
+                )
+
+                cleanup_temp_snapshot(temp_snapshot_path)
+
             raise typer.Exit(EXIT_SUCCESS)
 
         else:
@@ -372,39 +453,83 @@ def restore_single(
 
             # Clean exit
             repository.close()
+
+            # Cleanup temporary snapshot if used
+            if temp_snapshot_path:
+                from lookervault.restoration.snapshot_integration import (
+                    cleanup_temp_snapshot,
+                )
+
+                cleanup_temp_snapshot(temp_snapshot_path)
+
             raise typer.Exit(EXIT_GENERAL_ERROR)
 
     except typer.Exit:
+        # Cleanup temporary snapshot on early exit
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise
     except ConfigError as e:
         if not json_output:
             print_error(f"Configuration error: {e}")
         logger.error(f"Configuration error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except ValidationError as e:
         if not json_output:
             print_error(f"Validation error: {e}")
         logger.error(f"Validation error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except DeserializationError as e:
         if not json_output:
             print_error(f"Deserialization error: {e}")
         logger.error(f"Deserialization error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except RestorationError as e:
         if not json_output:
             print_error(f"Restoration error: {e}")
         logger.error(f"Restoration error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_GENERAL_ERROR) from None
     except KeyboardInterrupt:
         if not json_output:
             print_error("Restoration interrupted by user")
         logger.info("Restoration interrupted by user")
+        # Cleanup temporary snapshot on interrupt
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(130) from None
     except Exception as e:
         if not json_output:
             print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during restoration")
+        # Cleanup temporary snapshot on unexpected error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_GENERAL_ERROR) from None
 
 
@@ -412,6 +537,7 @@ def restore_bulk(
     content_type: str,
     config: Path | None = None,
     db_path: str | None = None,
+    from_snapshot: str | None = None,
     workers: int | None = None,
     rate_limit_per_minute: int | None = None,
     rate_limit_per_second: int | None = None,
@@ -430,6 +556,7 @@ def restore_bulk(
         content_type: Content type to restore (dashboard, look, folder, etc.)
         config: Optional path to config file
         db_path: Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or "looker.db")
+        from_snapshot: Restore from cloud snapshot (index like "1" or timestamp like "2025-12-14T10:30:00")
         workers: Number of parallel workers (default: config file or 8)
         rate_limit_per_minute: API rate limit per minute (default: config file or 120)
         rate_limit_per_second: Burst rate limit per second (default: config file or 10)
@@ -455,6 +582,75 @@ def restore_bulk(
         3: Validation error
         4: API error (rate limit, authentication, etc.)
     """
+    # Handle snapshot download if --from-snapshot provided
+    temp_snapshot_path = None
+    snapshot_metadata = None
+
+    if from_snapshot:
+        try:
+            # Import here to avoid circular dependency
+            from lookervault.restoration.snapshot_integration import (
+                download_snapshot_to_temp,
+            )
+
+            # Download snapshot to temp location
+            if not json_output and not quiet:
+                console.print(f"\nDownloading snapshot: [cyan]{from_snapshot}[/cyan]")
+
+            temp_snapshot_path, snapshot_metadata = download_snapshot_to_temp(
+                snapshot_ref=from_snapshot,
+                verify_checksum=True,
+                show_progress=not quiet and not json_output,
+            )
+
+            # Display snapshot metadata
+            if not json_output and not quiet:
+                console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
+                console.print(
+                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                )
+                console.print(f"  Size: {snapshot_metadata.size_bytes:,} bytes")
+                age_days = (datetime.now(UTC) - snapshot_metadata.created).days
+                console.print(f"  Age: {age_days} days")
+                console.print()
+
+            # Use temporary snapshot path as database
+            db_path = str(temp_snapshot_path)
+
+        except ValueError as e:
+            if not json_output:
+                console.print(f"[red]✗ Invalid snapshot reference: {e}[/red]")
+                console.print("\nRun 'lookervault snapshot list' to see available snapshots.")
+            else:
+                import json
+
+                error_output = {
+                    "status": "error",
+                    "error_type": "ValueError",
+                    "error_message": str(e),
+                }
+                console.print(json.dumps(error_output, indent=2))
+            raise typer.Exit(EXIT_VALIDATION_ERROR) from e
+        except Exception as e:
+            if not json_output:
+                console.print(f"[red]✗ Snapshot download failed: {e}[/red]")
+                console.print(
+                    "\nTroubleshooting:\n"
+                    "  1. Check network connectivity\n"
+                    "  2. Verify GCS credentials (gcloud auth application-default login)\n"
+                    "  3. Ensure snapshot exists (lookervault snapshot list)"
+                )
+            else:
+                import json
+
+                error_output = {
+                    "status": "error",
+                    "error_type": "SnapshotDownloadError",
+                    "error_message": str(e),
+                }
+                console.print(json.dumps(error_output, indent=2))
+            raise typer.Exit(EXIT_GENERAL_ERROR) from e
+
     # Resolve database path from CLI arg > env var > default
     resolved_db_path = get_db_path(db_path)
 
@@ -659,6 +855,12 @@ def restore_bulk(
         # Clean exit
         repository.close()
 
+        # Cleanup temporary snapshot if used
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
+
         # Exit with appropriate code
         if summary.error_count > 0:
             raise typer.Exit(EXIT_GENERAL_ERROR)
@@ -666,16 +868,31 @@ def restore_bulk(
             raise typer.Exit(EXIT_SUCCESS)
 
     except typer.Exit:
+        # Cleanup temporary snapshot on exit
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise
     except ConfigError as e:
         if not json_output:
             print_error(f"Configuration error: {e}")
         logger.error(f"Configuration error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except ValidationError as e:
         if not json_output:
             print_error(f"Validation error: {e}")
         logger.error(f"Validation error: {e}")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except KeyboardInterrupt:
         # Graceful Ctrl+C handling - checkpoint already saved by orchestrator/restorer
@@ -685,11 +902,21 @@ def restore_bulk(
                 "[dim]Progress has been saved. Run the same command with --resume to continue.[/dim]"
             )
         logger.info("Restoration interrupted by user (KeyboardInterrupt)")
+        # Cleanup temporary snapshot on interrupt
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(130) from None
     except Exception as e:
         if not json_output:
             print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during bulk restoration")
+        # Cleanup temporary snapshot on error
+        if temp_snapshot_path:
+            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+            cleanup_temp_snapshot(temp_snapshot_path)
         raise typer.Exit(EXIT_GENERAL_ERROR) from None
 
 
