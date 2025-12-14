@@ -1087,6 +1087,11 @@ class ParallelOrchestrator:
         if "user" in item_dict and isinstance(item_dict["user"], dict):
             owner_email = item_dict["user"].get("email")
 
+        # Extract folder_id if present (dashboards, looks, boards)
+        folder_id = None
+        if "folder_id" in item_dict and item_dict["folder_id"] is not None:
+            folder_id = str(item_dict["folder_id"])
+
         # Parse timestamps
         created_at = datetime.now(UTC)
         updated_at = datetime.now(UTC)
@@ -1143,4 +1148,5 @@ class ParallelOrchestrator:
             deleted_at=None,
             content_size=len(content_data),
             content_data=content_data,
+            folder_id=folder_id,
         )

@@ -49,6 +49,7 @@ class ContentItem:
     synced_at: datetime | None = None
     deleted_at: datetime | None = None
     content_size: int | None = None
+    folder_id: str | None = None
 
     def __post_init__(self):
         """Auto-calculate fields if not provided."""

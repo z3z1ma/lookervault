@@ -81,22 +81,18 @@ def create_schema(conn: sqlite3.Connection) -> None:
         WHERE deleted_at IS NOT NULL
     """)
 
+    # Migrate existing databases to add folder_id column before creating index
+    _migrate_to_version_2(conn)
+
     # Create partial index for folder_id (only for content types that support folders)
-    cursor.execute(
-        """
+    # Note: SQLite doesn't allow parameters in CREATE INDEX WHERE clauses, so we hardcode the values
+    cursor.execute(f"""
         CREATE INDEX IF NOT EXISTS idx_folder_id
         ON content_items(folder_id)
         WHERE deleted_at IS NULL
           AND folder_id IS NOT NULL
-          AND content_type IN (?, ?, ?, ?)
-        """,
-        (
-            ContentType.DASHBOARD.value,
-            ContentType.LOOK.value,
-            ContentType.BOARD.value,
-            ContentType.FOLDER.value,
-        ),
-    )
+          AND content_type IN ({ContentType.DASHBOARD.value}, {ContentType.LOOK.value}, {ContentType.BOARD.value}, {ContentType.FOLDER.value})
+    """)
 
     # Create sync_checkpoints table
     cursor.execute("""
@@ -254,9 +250,6 @@ def create_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_dlq_failed_at
         ON dead_letter_queue(failed_at DESC)
     """)
-
-    # Migrate existing databases
-    _migrate_to_version_2(conn)
 
     # Record schema version if not already recorded
     cursor.execute(

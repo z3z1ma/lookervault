@@ -12,8 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol, TypeVar
 
-import msgspec.json
-
 from lookervault.exceptions import NotFoundError, StorageError
 from lookervault.storage.models import (
     Checkpoint,
@@ -373,19 +371,6 @@ class SQLiteContentRepository:
                 try:
                     cursor = conn.cursor()
 
-                    # Deserialize content data to extract folder_id
-                    decoder = msgspec.json.Decoder()
-                    content_metadata = decoder.decode(item.content_data)
-
-                    # Extract folder_id (None if not present or not a supported type)
-                    folder_id = None
-                    if item.content_type in [
-                        ContentType.DASHBOARD.value,
-                        ContentType.LOOK.value,
-                        ContentType.BOARD.value,
-                    ]:
-                        folder_id = content_metadata.get("folder_id")
-
                     cursor.execute(
                         """
                         INSERT INTO content_items (
@@ -418,7 +403,7 @@ class SQLiteContentRepository:
                             item.deleted_at.isoformat() if item.deleted_at else None,
                             item.content_size,
                             item.content_data,
-                            str(folder_id) if folder_id is not None else None,
+                            item.folder_id,
                         ),
                     )
                     conn.commit()
