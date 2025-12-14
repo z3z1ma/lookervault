@@ -593,3 +593,266 @@ class LookerContentRestorer:
                 retry_count=retry_count,
                 duration_ms=duration_ms,
             )
+
+    def restore_bulk(
+        self, content_type: ContentType, config: Any, resume_checkpoint: Any = None
+    ) -> Any:
+        """Restore all content of a given type from SQLite backup to Looker instance.
+
+        This method queries SQLite for all content IDs of the specified content type,
+        then iterates through each ID calling restore_single(). Results are aggregated
+        into a RestorationSummary with success/error counts, created/updated counts,
+        throughput metrics, and error breakdowns.
+
+        If a resume_checkpoint is provided, the method will skip content IDs that have
+        already been completed in the checkpoint, allowing interrupted restorations to
+        continue from where they left off.
+
+        Args:
+            content_type: ContentType enum value
+            config: RestorationConfig with dry_run and other settings
+            resume_checkpoint: Optional RestorationCheckpoint to resume from
+
+        Returns:
+            RestorationSummary with aggregated results
+
+        Examples:
+            >>> # Resume from checkpoint
+            >>> checkpoint = repository.get_latest_restoration_checkpoint(
+            ...     ContentType.DASHBOARD.value
+            ... )
+            >>> summary = restorer.restore_bulk(ContentType.DASHBOARD, config, checkpoint)
+            >>> print(f"Resumed from {len(checkpoint.checkpoint_data['completed_ids'])} items")
+        """
+        start_time = time.time()
+        session_id = config.session_id if hasattr(config, "session_id") else "bulk_restore"
+        dry_run = config.dry_run if hasattr(config, "dry_run") else False
+
+        # Check if we're resuming from a checkpoint
+        completed_ids: set[str] = set()
+        if resume_checkpoint:
+            completed_ids = set(resume_checkpoint.checkpoint_data.get("completed_ids", []))
+            logger.info(
+                f"Resuming {content_type.name} restoration from checkpoint: "
+                f"{len(completed_ids)} items already completed"
+            )
+
+        logger.info(
+            f"Starting bulk restoration for {content_type.name} (dry_run={dry_run}, session_id={session_id})"
+        )
+
+        # Step 1: Query SQLite for all content IDs of the given content_type
+        all_content_ids = self.repository.get_content_ids(content_type.value)
+
+        if not all_content_ids:
+            logger.info(f"No {content_type.name} content found in repository")
+            return self._create_empty_summary(session_id, content_type)
+
+        # Step 2: Filter out completed IDs if resuming
+        if completed_ids:
+            content_ids = [cid for cid in all_content_ids if cid not in completed_ids]
+            logger.info(
+                f"Filtered {len(all_content_ids)} total items to {len(content_ids)} remaining items "
+                f"(skipped {len(completed_ids)} completed)"
+            )
+        else:
+            content_ids = list(all_content_ids)
+
+        total_items = len(content_ids)
+        logger.info(f"Found {total_items} {content_type.name} items to restore")
+
+        # Initialize counters
+        success_count = 0
+        created_count = 0
+        updated_count = 0
+        error_count = 0
+        skipped_count = 0
+        error_breakdown: dict[str, int] = {}
+
+        # Get checkpoint interval from config (default to 100)
+        checkpoint_interval = (
+            config.checkpoint_interval if hasattr(config, "checkpoint_interval") else 100
+        )
+
+        # Track completed IDs for checkpoint saving
+        newly_completed_ids: list[str] = []
+
+        # Step 3: Loop through each ID and call restore_single()
+        for idx, content_id in enumerate(content_ids, 1):
+            try:
+                result = self.restore_single(content_id, content_type, dry_run=dry_run)
+
+                # Step 4: Aggregate results
+                if result.status == "created":
+                    success_count += 1
+                    created_count += 1
+                    newly_completed_ids.append(content_id)
+                elif result.status == "updated":
+                    success_count += 1
+                    updated_count += 1
+                    newly_completed_ids.append(content_id)
+                elif result.status == "success":
+                    # Dry run success
+                    success_count += 1
+                    newly_completed_ids.append(content_id)
+                elif result.status == "skipped":
+                    skipped_count += 1
+                    newly_completed_ids.append(content_id)
+                elif result.status == "failed":
+                    error_count += 1
+
+                    # Track error breakdown by error type
+                    if result.error_message:
+                        error_type = self._extract_error_type(result.error_message)
+                        error_breakdown[error_type] = error_breakdown.get(error_type, 0) + 1
+
+                # Save checkpoint every N items
+                if idx % checkpoint_interval == 0:
+                    all_completed = list(completed_ids) + newly_completed_ids
+                    self._save_checkpoint(
+                        session_id=session_id,
+                        content_type=content_type,
+                        completed_ids=all_completed,
+                        item_count=len(newly_completed_ids),
+                        error_count=error_count,
+                    )
+                    logger.info(
+                        f"Checkpoint saved: {idx}/{total_items} items processed, "
+                        f"{len(all_completed)} total completed"
+                    )
+
+                # Log progress every 100 items
+                if idx % 100 == 0:
+                    logger.info(
+                        f"Progress: {idx}/{total_items} ({idx / total_items * 100:.1f}%) - "
+                        f"Success: {success_count}, Errors: {error_count}"
+                    )
+
+            except Exception as e:
+                # Catch unexpected errors during bulk restoration
+                error_count += 1
+                error_type = type(e).__name__
+                error_breakdown[error_type] = error_breakdown.get(error_type, 0) + 1
+                logger.exception(
+                    f"Unexpected error during bulk restoration of {content_type.name} {content_id}: {e}"
+                )
+
+        # Save final checkpoint after completing all items
+        if newly_completed_ids:
+            all_completed = list(completed_ids) + newly_completed_ids
+            self._save_checkpoint(
+                session_id=session_id,
+                content_type=content_type,
+                completed_ids=all_completed,
+                item_count=len(newly_completed_ids),
+                error_count=error_count,
+            )
+            logger.info(f"Final checkpoint saved: {len(all_completed)} total items completed")
+
+        # Step 5: Calculate duration and throughput
+        duration_seconds = time.time() - start_time
+        average_throughput = total_items / duration_seconds if duration_seconds > 0 else 0.0
+
+        logger.info(
+            f"Bulk restoration completed: {total_items} items in {duration_seconds:.1f}s "
+            f"({average_throughput:.1f} items/sec) - "
+            f"Success: {success_count}, Errors: {error_count}"
+        )
+
+        # Step 6: Create and return RestorationSummary
+        from lookervault.storage.models import RestorationSummary
+
+        return RestorationSummary(
+            session_id=session_id,
+            total_items=total_items,
+            success_count=success_count,
+            created_count=created_count,
+            updated_count=updated_count,
+            error_count=error_count,
+            skipped_count=skipped_count,
+            duration_seconds=duration_seconds,
+            average_throughput=average_throughput,
+            content_type_breakdown={content_type.value: total_items},
+            error_breakdown=error_breakdown,
+        )
+
+    def _create_empty_summary(self, session_id: str, content_type: ContentType) -> Any:
+        """Create empty RestorationSummary for when no content found."""
+        from lookervault.storage.models import RestorationSummary
+
+        return RestorationSummary(
+            session_id=session_id,
+            total_items=0,
+            success_count=0,
+            created_count=0,
+            updated_count=0,
+            error_count=0,
+            skipped_count=0,
+            duration_seconds=0.0,
+            average_throughput=0.0,
+            content_type_breakdown={content_type.value: 0},
+            error_breakdown={},
+        )
+
+    def _extract_error_type(self, error_message: str) -> str:
+        """Extract error type from error message for categorization."""
+        # Common error patterns to extract
+        if "not found" in error_message.lower():
+            return "NotFoundError"
+        elif "validation" in error_message.lower() or "422" in error_message:
+            return "ValidationError"
+        elif "rate limit" in error_message.lower() or "429" in error_message:
+            return "RateLimitError"
+        elif "authentication" in error_message.lower() or "401" in error_message:
+            return "AuthenticationError"
+        elif "authorization" in error_message.lower() or "403" in error_message:
+            return "AuthorizationError"
+        elif "timeout" in error_message.lower():
+            return "TimeoutError"
+        else:
+            return "APIError"
+
+    def _save_checkpoint(
+        self,
+        session_id: str,
+        content_type: ContentType,
+        completed_ids: list[str],
+        item_count: int,
+        error_count: int,
+    ) -> None:
+        """Save restoration checkpoint to enable resume capability.
+
+        Args:
+            session_id: Unique restoration session identifier
+            content_type: ContentType enum value being restored
+            completed_ids: List of all completed content IDs (including from previous checkpoint)
+            item_count: Number of items processed in this checkpoint interval
+            error_count: Total errors encountered so far
+
+        Examples:
+            >>> # Save checkpoint every 100 items
+            >>> self._save_checkpoint(
+            ...     session_id="abc-123",
+            ...     content_type=ContentType.DASHBOARD,
+            ...     completed_ids=["1", "2", "3", ..., "100"],
+            ...     item_count=100,
+            ...     error_count=2,
+            ... )
+        """
+        from lookervault.storage.models import RestorationCheckpoint
+
+        checkpoint = RestorationCheckpoint(
+            session_id=session_id,
+            content_type=content_type.value,
+            checkpoint_data={"completed_ids": completed_ids},
+            item_count=item_count,
+            error_count=error_count,
+        )
+
+        # Save to repository
+        self.repository.save_restoration_checkpoint(checkpoint)
+
+        logger.debug(
+            f"Saved checkpoint for session {session_id}: "
+            f"{len(completed_ids)} total completed, {error_count} errors"
+        )

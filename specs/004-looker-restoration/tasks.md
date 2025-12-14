@@ -134,18 +134,18 @@
 
 ### Implementation for User Story 2
 
-- [ ] T056 [US2] Implement LookerContentRestorer.restore_bulk() method in src/lookervault/restoration/restorer.py (query SQLite for all content IDs of type, loop through restore_single, aggregate to RestorationSummary)
-- [ ] T057 [P] [US2] Add progress tracking using existing ProgressTracker from src/lookervault/extraction/progress.py
-- [ ] T058 [P] [US2] Implement restore_bulk() CLI command in src/lookervault/cli/commands/restore.py (arguments: content_type; options: --workers, --rate-limit-per-minute, --rate-limit-per-second, --checkpoint-interval, --max-retries, --skip-if-modified, --dry-run, --json)
-- [ ] T059 [US2] Add rich progress bar for bulk restore showing Progress bar, Success/Error counts, Throughput, ETA
-- [ ] T060 [US2] Implement restore_all() CLI command in src/lookervault/cli/commands/restore.py (options: --exclude-types, --only-types, plus all bulk options)
-- [ ] T061 [US2] Wire restore_all() to use DependencyGraph.get_restoration_order() for proper content type ordering
-- [ ] T062 [US2] Call restore_bulk() for each content type sequentially in dependency order
-- [ ] T063 [US2] Aggregate results across all content types into final RestorationSummary
-- [ ] T064 [US2] Add rich output showing per-type progress ([1/9] Users... ✓ 150 users restored, [2/9] Groups..., etc.)
-- [ ] T065 [P] [US2] Implement checkpoint save logic in LookerContentRestorer (save checkpoint every N items using save_restoration_checkpoint)
-- [ ] T066 [P] [US2] Implement restore_resume() CLI command in src/lookervault/cli/commands/restore.py (optional session_id argument, loads latest checkpoint, filters completed IDs, continues restoration)
-- [ ] T067 [US2] Add resume logic to LookerContentRestorer.restore_bulk() (query checkpoint, extract completed_ids, filter them from restoration query)
+- [X] T056 [US2] Implement LookerContentRestorer.restore_bulk() method in src/lookervault/restoration/restorer.py (query SQLite for all content IDs of type, loop through restore_single, aggregate to RestorationSummary)
+- [X] T057 [P] [US2] Add progress tracking using existing ProgressTracker from src/lookervault/extraction/progress.py
+- [X] T058 [P] [US2] Implement restore_bulk() CLI command in src/lookervault/cli/commands/restore.py (arguments: content_type; options: --workers, --rate-limit-per-minute, --rate-limit-per-second, --checkpoint-interval, --max-retries, --skip-if-modified, --dry-run, --json)
+- [X] T059 [US2] Add rich progress bar for bulk restore showing Progress bar, Success/Error counts, Throughput, ETA
+- [X] T060 [US2] Implement restore_all() CLI command in src/lookervault/cli/commands/restore.py (options: --exclude-types, --only-types, plus all bulk options)
+- [X] T061 [US2] Wire restore_all() to use DependencyGraph.get_restoration_order() for proper content type ordering
+- [X] T062 [US2] Call restore_bulk() for each content type sequentially in dependency order
+- [X] T063 [US2] Aggregate results across all content types into final RestorationSummary
+- [X] T064 [US2] Add rich output showing per-type progress ([1/9] Users... ✓ 150 users restored, [2/9] Groups..., etc.)
+- [X] T065 [P] [US2] Implement checkpoint save logic in LookerContentRestorer (save checkpoint every N items using save_restoration_checkpoint)
+- [X] T066 [P] [US2] Implement restore_resume() CLI command in src/lookervault/cli/commands/restore.py (optional session_id argument, loads latest checkpoint, filters completed IDs, continues restoration)
+- [X] T067 [US2] Add resume logic to LookerContentRestorer.restore_bulk() (query checkpoint, extract completed_ids, filter them from restoration query)
 
 **Checkpoint**: User Story 2 complete - bulk restoration with dependency ordering works, resume capability functional
 

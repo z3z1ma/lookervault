@@ -331,5 +331,85 @@ def restore_single_cmd(
     )
 
 
+@restore_app.command("all")
+def restore_all_cmd(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to configuration file"),
+    ] = None,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite backup database"),
+    ] = "looker.db",
+    exclude_types: Annotated[
+        list[str] | None,
+        typer.Option("--exclude-types", help="Content types to exclude from restoration"),
+    ] = None,
+    only_types: Annotated[
+        list[str] | None,
+        typer.Option("--only-types", help="Restore only these content types"),
+    ] = None,
+    workers: Annotated[
+        int,
+        typer.Option("--workers", help="Number of parallel workers (1-32)"),
+    ] = 8,
+    rate_limit_per_minute: Annotated[
+        int,
+        typer.Option("--rate-limit-per-minute", help="API rate limit per minute"),
+    ] = 120,
+    rate_limit_per_second: Annotated[
+        int,
+        typer.Option("--rate-limit-per-second", help="Burst rate limit per second"),
+    ] = 10,
+    checkpoint_interval: Annotated[
+        int,
+        typer.Option("--checkpoint-interval", help="Save checkpoint every N items"),
+    ] = 100,
+    max_retries: Annotated[
+        int,
+        typer.Option("--max-retries", help="Maximum retry attempts for transient errors"),
+    ] = 5,
+    skip_if_modified: Annotated[
+        bool,
+        typer.Option("--skip-if-modified", help="Skip items modified in destination since backup"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Validate without making changes"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Restore all content types in dependency order."""
+    from .commands import restore_all as restore_all_module
+
+    restore_all_module.restore_all(
+        config,
+        db_path,
+        exclude_types,
+        only_types,
+        workers,
+        rate_limit_per_minute,
+        rate_limit_per_second,
+        checkpoint_interval,
+        max_retries,
+        skip_if_modified,
+        dry_run,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
 if __name__ == "__main__":
     app()
