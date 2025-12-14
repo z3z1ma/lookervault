@@ -328,7 +328,9 @@ def upload_snapshot(
         logger.info(f"CRC32C checksum verified: {blob.crc32c}")
 
         # Parse timestamp from filename
-        timestamp_str = snapshot_filename.split("-", 1)[1].rsplit(".", 1)[0]
+        # Format: looker-2025-12-14T16-21-09.db.gz or looker-2025-12-14T16-21-09.db
+        # Extract timestamp part between prefix and first dot
+        timestamp_str = snapshot_filename.split("-", 1)[1].split(".")[0]
         timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H-%M-%S").replace(tzinfo=UTC)
 
         # Return snapshot metadata

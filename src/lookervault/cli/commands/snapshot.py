@@ -12,7 +12,11 @@ from lookervault.snapshot.uploader import upload_snapshot
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(name="snapshot", help="Cloud snapshot management commands")
+app = typer.Typer(
+    name="snapshot",
+    help="Cloud snapshot management commands",
+    no_args_is_help=True,
+)
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -186,11 +190,13 @@ def upload(
 def list(
     limit: int | None = typer.Option(None, help="Maximum number of snapshots to display"),
     filter: str | None = typer.Option(None, help="Filter snapshots by date range"),
-    verbose_mode: bool = typer.Option(False, "--verbose", help="Show detailed metadata"),
+    verbose_mode: bool = typer.Option(
+        False, "--verbose-output", "-V", help="Show detailed metadata for each snapshot"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output results as JSON"),
     no_cache: bool = typer.Option(False, help="Skip local cache, fetch fresh data"),
     config: Path | None = typer.Option(None, help="Path to config file"),
-    verbose: bool = typer.Option(False, help="Enable verbose logging"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Enable verbose logging"),
     quiet: bool = typer.Option(False, help="Suppress all non-error output"),
 ) -> None:
     """List available snapshots in Google Cloud Storage.
@@ -311,6 +317,10 @@ def list(
             if not quiet:
                 _display_snapshots_table(snapshots, verbose_mode)
             raise typer.Exit(EXIT_SUCCESS)
+
+        except typer.Exit:
+            # Re-raise exit exceptions (don't catch our own exits!)
+            raise
 
         except RuntimeError as e:
             # Authentication or bucket access errors
@@ -607,6 +617,10 @@ def download(
                 # Download or decompression errors
                 print_error(f"Download failed: {e}")
                 raise typer.Exit(EXIT_GENERAL_ERROR)
+
+        except typer.Exit:
+            # Re-raise exit exceptions (don't catch our own exits!)
+            raise
 
         except RuntimeError as e:
             # Authentication or bucket access errors
@@ -913,6 +927,10 @@ def cleanup(
                 console.print(f"\n[dim]Audit log: {snapshot_config.audit_log_path}[/dim]")
 
             raise typer.Exit(EXIT_SUCCESS)
+
+        except typer.Exit:
+            # Re-raise exit exceptions (don't catch our own exits!)
+            raise
 
         except RuntimeError as e:
             # Authentication or bucket access errors

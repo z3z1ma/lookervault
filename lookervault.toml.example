@@ -58,7 +58,7 @@ max_retries = 5                # Maximum retry attempts for transient errors
 #   4. Hardcoded defaults
 #
 # GCS Snapshot Storage Configuration
-[snapshot]
+[lookervault.snapshot]
 # GCS Storage Provider Configuration
 # Note: Optional - will use default Application Default Credentials (ADC) if not specified
 bucket_name = "lookervault-backups"    # GCS bucket for snapshot storage
@@ -74,7 +74,7 @@ compression_enabled = true             # Enable gzip compression
 compression_level = 6                  # Compression level (1=fastest, 9=best compression)
 
 # Retention Policy
-[snapshot.retention]
+[lookervault.snapshot.retention]
 min_days = 30                          # Minimum retention period in days
 max_days = 90                          # Maximum retention period in days
 min_count = 5                          # Minimum number of snapshots to always retain
