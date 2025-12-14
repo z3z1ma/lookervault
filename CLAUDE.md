@@ -235,6 +235,83 @@ lookervault extract --folder-ids "123" --workers 8 dashboards
 # Uses standard OffsetCoordinator with SDK filtering
 ```
 
+### Looker SDK Folder Filtering Support
+
+**Summary**: Only **dashboards** and **looks** support native SDK-level `folder_id` filtering via search methods. All other content types do NOT support folder filtering at the API level.
+
+#### Content Types with Folder Filtering Support
+
+| Content Type | SDK Method | Folder Parameter | Pagination | Notes |
+|--------------|------------|------------------|------------|-------|
+| **Dashboard** | `search_dashboards()` | ✅ `folder_id` | ✅ Yes (limit/offset) | Primary method for folder-filtered extraction |
+| **Dashboard** | `folder_dashboards()` | ✅ `folder_id` (path param) | ❌ No | Alternative: GET `/folders/{folder_id}/dashboards` |
+| **Look** | `search_looks()` | ✅ `folder_id` | ✅ Yes (limit/offset) | Primary method for folder-filtered extraction |
+| **Look** | `folder_looks()` | ✅ `folder_id` (path param) | ❌ No | Alternative: GET `/folders/{folder_id}/looks` |
+
+#### Content Types WITHOUT Folder Filtering Support
+
+| Content Type | SDK Method | Folder Support | Pagination | Notes |
+|--------------|------------|----------------|------------|-------|
+| **Board** | `all_boards()` | ❌ No | ❌ No | Only supports `fields` parameter |
+| **Board** | `search_boards()` | ❌ No | ✅ Yes (limit/offset) | Supports user/metadata filtering, but NO folder_id |
+| **User** | `all_users()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for users |
+| **Group** | `all_groups()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for groups |
+| **Role** | `search_roles()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for roles |
+| **LookML Model** | `all_lookml_models()` | ❌ No | ❌ No | Returns all models (supports exclude filters) |
+| **Folder** | `all_folders()` | ❌ No | ❌ No | Returns all folders (only supports `fields`) |
+| **Permission Set** | `all_permission_sets()` | ❌ No | ❌ No | Only supports `fields` parameter |
+| **Model Set** | `all_model_sets()` | ❌ No | ❌ No | Only supports `fields` parameter |
+| **Scheduled Plan** | `all_scheduled_plans()` | ❌ No | ❌ No | Supports `user_id` and `all_users` filtering |
+
+#### Implementation Implications
+
+**For Dashboards and Looks** (SDK-level filtering available):
+- Use `search_dashboards(folder_id="123", limit=100, offset=0)` for SDK-level filtering
+- Multi-folder optimization uses N parallel SDK calls (one per folder_id) for 10-100x speedup
+- Single-folder optimization passes `folder_id` parameter directly to SDK method
+- See `extract_range()` in `src/lookervault/looker/extractor.py` (lines 284-285)
+
+**For All Other Content Types** (NO SDK-level filtering):
+- Folder filtering must be done in Python after fetching all items (in-memory filtering)
+- No performance optimization possible via multi-folder SDK calls
+- Boards, users, groups, roles, etc. have no folder concept in Looker's data model
+- Models, permission sets, model sets are global configuration objects
+
+#### SDK Method Reference
+
+**Dashboards**:
+- `search_dashboards(folder_id="123", limit=100, offset=0, fields="id,title", ...)` - ✅ Supports folder filtering
+- `folder_dashboards(folder_id="123", fields="id,title")` - ✅ Alternative (no pagination)
+
+**Looks**:
+- `search_looks(folder_id="123", limit=100, offset=0, fields="id,title", ...)` - ✅ Supports folder filtering
+- `folder_looks(folder_id="123", fields="id,title")` - ✅ Alternative (no pagination)
+
+**Boards**:
+- `search_boards(limit=100, offset=0, creator_id="42", ...)` - ❌ No folder_id parameter
+- `all_boards(fields="id,title")` - ❌ No folder_id parameter
+
+**Other Content Types**:
+- All other `all_*()` and `search_*()` methods lack folder filtering parameters
+- See individual SDK method documentation for supported parameters
+
+#### Sources
+
+- [Search Dashboards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Dashboard/search_dashboards)
+- [Search Looks | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Look/search_looks)
+- [Folder Dashboards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/folder_dashboards)
+- [Folder Looks | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/folder_looks)
+- [Search Boards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Board/search_boards)
+- [All Boards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Board/all_boards)
+- [All Users | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/User/all_users)
+- [All Groups | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Group/all_groups)
+- [Search Roles | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/search_roles)
+- [All LookML Models | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/LookmlModel/all_lookml_models)
+- [All Folders | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/all_folders)
+- [All Permission Sets | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/all_permission_sets)
+- [All Model Sets | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/all_model_sets)
+- [All Scheduled Plans | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/ScheduledPlan/all_scheduled_plans)
+
 ### Usage
 
 ```bash
