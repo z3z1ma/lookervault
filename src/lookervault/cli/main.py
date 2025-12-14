@@ -302,7 +302,7 @@ def restore_single_cmd(
         str | None,
         typer.Option(
             "--from-snapshot",
-            help="Restore from cloud snapshot (index like '1' or timestamp like '2025-12-14T10:30:00')",
+            help="Restore from cloud snapshot ('latest', index like '1', or timestamp like '2025-12-14T10:30:00')",
         ),
     ] = None,
     dry_run: Annotated[
@@ -365,7 +365,7 @@ def restore_all_cmd(
         str | None,
         typer.Option(
             "--from-snapshot",
-            help="Restore from cloud snapshot (index like '1' or timestamp like '2025-12-14T10:30:00')",
+            help="Restore from cloud snapshot ('latest', index like '1', or timestamp like '2025-12-14T10:30:00')",
         ),
     ] = None,
     exclude_types: Annotated[

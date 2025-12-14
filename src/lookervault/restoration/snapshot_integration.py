@@ -31,14 +31,15 @@ def parse_snapshot_reference(snapshot_ref: str) -> tuple[str, int | datetime]:
 
     Snapshot reference can be:
     - Integer index (1, 2, 3...) for sequential snapshot lookup
+    - Special keyword "latest" (alias for index 1, the most recent snapshot)
     - ISO timestamp (2025-12-14T10:30:00) for exact timestamp lookup
 
     Args:
-        snapshot_ref: Snapshot reference string (index or timestamp)
+        snapshot_ref: Snapshot reference string (index, "latest", or timestamp)
 
     Returns:
         Tuple of (reference_type, parsed_value):
-        - ("index", int) if integer index
+        - ("index", int) if integer index or "latest"
         - ("timestamp", datetime) if ISO timestamp
 
     Raises:
@@ -47,9 +48,15 @@ def parse_snapshot_reference(snapshot_ref: str) -> tuple[str, int | datetime]:
     Examples:
         >>> parse_snapshot_reference("1")
         ("index", 1)
+        >>> parse_snapshot_reference("latest")
+        ("index", 1)
         >>> parse_snapshot_reference("2025-12-14T10:30:00")
         ("timestamp", datetime(2025, 12, 14, 10, 30, 0, tzinfo=UTC))
     """
+    # Handle "latest" alias
+    if snapshot_ref.lower() == "latest":
+        return ("index", 1)
+
     # Try parsing as integer index first
     try:
         index = int(snapshot_ref)
@@ -77,6 +84,7 @@ def parse_snapshot_reference(snapshot_ref: str) -> tuple[str, int | datetime]:
         f"Invalid snapshot reference: '{snapshot_ref}'.\n\n"
         f"Supported formats:\n"
         f"  - Integer index (e.g., '1', '2', '3')\n"
+        f"  - Keyword 'latest' (most recent snapshot)\n"
         f"  - ISO timestamp (e.g., '2025-12-14T10:30:00')\n\n"
         f"Run 'lookervault snapshot list' to see available snapshots."
     )
@@ -91,13 +99,13 @@ def download_snapshot_to_temp(
     Download snapshot from GCS to temporary location for restoration.
 
     This function:
-    1. Parses snapshot reference (index or timestamp)
+    1. Parses snapshot reference (index, "latest", or timestamp)
     2. Looks up snapshot metadata from GCS
     3. Downloads snapshot to /tmp/lookervault-snapshot-{timestamp}.db
     4. Returns path to temporary file and snapshot metadata
 
     Args:
-        snapshot_ref: Snapshot reference (index like "1" or timestamp like "2025-12-14T10:30:00")
+        snapshot_ref: Snapshot reference (index like "1", "latest", or timestamp like "2025-12-14T10:30:00")
         verify_checksum: Whether to verify CRC32C checksum after download
         show_progress: Whether to show progress bars during download
 
@@ -114,6 +122,11 @@ def download_snapshot_to_temp(
     Examples:
         >>> # Download by index
         >>> temp_path, metadata = download_snapshot_to_temp("1")
+        >>> print(temp_path)
+        PosixPath('/tmp/lookervault-snapshot-2025-12-14T10-30-00.db')
+
+        >>> # Download latest snapshot
+        >>> temp_path, metadata = download_snapshot_to_temp("latest")
         >>> print(temp_path)
         PosixPath('/tmp/lookervault-snapshot-2025-12-14T10-30-00.db')
 
