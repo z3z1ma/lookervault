@@ -64,3 +64,8 @@ config.toml
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.sqlite-journal
+*.sqlite3-journal
+*.db-shm
+*.db-wal
