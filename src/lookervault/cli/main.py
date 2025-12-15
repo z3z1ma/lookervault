@@ -6,7 +6,9 @@ from typing import Annotated
 import typer
 
 from lookervault import __version__
+from lookervault.cli.commands.pack import run as pack_module
 from lookervault.cli.commands.snapshot import app as snapshot_app
+from lookervault.cli.commands.unpack import run as unpack_module
 
 app = typer.Typer(
     help="LookerVault - Backup and restore tool for Looker instances",
@@ -566,6 +568,102 @@ def restore_status_cmd(
 
 # Snapshot command group (imported at top)
 app.add_typer(snapshot_app, name="snapshot")
+
+
+@app.command()
+def unpack(
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Directory to write exported YAML files"),
+    ],
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", "-c", help="Path to configuration file"),
+    ] = None,
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite database to export from"),
+    ] = "looker.db",
+    strategy: Annotated[
+        str,
+        typer.Option("--strategy", help="Export strategy: 'full' or 'folder'"),
+    ] = "full",
+    content_types: Annotated[
+        str | None,
+        typer.Option("--content-types", help="Comma-separated list of content types to export"),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="Overwrite existing files in output directory"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Unpack Looker content from database to YAML files."""
+    unpack_module(
+        output_dir,
+        db_path,
+        strategy,
+        content_types,
+        overwrite,
+        json_output,
+        verbose,
+        debug,
+    )
+
+
+@app.command()
+def pack(
+    input_dir: Annotated[
+        Path,
+        typer.Option("--input-dir", help="Directory containing exported YAML files"),
+    ],
+    db_path: Annotated[
+        str,
+        typer.Option("--db-path", help="Path to SQLite database to write/update"),
+    ] = "looker.db",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Validate without making database changes"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Override existing database content"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debug logging"),
+    ] = False,
+) -> None:
+    """Pack exported YAML files back into a Looker database."""
+    pack_module(
+        input_dir,
+        db_path,
+        dry_run,
+        force,
+        json_output,
+        verbose,
+        debug,
+    )
+
 
 # DLQ command group
 dlq_app = typer.Typer(
