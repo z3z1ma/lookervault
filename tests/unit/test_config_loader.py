@@ -21,10 +21,7 @@ def test_load_valid_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 timeout = 30
 verify_ssl = true
@@ -33,7 +30,6 @@ verify_ssl = true
     config = load_config(config_file)
 
     assert isinstance(config, Configuration)
-    assert config.config_version == "1.0"
     assert str(config.looker.api_url) == "https://looker.example.com:19999/"
     assert config.looker.timeout == 30
     assert config.looker.verify_ssl is True
@@ -43,10 +39,7 @@ def test_load_config_with_env_vars(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     """Test that environment variables override config file."""
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 client_id = "file_id"
 client_secret = "file_secret"
@@ -91,7 +84,7 @@ def test_load_config_missing_section(tmp_path: Path) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text("[other]\nkey = 'value'")
 
-    with pytest.raises(ConfigError, match="Missing 'lookervault' section"):
+    with pytest.raises(ConfigError, match="Invalid configuration"):
         load_config(config_file)
 
 

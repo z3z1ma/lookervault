@@ -62,10 +62,7 @@ def test_check_command_json_output(tmp_path) -> None:
     # Create a valid config file
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 """)
 

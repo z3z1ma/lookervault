@@ -40,17 +40,14 @@ This document captures research findings that resolve technical unknowns identif
 
 **Example Configuration Structure**:
 ```toml
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 client_id = ""  # Set via env var LOOKERVAULT_CLIENT_ID
 client_secret = ""  # Set via env var LOOKERVAULT_CLIENT_SECRET
 timeout = 30
 verify_ssl = true
 
-[lookervault.output]
+[output]
 default_format = "table"  # or "json"
 color_enabled = true
 ```

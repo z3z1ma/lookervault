@@ -553,17 +553,14 @@ lookervault check
 Create `~/.lookervault/config.toml`:
 
 ```toml
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://your-looker-instance.com:19999"
 client_id = ""  # Set via LOOKERVAULT_CLIENT_ID env var
 client_secret = ""  # Set via LOOKERVAULT_CLIENT_SECRET env var
 timeout = 30
 verify_ssl = true
 
-[lookervault.output]
+[output]
 default_format = "table"  # or "json"
 color_enabled = true
 ```

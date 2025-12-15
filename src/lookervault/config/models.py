@@ -43,7 +43,6 @@ class RestoreDefaults(BaseModel):
 class Configuration(BaseModel):
     """Complete LookerVault configuration."""
 
-    config_version: str = "1.0"
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
     restore: RestoreDefaults = RestoreDefaults()

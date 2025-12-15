@@ -3,6 +3,7 @@
 import os
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -108,7 +109,7 @@ def load_config(config_path: Path | None = None) -> Configuration:
     path = get_config_path(config_path)
 
     # Try to load from file if it exists
-    data = {}
+    data: dict[str, Any] = {}
     if path.exists():
         try:
             with path.open("rb") as f:
@@ -116,16 +117,11 @@ def load_config(config_path: Path | None = None) -> Configuration:
         except tomllib.TOMLDecodeError as e:
             raise ConfigError(f"Invalid TOML syntax in {path}: {e}") from e
 
-        if "lookervault" not in data:
-            raise ConfigError(f"Missing 'lookervault' section in {path}")
-
     # Build or merge environment variables
-    if data and "lookervault" in data:
+    if data:
         # Config file exists, merge env vars
-        config_data = data["lookervault"]
-
-        if "looker" in config_data:
-            looker_config = config_data["looker"]
+        if "looker" in data:
+            looker_config = data["looker"]
 
             # Override with env vars if present (support both LOOKERVAULT_ and LOOKER_ prefixes)
             if client_id := (os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID")):
@@ -152,7 +148,7 @@ def load_config(config_path: Path | None = None) -> Configuration:
                 "LOOKERVAULT_CLIENT_SECRET (or LOOKER_CLIENT_SECRET)"
             )
 
-        looker_config = {
+        looker_config: dict[str, Any] = {
             "api_url": api_url,
             "client_id": os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID", ""),
             "client_secret": os.getenv("LOOKERVAULT_CLIENT_SECRET")
@@ -166,11 +162,11 @@ def load_config(config_path: Path | None = None) -> Configuration:
             except ValueError:
                 raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
 
-        config_data = {"looker": looker_config}
+        data = {"looker": looker_config}
 
     # Load snapshot configuration if present (optional section)
-    if "snapshot" in data.get("lookervault", {}):
-        snapshot_data = data["lookervault"]["snapshot"]
+    if "snapshot" in data:
+        snapshot_data = data["snapshot"]
 
         # Override with environment variables if present
         if bucket_name := os.getenv("LOOKERVAULT_GCS_BUCKET"):
@@ -220,7 +216,7 @@ def load_config(config_path: Path | None = None) -> Configuration:
         provider = GCSStorageProvider(**provider_data)
 
         # Parse snapshot config
-        config_data["snapshot"] = SnapshotConfig(
+        data["snapshot"] = SnapshotConfig(
             provider=provider,
             retention=retention,
             cache_ttl_minutes=snapshot_data.get("cache_ttl_minutes", 5),
@@ -229,6 +225,6 @@ def load_config(config_path: Path | None = None) -> Configuration:
         )
 
     try:
-        return Configuration(**config_data)  # type: ignore[missing-argument]
+        return Configuration(**data)  # type: ignore[missing-argument]
     except Exception as e:
         raise ConfigError(f"Invalid configuration: {e}") from e

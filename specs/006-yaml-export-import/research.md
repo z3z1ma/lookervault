@@ -955,7 +955,6 @@ def validate_filter_references(self) -> 'Dashboard':
 - Use `datamodel-code-generator` for automated schema generation from Looker OpenAPI spec (future enhancement)
 
 **Schema Evolution**:
-- Version schemas with `config_version` field
 - Support multiple schema versions during import (backward compatibility)
 - Migrate old schemas to new format automatically
 

@@ -105,7 +105,6 @@ class OutputConfig(BaseModel):
     color_enabled: bool = True
 
 class Configuration(BaseModel):
-    config_version: str
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
 ```
@@ -292,10 +291,7 @@ def test_load_valid_config(tmp_path):
     """Test loading valid TOML configuration."""
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 timeout = 30
 verify_ssl = true
@@ -304,7 +300,6 @@ verify_ssl = true
     config = load_config(config_file)
 
     assert isinstance(config, Configuration)
-    assert config.config_version == "1.0"
     assert str(config.looker.api_url) == "https://looker.example.com:19999/"
     assert config.looker.timeout == 30
 
@@ -349,15 +344,12 @@ def test_check_command_json_output():
 ```bash
 mkdir -p ~/.lookervault
 cat > ~/.lookervault/config.toml << 'EOF'
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://your-looker.com:19999"
 timeout = 30
 verify_ssl = true
 
-[lookervault.output]
+[output]
 default_format = "table"
 color_enabled = true
 EOF

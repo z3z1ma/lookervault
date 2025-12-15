@@ -14,12 +14,10 @@ This document defines the data entities and their relationships for the CLI base
 Represents the complete LookerVault configuration loaded from TOML file and environment variables.
 
 **Fields**:
-- `config_version` (string): Version of the configuration schema (e.g., "1.0")
 - `looker` (LookerConfig): Looker-specific configuration
 - `output` (OutputConfig): Output formatting preferences
 
 **Validation Rules**:
-- `config_version` MUST match supported schema version
 - `looker` section MUST be present
 - `output` section MAY be omitted (defaults applied)
 
@@ -163,17 +161,14 @@ ReadinessCheckResult
 ## Configuration File Example
 
 ```toml
-[lookervault]
-config_version = "1.0"
-
-[lookervault.looker]
+[looker]
 api_url = "https://looker.example.com:19999"
 client_id = ""  # Set via LOOKERVAULT_CLIENT_ID env var
 client_secret = ""  # Set via LOOKERVAULT_CLIENT_SECRET env var
 timeout = 30
 verify_ssl = true
 
-[lookervault.output]
+[output]
 default_format = "table"
 color_enabled = true
 ```
@@ -201,7 +196,6 @@ class OutputConfig(BaseModel):
     color_enabled: bool = True
 
 class Configuration(BaseModel):
-    config_version: str
     looker: LookerConfig
     output: OutputConfig = OutputConfig()
 
