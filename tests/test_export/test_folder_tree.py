@@ -61,9 +61,7 @@ class TestFolderTreeNode:
 
     def test_filesystem_path_deeply_nested(self):
         """Deeply nested path."""
-        root = FolderTreeNode(
-            id="1", name="Sales", parent_id=None, sanitized_name="Sales", depth=0
-        )
+        root = FolderTreeNode(id="1", name="Sales", parent_id=None, sanitized_name="Sales", depth=0)
 
         level1 = FolderTreeNode(
             id="2",

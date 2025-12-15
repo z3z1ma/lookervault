@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from lookervault.snapshot.models import SnapshotMetadata
-from lookervault.snapshot.ui import _format_age, detect_interactive_mode, interactive_snapshot_picker
+from lookervault.snapshot.ui import (
+    _format_age,
+    detect_interactive_mode,
+    interactive_snapshot_picker,
+)
 
 
 class TestDetectInteractiveMode:

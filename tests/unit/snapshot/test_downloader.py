@@ -201,9 +201,7 @@ class TestDownloadSnapshot:
         mock_blob.download_as_bytes.side_effect = mock_download_as_bytes
 
         # Mock checksum verification
-        with patch(
-            "lookervault.snapshot.downloader.verify_download_integrity"
-        ) as mock_verify:
+        with patch("lookervault.snapshot.downloader.verify_download_integrity") as mock_verify:
             mock_verify.return_value = True
 
             result = download_snapshot(
@@ -248,9 +246,7 @@ class TestDownloadSnapshot:
         mock_blob.download_as_bytes.side_effect = mock_download_as_bytes
 
         # Mock checksum verification
-        with patch(
-            "lookervault.snapshot.downloader.verify_download_integrity"
-        ) as mock_verify:
+        with patch("lookervault.snapshot.downloader.verify_download_integrity") as mock_verify:
             mock_verify.return_value = True
 
             result = download_snapshot(
@@ -362,9 +358,7 @@ class TestDownloadSnapshot:
         mock_blob.download_as_bytes.side_effect = mock_download_as_bytes
 
         # Mock checksum verification to fail
-        with patch(
-            "lookervault.snapshot.downloader.verify_download_integrity"
-        ) as mock_verify:
+        with patch("lookervault.snapshot.downloader.verify_download_integrity") as mock_verify:
             mock_verify.side_effect = ValueError("Checksum mismatch")
 
             with pytest.raises(ValueError) as exc_info:

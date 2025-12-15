@@ -763,7 +763,9 @@ class LookerContentRestorer:
 
         Examples:
             >>> # Resume from checkpoint
-            >>> checkpoint = repository.get_latest_restoration_checkpoint(ContentType.DASHBOARD.value)
+            >>> checkpoint = repository.get_latest_restoration_checkpoint(
+            ...     ContentType.DASHBOARD.value
+            ... )
             >>> summary = restorer.restore_bulk(ContentType.DASHBOARD, config, checkpoint)
             >>> print(f"Resumed from {len(checkpoint.checkpoint_data['completed_ids'])} items")
         """

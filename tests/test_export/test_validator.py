@@ -210,9 +210,7 @@ class TestValidateField:
     def test_validate_field_with_file_path(self, validator):
         """Field validation includes file path in errors."""
         # Use empty string to trigger the empty title error with file path
-        errors = validator.validate_field(
-            "title", "   ", file_path=Path("/test/dashboard.yaml")
-        )
+        errors = validator.validate_field("title", "   ", file_path=Path("/test/dashboard.yaml"))
 
         assert len(errors) >= 1
         assert any("/test/dashboard.yaml" in error for error in errors)
