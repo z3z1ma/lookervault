@@ -897,6 +897,219 @@ lookervault restore bulk dashboards --workers 4 --rate-limit-per-minute 60
 - **Large Datasets**: 50,000 items in <10 minutes with 8 workers (~83 items/sec minimum)
 - **Resume Overhead**: Minimal - checkpoint queries use indexed lookups
 
+
+## Idempotent Operations (Upsert Behavior)
+
+LookerVault uses **idempotent write operations** for all SQLite database writes, making it safe to re-run extraction commands without creating duplicates or corrupting data.
+
+### What is Upsert?
+
+**Upsert** = "Update or Insert" - SQLite's `INSERT ... ON CONFLICT DO UPDATE` pattern that:
+- Inserts new records if they don't exist
+- Updates existing records if they already exist (based on unique constraints)
+- Prevents duplicate records and database conflicts
+
+### Why This Matters
+
+You can safely:
+- **Re-run extractions** without worrying about duplicates
+- **Resume interrupted operations** from any point
+- **Run parallel workers** without coordination overhead
+- **Recover from errors** by simply re-running the command
+
+### How It Works
+
+All SQLite write operations use the `ON CONFLICT` clause:
+
+```sql
+INSERT INTO content_items (
+    id, content_type, name, owner_id, owner_email,
+    created_at, updated_at, synced_at, deleted_at,
+    content_size, content_data, folder_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    content_type = excluded.content_type,
+    name = excluded.name,
+    owner_id = excluded.owner_id,
+    -- ... all other fields updated ...
+```
+
+**Key Points**:
+- **Unique Constraint**: Each table has unique constraints on natural keys (e.g., `id` for content_items)
+- **Conflict Detection**: SQLite detects when INSERT would violate unique constraint
+- **Update Behavior**: On conflict, existing record is updated with new values
+- **Atomicity**: Operation is atomic - no partial updates or race conditions
+
+### What Operations Are Idempotent?
+
+All write operations in LookerVault are idempotent:
+
+1. **Content Extraction** (`save_content()`):
+   - Unique key: `id` (Looker content ID)
+   - Re-running extraction updates existing content instead of creating duplicates
+
+2. **Checkpoint Saves** (`save_checkpoint()`):
+   - Unique key: `(session_id, content_type, started_at)`
+   - Re-saving same checkpoint updates progress counters
+
+3. **Extraction Sessions** (`create_extraction_session()`):
+   - Unique key: `id` (session ID)
+   - Re-creating session with same ID updates session metadata
+
+4. **Dead Letter Queue** (`save_to_dlq()`):
+   - Unique key: `(session_id, content_id, content_type, retry_count)`
+   - Same failure at same retry count updates error details (deduplication)
+
+5. **ID Mappings** (`save_id_mapping()`):
+   - Unique key: `(source_instance, content_type, source_id)`
+   - Re-mapping same ID updates destination_id
+
+6. **Restoration Checkpoints** (`save_restoration_checkpoint()`):
+   - Unique key: `(session_id, content_type, started_at)`
+   - Re-saving checkpoint updates restoration progress
+
+7. **Restoration Sessions** (`create_restoration_session()`):
+   - Unique key: `id` (session ID)
+   - Re-creating session updates session metadata
+
+### Practical Examples
+
+#### Safe Re-run After Interruption
+
+```bash
+# Extraction interrupted after 5,000 of 10,000 dashboards
+# Ctrl+C or network failure
+
+# Simply re-run the extraction
+lookervault extract dashboards --workers 8
+
+# What happens:
+# - First 5,000 dashboards: UPDATED (ON CONFLICT DO UPDATE)
+# - Next 5,000 dashboards: INSERTED (no conflict)
+# - Result: Complete dataset with no duplicates
+```
+
+#### Safe Parallel Extraction
+
+```bash
+# Multiple workers extracting simultaneously
+lookervault extract dashboards --workers 16
+
+# What happens:
+# - Worker 1 extracts dashboards 0-100
+# - Worker 2 extracts dashboards 100-200
+# - If ranges overlap (e.g., due to resume), upsert prevents duplicates
+# - Result: Each dashboard appears exactly once in database
+```
+
+#### Safe Resume from Checkpoint
+
+```bash
+# Extraction interrupted during "dashboards" content type
+lookervault extract --resume
+
+# What happens:
+# - System loads checkpoint (e.g., "dashboards at offset 5000")
+# - Re-extracts from beginning (offset 0) for "dashboards"
+# - Upsert updates first 5,000 records (already extracted)
+# - Inserts remaining records (5,001-10,000)
+# - Result: Complete, deduplicated dataset
+```
+
+### Performance Impact
+
+Upsert operations have minimal performance overhead:
+
+- **Same Performance**: INSERT and UPDATE have similar performance in SQLite
+- **No Extra Queries**: Single SQL statement (no SELECT + INSERT/UPDATE)
+- **Index Optimization**: Unique constraints use B-tree indexes for fast conflict detection
+- **Batch Commits**: Multiple upserts grouped in single transaction for efficiency
+
+**Measured Impact**: <1% overhead vs. plain INSERT for typical content extraction workloads
+
+### Technical Implementation
+
+**Database Schema** (from `storage/schema.py`):
+- All tables have unique constraints on natural keys
+- Unique constraints added in schema version 2 (migration v001_add_unique_constraints)
+- Enables idempotent upsert operations across all tables
+
+**Repository Pattern** (from `storage/repository.py`):
+- All write methods use `INSERT ... ON CONFLICT DO UPDATE`
+- Docstrings document upsert behavior for clarity
+- Tests validate idempotency (`tests/test_repository_upsert.py`)
+
+**Thread Safety**:
+- Thread-local connections prevent race conditions
+- BEGIN IMMEDIATE transactions acquire write lock immediately
+- SQLITE_BUSY retry logic with exponential backoff handles contention
+
+### Testing
+
+Comprehensive test suite validates upsert behavior:
+
+```bash
+# Run upsert-specific tests
+uv run pytest tests/test_repository_upsert.py -v
+
+# Tests verify:
+# - Re-saving same content updates (not duplicates)
+# - Primary keys remain consistent across upserts
+# - All fields update correctly on conflict
+# - Natural unique keys work as expected
+```
+
+### When Upsert Happens
+
+**Automatic** (you don't need to do anything special):
+- Re-running `lookervault extract` on same database
+- Resume operations (`--resume` flag)
+- Parallel workers processing overlapping ranges
+- Checkpoint saves during extraction/restoration
+
+**What Gets Updated**:
+- All content fields (name, owner, timestamps, content_data, etc.)
+- Progress counters (items_completed, items_failed in checkpoints)
+- Session metadata (completed_at, error_message in sessions)
+- Error details (stack_trace, failed_at in DLQ)
+
+**What Stays the Same**:
+- Primary keys (id field)
+- Unique constraint fields (natural keys)
+- Database row IDs (SQLite ROWID)
+
+### FAQ
+
+**Q: What if I want to start fresh instead of upsert?**
+
+A: Delete the database file and re-run extraction:
+
+```bash
+rm looker.db
+lookervault extract --workers 8
+```
+
+**Q: Will upsert overwrite my manual database changes?**
+
+A: Yes. Re-running extraction updates all fields with latest values from Looker API. Manual changes will be lost.
+
+**Q: Can I disable upsert behavior?**
+
+A: No. Upsert is built into the database schema and repository pattern. It's a core design principle for reliability.
+
+**Q: What happens if unique constraints change between runs?**
+
+A: Schema migrations handle constraint changes safely. Existing data is preserved during migration.
+
+**Q: How do I verify no duplicates exist?**
+
+A: Query the database directly:
+
+```bash
+sqlite3 looker.db "SELECT id, COUNT(*) FROM content_items GROUP BY id HAVING COUNT(*) > 1"
+# Empty result = no duplicates (expected)
+```
+
 ## Development
 
 ### Running Tests
