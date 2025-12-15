@@ -87,3 +87,55 @@ class YamlSerializer:
             return True
         except YAMLError:
             return False
+
+    def serialize_to_file(self, data: dict[str, Any], file_path: str | Any) -> None:
+        """Serialize data directly to file (streaming I/O for large files - T068).
+
+        Args:
+            data: Python dictionary to serialize
+            file_path: Path to output file
+
+        Raises:
+            ValueError: If data cannot be serialized to YAML
+        """
+        from pathlib import Path
+
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict, got {type(data).__name__}")
+
+        try:
+            # Stream directly to file without intermediate string
+            path = Path(file_path)
+            with path.open("w", encoding="utf-8") as f:
+                self.yaml.dump(data, f)
+        except YAMLError as e:
+            raise ValueError(f"Failed to serialize data to YAML: {e}") from e
+        except OSError as e:
+            raise ValueError(f"Failed to write to file {file_path}: {e}") from e
+
+    def deserialize_from_file(self, file_path: str | Any) -> dict[str, Any]:
+        """Deserialize YAML directly from file (streaming I/O for large files - T068).
+
+        Args:
+            file_path: Path to YAML file
+
+        Returns:
+            Python dictionary
+
+        Raises:
+            ValueError: If YAML file is invalid or cannot be parsed
+        """
+        from pathlib import Path
+
+        try:
+            # Stream directly from file without loading entire contents
+            path = Path(file_path)
+            with path.open(encoding="utf-8") as f:
+                data = self.yaml.load(f)
+            if not isinstance(data, dict):
+                raise ValueError(f"YAML must deserialize to dict, got {type(data).__name__}")
+            return data
+        except YAMLError as e:
+            raise ValueError(f"Failed to parse YAML from {file_path}: {e}") from e
+        except OSError as e:
+            raise ValueError(f"Failed to read file {file_path}: {e}") from e

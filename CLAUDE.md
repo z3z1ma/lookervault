@@ -590,3 +590,299 @@ For detailed design specifications, see:
 - Phase 4 complete: Bulk restoration with dependency ordering (User Story 2)
 - Phase 5 complete: Parallel restoration with DLQ and error recovery (User Story 3)
 - Phase 6 skipped: Cross-instance ID mapping (not required for current use cases)
+
+---
+
+## YAML Export/Import (006-yaml-export-import)
+
+The YAML export/import module enables bidirectional conversion between SQLite backups and human-editable YAML files for bulk content modification workflows.
+
+### Architecture
+
+**Module Location**: `src/lookervault/export/`
+
+**Core Components**:
+- **ContentUnpacker** (`unpacker.py`) - Exports SQLite content to YAML files
+- **ContentPacker** (`packer.py`) - Imports YAML files back to SQLite
+- **YamlSerializer** (`yaml_serializer.py`) - YAML serialization using ruamel.yaml
+- **YamlValidator** (`validator.py`) - Multi-stage validation pipeline
+- **FolderTreeBuilder** (`folder_tree.py`) - Folder hierarchy construction with BFS traversal
+- **QueryRemappingTable** (`query_remapper.py`) - Hash-based query deduplication
+- **MetadataManager** (`metadata.py`) - Export metadata generation/loading
+- **PathCollisionResolver** (`path_utils.py`) - Cross-platform path sanitization
+
+### Export Strategies
+
+**1. Full Strategy** (`--strategy full`):
+- Organizes content by type: `dashboards/`, `looks/`, `users/`, etc.
+- Simple directory structure for bulk operations
+- Best for applying same modification across all content of a type
+
+**2. Folder Strategy** (`--strategy folder`):
+- Mirrors Looker's folder hierarchy
+- Nested directories match folder structure
+- Orphaned content goes to `_orphaned/` directory
+- Best for folder-scoped modifications
+
+### CLI Commands
+
+**Export (Unpack)**:
+```bash
+# Full strategy (all content by type)
+lookervault unpack --db-path looker.db --output-dir export/ --strategy full
+
+# Folder strategy (preserves hierarchy)
+lookervault unpack --db-path looker.db --output-dir export/ --strategy folder
+
+# Export specific content types
+lookervault unpack --content-types dashboards,looks --strategy full
+
+# With verbose output
+lookervault unpack --output-dir export/ --verbose
+
+# JSON output for scripting
+lookervault unpack --output-dir export/ --json
+```
+
+**Import (Pack)**:
+```bash
+# Pack YAML files back to database
+lookervault pack --input-dir export/ --db-path looker_modified.db
+
+# Dry run (validate without changes)
+lookervault pack --input-dir export/ --dry-run
+
+# Force mode (delete items for missing YAML files)
+lookervault pack --input-dir export/ --force
+
+# JSON output
+lookervault pack --input-dir export/ --json
+```
+
+### Bulk Modification Workflow
+
+```bash
+# 1. Export content to YAML
+lookervault extract --workers 8 dashboards looks
+lookervault unpack --db-path looker.db --output-dir export/ --strategy full
+
+# 2. Modify YAML files using scripts
+sed -i 's/old_model/new_model/g' export/dashboards/*.yaml
+python scripts/update_filters.py export/dashboards/
+
+# 3. Pack modified YAML back to database
+lookervault pack --input-dir export/ --db-path looker_modified.db
+
+# 4. Restore to Looker
+lookervault restore bulk dashboards --workers 8
+```
+
+### Metadata Structure
+
+Each export creates a `metadata.json` file:
+
+```json
+{
+  "version": "1.0",
+  "exported_at": "2025-12-14T12:00:00",
+  "strategy": "full",
+  "database_schema_version": "2",
+  "source_database": "/path/to/looker.db",
+  "total_items": 1500,
+  "content_counts": {
+    "DASHBOARD": 500,
+    "LOOK": 300,
+    "USER": 50,
+    "FOLDER": 100
+  },
+  "checksum": "sha256:abc123...",
+  "folder_map": { }  // Present if strategy=folder
+}
+```
+
+### YAML File Format
+
+Each YAML file contains:
+- **Content data**: Dashboard/look/user definition
+- **_metadata section**: Export metadata for round-trip fidelity
+
+```yaml
+# dashboard.yaml
+id: "123"
+title: "Sales Dashboard"
+elements:
+  - id: "elem1"
+    title: "Total Revenue"
+    query:
+      model: "sales"
+      view: "transactions"
+      fields: ["transactions.total_revenue"]
+      
+_metadata:
+  db_id: "123"
+  content_type: "DASHBOARD"
+  exported_at: "2025-12-14T12:00:00"
+  content_size: 5432
+  checksum: "sha256:def456..."
+  folder_path: "Sales/Regional"  // Present if strategy=folder
+```
+
+### Performance Characteristics
+
+**Unpack Performance** (after optimization):
+- 10,000 items: <3 minutes (2-3x faster than before)
+- Eliminated redundant JSON serializations
+- Direct msgpack blob checksum calculation
+- Streaming I/O for large files
+
+**Pack Performance**:
+- Batch commits (100 items/transaction)
+- 10,000 items: <8 minutes
+- Validation errors aggregated before abort
+- Resume capability via checkpoints
+
+### Advanced Features
+
+**1. Query Remapping** (Dashboard modifications):
+- Detects modified query definitions via SHA-256 hash
+- Automatically creates new query objects
+- Updates dashboard element references
+- Deduplicates shared queries (hash-based)
+- Remapping table saved to `.pack_state/query_remapping.json`
+
+**2. Modification Tracking**:
+- Compares YAML file mtime with `exported_at` timestamp
+- Tracks created/updated/unchanged counts
+- Supports selective repacking (only modified items)
+
+**3. Missing File Handling** (`--force`):
+- Detects YAML files deleted from export directory
+- Optionally deletes corresponding database items
+- Reports missing file count in summary
+
+**4. Error Handling**:
+- Disk space pre-flight checks (3.5x database size estimate)
+- Filesystem permission errors with clear messages
+- Validation error aggregation (grouped by type)
+- Field-level validation with file path + line number
+
+**5. Path Sanitization**:
+- Unicode NFC normalization for cross-platform compatibility
+- 255-byte path length limits with hash suffixes
+- Collision resolution with numeric suffixes
+- Windows-compatible path sanitization
+
+### Validation Pipeline
+
+**Multi-stage validation**:
+1. **Syntax**: YAML parsing (ruamel.yaml)
+2. **Schema**: Required fields per content type
+3. **SDK Conversion**: Looker SDK model validation
+4. **Business Rules**: Field-level constraints
+
+**Example validation errors**:
+```
+[Structure] DASHBOARD missing required 'elements' field
+[Field] Field 'title' cannot be empty in dashboards/123.yaml:5
+[Query] Missing required query fields: model, view in dashboards/456.yaml:15
+```
+
+### Integration with Existing Features
+
+**Extraction → Export → Modification → Import → Restoration**:
+```bash
+# Full workflow
+lookervault extract --workers 8 dashboards    # SQLite backup
+lookervault unpack --output-dir export/        # YAML export
+# [Modify YAML files]
+lookervault pack --input-dir export/           # YAML import
+lookervault restore bulk dashboards            # Looker restoration
+```
+
+**Snapshot Integration**:
+```bash
+# Cloud backup workflow
+lookervault extract --workers 16               # Extract to SQLite
+lookervault snapshot push --name "pre-mod"     # Backup to GCS
+lookervault unpack --output-dir export/        # Export to YAML
+# [Modify YAML files]
+lookervault pack --input-dir export/           # Import changes
+lookervault snapshot push --name "post-mod"    # Backup to GCS
+lookervault restore bulk dashboards            # Apply to Looker
+```
+
+### Troubleshooting
+
+**Slow unpack performance**:
+- Already optimized (2-3x faster after removing redundant JSON serialization)
+- Expect ~3 minutes for 10,000 items
+
+**Validation errors after modification**:
+- Check `--dry-run` output for detailed error messages
+- Errors include file path, line number, field name
+- Grouped by error type for easier debugging
+
+**Missing files during pack**:
+- Use `--force` to delete corresponding database items
+- Missing files tracked in summary output
+- Review before committing changes
+
+**Disk space errors**:
+- Pre-flight check estimates 3.5x database size
+- Warning if <2x estimated size available
+- Check available space before unpack
+
+**Path length issues**:
+- Automatic truncation to 255 bytes with hash suffix
+- Unicode normalization prevents duplicate issues
+- Windows-compatible path sanitization
+
+### Example Scripts
+
+**Bulk filter update** (`tests/fixtures/scripts/update_filters.py`):
+```python
+#!/usr/bin/env python3
+import yaml
+from pathlib import Path
+
+for yaml_file in Path("export/dashboards").glob("*.yaml"):
+    with open(yaml_file) as f:
+        dashboard = yaml.safe_load(f)
+    
+    # Update filters
+    for element in dashboard.get("dashboard_elements", []):
+        query = element.get("query", {})
+        filters = query.get("filters", {})
+        if "30 days" in str(filters):
+            # Update time period
+            filters["period"] = "90 days"
+    
+    with open(yaml_file, "w") as f:
+        yaml.dump(dashboard, f)
+```
+
+**Bulk title update** (`tests/fixtures/scripts/update_titles.sh`):
+```bash
+#!/bin/bash
+# Update dashboard titles
+sed -i '' 's/title: "Old Prefix/title: "New Prefix/g' export/dashboards/*.yaml
+```
+
+**Model replacement** (`tests/fixtures/scripts/replace_models.sh`):
+```bash
+#!/bin/bash
+# Replace model references
+awk '{gsub(/model: old_model/, "model: new_model")} {print}' \
+  export/dashboards/*.yaml > tmp && mv tmp export/dashboards/*.yaml
+```
+
+### Design Documentation
+
+For detailed specifications:
+- **Feature Spec**: `specs/006-yaml-export-import/spec.md`
+- **Implementation Plan**: `specs/006-yaml-export-import/plan.md`
+- **Tasks**: `specs/006-yaml-export-import/tasks.md` (86 tasks, 73 completed)
+- **Quickstart Guide**: `specs/006-yaml-export-import/quickstart.md`
+- **Data Model**: `specs/006-yaml-export-import/data-model.md`
+- **Research**: `specs/006-yaml-export-import/research.md`
+

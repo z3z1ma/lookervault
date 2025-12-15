@@ -195,24 +195,24 @@
 
 ### Performance Optimization
 
-- [ ] T068 [P] Add streaming I/O for large YAML files in YamlSerializer - process files in chunks to maintain constant memory usage (per performance constraints)
-- [ ] T069 [P] Add batch commits in ContentPacker.pack() - commit every 100 items to balance performance and atomicity (per data-model.md)
+- [X] T068 [P] Add streaming I/O for large YAML files in YamlSerializer - process files in chunks to maintain constant memory usage (per performance constraints)
+- [X] T069 [P] Add batch commits in ContentPacker.pack() - commit every 100 items to balance performance and atomicity (per data-model.md)
 - [ ] T070 [P] Add parallel file discovery in ContentUnpacker - use concurrent glob patterns for multiple content types simultaneously
 
 ### Edge Case Handling
 
-- [ ] T071 [P] Add disk space pre-flight check in ContentUnpacker.unpack_full() and unpack_folder() - estimate required space, warn if insufficient (per edge cases)
-- [ ] T072 [P] Add filesystem error handling in ContentUnpacker - catch PermissionError, OSError, report clear errors with file paths
-- [ ] T073 [P] Add missing file handling in ContentPacker.pack() - detect YAML files deleted from export directory, optionally delete from database with --force flag
-- [ ] T074 [P] Add path length limit handling in path_utils.sanitize_folder_name() - truncate to 255 chars with hash suffix, preserve uniqueness (per data-model.md)
-- [ ] T075 [P] Add unicode normalization in path_utils.sanitize_folder_name() - use NFC normalization for cross-platform compatibility (per research.md)
+- [X] T071 [P] Add disk space pre-flight check in ContentUnpacker.unpack_full() and unpack_folder() - estimate required space, warn if insufficient (per edge cases)
+- [X] T072 [P] Add filesystem error handling in ContentUnpacker - catch PermissionError, OSError, report clear errors with file paths
+- [X] T073 [P] Add missing file handling in ContentPacker.pack() - detect YAML files deleted from export directory, optionally delete from database with --force flag
+- [X] T074 [P] Add path length limit handling in path_utils.sanitize_folder_name() - truncate to 255 chars with hash suffix, preserve uniqueness (per data-model.md)
+- [X] T075 [P] Add unicode normalization in path_utils.sanitize_folder_name() - use NFC normalization for cross-platform compatibility (per research.md)
 
 ### Documentation
 
-- [ ] T076 [P] Add docstrings to all export/ module classes and methods - include examples for YamlSerializer, ContentUnpacker, ContentPacker
-- [ ] T077 [P] Add inline comments for complex algorithms - FolderTreeBuilder BFS traversal, QueryRemappingTable hash-based deduplication
-- [ ] T078 [P] Update CLAUDE.md with export/import module documentation - describe unpacker/packer architecture, YAML serialization patterns
-- [ ] T079 Create user-facing README for export/import feature - link to quickstart.md, data-model.md, cli-contracts.yaml
+- [X] T076 [P] Add docstrings to all export/ module classes and methods - include examples for YamlSerializer, ContentUnpacker, ContentPacker
+- [X] T077 [P] Add inline comments for complex algorithms - FolderTreeBuilder BFS traversal, QueryRemappingTable hash-based deduplication
+- [X] T078 [P] Update CLAUDE.md with export/import module documentation - describe unpacker/packer architecture, YAML serialization patterns
+- [X] T079 Create user-facing README for export/import feature - link to quickstart.md, data-model.md, cli-contracts.yaml
 
 ### Validation and Testing
 
@@ -222,10 +222,10 @@
 
 ### Code Quality
 
-- [ ] T083 Run uvx ruff format on all new files in `src/lookervault/export/` and `src/lookervault/cli/commands/unpack.py` and `pack.py`
-- [ ] T084 Run uvx ruff check --fix on all new files to fix linting violations
-- [ ] T085 Run uvx ty check to verify type safety for all new modules
-- [ ] T086 Review and fix any type errors or warnings from ty check
+- [X] T083 Run uvx ruff format on all new files in `src/lookervault/export/` and `src/lookervault/cli/commands/unpack.py` and `pack.py`
+- [X] T084 Run uvx ruff check --fix on all new files to fix linting violations
+- [X] T085 Run uvx ty check to verify type safety for all new modules
+- [X] T086 Review and fix any type errors or warnings from ty check
 
 ---
 

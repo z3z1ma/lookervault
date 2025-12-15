@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -55,6 +57,50 @@ class ContentUnpacker:
         self._repository = repository
         self._yaml_serializer = yaml_serializer
         self._metadata_manager = metadata_manager or MetadataManager()
+        self._logger = logging.getLogger(__name__)
+
+    def _check_disk_space(self, output_dir: Path, db_path: Path, total_items: int) -> None:
+        """Check available disk space before export (T071).
+
+        Args:
+            output_dir: Target directory for export
+            db_path: Source database path (for size estimation)
+            total_items: Total number of items to export
+
+        Raises:
+            RuntimeError: If insufficient disk space available
+        """
+        try:
+            # Get database size as baseline estimate
+            db_size_bytes = db_path.stat().st_size if db_path.exists() else 0
+
+            # Estimate export size (YAML is typically 2-3x larger than msgpack)
+            # Add 50% safety margin
+            estimated_size = int(db_size_bytes * 3.5)
+
+            # Check available disk space
+            stat = shutil.disk_usage(output_dir)
+            available_bytes = stat.free
+
+            if available_bytes < estimated_size:
+                available_gb = available_bytes / (1024**3)
+                required_gb = estimated_size / (1024**3)
+                raise RuntimeError(
+                    f"Insufficient disk space. "
+                    f"Available: {available_gb:.2f} GB, "
+                    f"Estimated required: {required_gb:.2f} GB"
+                )
+
+            # Warning if less than 2x estimated size available
+            if available_bytes < estimated_size * 2:
+                available_gb = available_bytes / (1024**3)
+                self._logger.warning(
+                    f"Low disk space warning: {available_gb:.2f} GB available. "
+                    f"Export may fill most remaining space."
+                )
+
+        except OSError as e:
+            self._logger.warning(f"Could not check disk space: {e}")
 
     def unpack_full(
         self,
@@ -71,8 +117,14 @@ class ContentUnpacker:
 
         Returns:
             Metadata about the export operation
+
+        Raises:
+            RuntimeError: If insufficient disk space or filesystem errors (T071, T072)
         """
-        output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            raise RuntimeError(f"Cannot create output directory {output_dir}: {e}") from e
 
         # Determine content types to export
         if content_types:
@@ -80,9 +132,18 @@ class ContentUnpacker:
         else:
             export_types = list(ContentType)
 
-        # Create subdirectories for each content type
+        # Check disk space before proceeding (T071)
+        total_count = sum(
+            len(self._repository.list_content(content_type=ct)) for ct in export_types
+        )
+        self._check_disk_space(output_dir, db_path, total_count)
+
+        # Create subdirectories for each content type (T072 - error handling)
         for content_type in export_types:
-            (output_dir / content_type.name.lower()).mkdir(exist_ok=True)
+            try:
+                (output_dir / content_type.name.lower()).mkdir(exist_ok=True)
+            except (PermissionError, OSError) as e:
+                raise RuntimeError(f"Cannot create directory for {content_type.name}: {e}") from e
 
         # Tracking variables
         content_type_counts: dict[str, int] = {}
@@ -103,7 +164,7 @@ class ContentUnpacker:
             )
 
             # Export each content type
-            for content_type in export_types:
+            for content_type in reversed(export_types):
                 progress.update(export_task, description=f"Exporting {content_type.name}")
 
                 # Fetch content items for this type
@@ -134,10 +195,14 @@ class ContentUnpacker:
                         "checksum": f"sha256:{blob_checksum}",
                     }
 
-                    # Write to YAML
+                    # Write to YAML (T072 - error handling)
                     yaml_path = output_dir / f"{content_type.name.lower()}/{item.id}.yaml"
-                    yaml_str = self._yaml_serializer.serialize(exported_dict)
-                    yaml_path.write_text(yaml_str)
+                    try:
+                        yaml_str = self._yaml_serializer.serialize(exported_dict)
+                        yaml_path.write_text(yaml_str)
+                    except (PermissionError, OSError) as e:
+                        self._logger.error(f"Failed to write {yaml_path}: {e}")
+                        raise RuntimeError(f"Cannot write YAML file {yaml_path}: {e}") from e
 
                     progress.update(type_progress, advance=1)
 
