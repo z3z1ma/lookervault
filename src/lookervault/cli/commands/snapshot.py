@@ -214,6 +214,7 @@ def upload(
 def list(
     limit: int | None = typer.Option(None, help="Maximum number of snapshots to display"),
     filter: str | None = typer.Option(None, help="Filter snapshots by date range"),
+    name: str | None = typer.Option(None, help="Filter snapshots by name prefix"),
     verbose_mode: bool = typer.Option(
         False, "--verbose-output", "-V", help="Show detailed metadata for each snapshot"
     ),
@@ -232,11 +233,17 @@ def list(
         # List all snapshots (uses cache if available)
         lookervault snapshot list
 
+        # List snapshots with specific name prefix
+        lookervault snapshot list --name pre-migration
+
         # List 10 most recent snapshots
         lookervault snapshot list --limit 10
 
         # List snapshots from December 2025
         lookervault snapshot list --filter "2025-12"
+
+        # Combine name filter with date filter
+        lookervault snapshot list --name pre-migration --filter "2025-12"
 
         # List with detailed metadata
         lookervault snapshot list --verbose
@@ -300,6 +307,7 @@ def list(
                 client=client,
                 bucket_name=provider.bucket_name,
                 prefix=provider.prefix,
+                name_filter=name,
                 use_cache=use_cache,
                 cache_ttl_minutes=cache_ttl,
             )
@@ -370,6 +378,9 @@ def download(
         "1", help="Snapshot reference (index or timestamp). Optional if --interactive is used."
     ),
     output: str = typer.Option("./looker.db", help="Output path for downloaded file"),
+    name: str | None = typer.Option(
+        None, help="Filter snapshots by name prefix (e.g., 'pre-migration')"
+    ),
     overwrite: bool = typer.Option(False, help="Overwrite existing file without confirmation"),
     verify_checksum: bool = typer.Option(True, help="Verify CRC32C checksum after download"),
     interactive: bool = typer.Option(False, help="Interactive snapshot selection with arrow keys"),
@@ -392,6 +403,9 @@ def download(
         # Download most recent snapshot
         lookervault snapshot download 1
 
+        # Download most recent snapshot with specific name
+        lookervault snapshot download 1 --name pre-migration
+
         # Download to specific location
         lookervault snapshot download 1 --output /path/to/restored.db
 
@@ -400,6 +414,9 @@ def download(
 
         # Interactive menu selection (arrow keys)
         lookervault snapshot download --interactive
+
+        # Interactive selection with name filter
+        lookervault snapshot download --interactive --name pre-migration
 
         # Download without checksum verification (faster but risky)
         lookervault snapshot download 1 --verify-checksum=false
@@ -478,20 +495,27 @@ def download(
                 # Import interactive UI function
                 from lookervault.snapshot.ui import interactive_snapshot_picker
 
-                # List all snapshots
+                # List all snapshots (with optional name filter)
                 snapshots = list_snapshots(
                     client=client,
                     bucket_name=provider.bucket_name,
                     prefix=provider.prefix,
+                    name_filter=name,
                     use_cache=True,
                     cache_ttl_minutes=snapshot_config.cache_ttl_minutes,
                 )
 
                 if not snapshots:
-                    console.print("[yellow]No snapshots available to select.[/yellow]")
-                    console.print(
-                        "\nRun [cyan]lookervault snapshot upload[/cyan] to create a snapshot."
-                    )
+                    if name:
+                        console.print(f"[yellow]No snapshots found with name '{name}'.[/yellow]")
+                        console.print(
+                            "\nRun [cyan]lookervault snapshot list[/cyan] to see all available snapshots."
+                        )
+                    else:
+                        console.print("[yellow]No snapshots available to select.[/yellow]")
+                        console.print(
+                            "\nRun [cyan]lookervault snapshot upload[/cyan] to create a snapshot."
+                        )
                     raise typer.Exit(EXIT_SUCCESS)
 
                 # Launch interactive picker
@@ -519,6 +543,7 @@ def download(
                         bucket_name=provider.bucket_name,
                         index=index,
                         prefix=provider.prefix,
+                        name_filter=name,
                     )
                 except ValueError:
                     # Not an integer, try parsing as timestamp
@@ -529,7 +554,7 @@ def download(
                             client=client,
                             bucket_name=provider.bucket_name,
                             timestamp=timestamp,
-                            filename_prefix=provider.filename_prefix,
+                            filename_prefix=name if name else provider.filename_prefix,
                             prefix=provider.prefix,
                         )
                     except ValueError:

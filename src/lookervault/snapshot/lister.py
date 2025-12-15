@@ -140,6 +140,7 @@ def list_snapshots(
     client: storage.Client,
     bucket_name: str,
     prefix: str = "snapshots/",
+    name_filter: str | None = None,
     use_cache: bool = True,
     cache_ttl_minutes: int = 5,
 ) -> list[SnapshotMetadata]:
@@ -152,6 +153,7 @@ def list_snapshots(
         client: Authenticated GCS storage client
         bucket_name: GCS bucket name
         prefix: Object name prefix for snapshots (default: "snapshots/")
+        name_filter: Filter snapshots by filename prefix (e.g., "pre-migration")
         use_cache: Whether to use local cache (default: True)
         cache_ttl_minutes: Cache TTL in minutes (default: 5, 0 disables caching)
 
@@ -177,6 +179,13 @@ def list_snapshots(
 
         # Filter out directory markers (blobs with size 0 and ending with /)
         blobs = [blob for blob in blobs if blob.size > 0 and not blob.name.endswith("/")]
+
+        # Filter by name if specified
+        if name_filter:
+            # Extract filename from full path (e.g., "snapshots/pre-migration-2025-12-14...")
+            blobs = [
+                blob for blob in blobs if blob.name.split("/")[-1].startswith(f"{name_filter}-")
+            ]
 
         # Sort by creation time (newest first)
         sorted_blobs = sorted(blobs, key=lambda b: b.time_created, reverse=True)
@@ -216,6 +225,7 @@ def get_snapshot_by_index(
     bucket_name: str,
     index: int,
     prefix: str = "snapshots/",
+    name_filter: str | None = None,
     use_cache: bool = True,
     cache_ttl_minutes: int = 5,
 ) -> SnapshotMetadata:
@@ -227,6 +237,7 @@ def get_snapshot_by_index(
         bucket_name: GCS bucket name
         index: Sequential index (1-based, 1 = most recent)
         prefix: Object name prefix for snapshots (default: "snapshots/")
+        name_filter: Filter snapshots by filename prefix (e.g., "pre-migration")
         use_cache: Whether to use local cache (default: True)
         cache_ttl_minutes: Cache TTL in minutes (default: 5)
 
@@ -242,6 +253,7 @@ def get_snapshot_by_index(
         client=client,
         bucket_name=bucket_name,
         prefix=prefix,
+        name_filter=name_filter,
         use_cache=use_cache,
         cache_ttl_minutes=cache_ttl_minutes,
     )
