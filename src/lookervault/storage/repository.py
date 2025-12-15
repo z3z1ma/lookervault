@@ -215,6 +215,17 @@ class ContentRepository(Protocol):
         """
         ...
 
+    def get_schema_version(self) -> int:
+        """Get current database schema version.
+
+        Returns:
+            Current schema version number
+
+        Raises:
+            StorageError: If schema version cannot be retrieved
+        """
+        ...
+
 
 class SQLiteContentRepository:
     """Thread-safe SQLite-based content repository implementation.
