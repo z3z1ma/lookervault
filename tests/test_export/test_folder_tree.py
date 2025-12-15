@@ -1,6 +1,5 @@
 """Tests for FolderTreeBuilder."""
 
-
 import pytest
 
 from lookervault.export.folder_tree import FolderTreeBuilder, FolderTreeNode

@@ -18,6 +18,7 @@ from lookervault.export.validator import YamlValidator
 from lookervault.export.yaml_serializer import YamlSerializer
 from lookervault.storage.models import ContentItem, ContentType
 from lookervault.storage.repository import ContentRepository
+from lookervault.utils.datetime_parsing import parse_timestamp
 
 
 @dataclass
@@ -207,20 +208,12 @@ class ContentPacker:
             # 5. Extract required fields from content
             content_without_metadata = {k: v for k, v in validated_dict.items() if k != "_metadata"}
             name = content_without_metadata.get("title") or content_without_metadata.get("name", "")
-            created_at = content_without_metadata.get("created_at")
-            updated_at = content_without_metadata.get("updated_at")
-
-            # Parse datetime strings if present
-            if isinstance(created_at, str):
-                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            if isinstance(updated_at, str):
-                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-
-            # Use current time if dates not available
-            if not created_at:
-                created_at = datetime.now()
-            if not updated_at:
-                updated_at = datetime.now()
+            created_at = parse_timestamp(
+                content_without_metadata.get("created_at"), "created_at", db_id
+            )
+            updated_at = parse_timestamp(
+                content_without_metadata.get("updated_at"), "updated_at", db_id
+            )
 
             # 6. Check if file was modified after export
             exported_at_str = metadata_section.get("exported_at")
