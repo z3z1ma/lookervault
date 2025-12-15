@@ -24,12 +24,12 @@
 
 **Purpose**: Project initialization and module structure for export/import functionality
 
-- [ ] T001 [P] Add PyYAML dependency to pyproject.toml using `uv add pyyaml`
-- [ ] T002 [P] Add ruamel.yaml dependency to pyproject.toml using `uv add ruamel.yaml` (per research.md decision)
-- [ ] T003 [P] Add pathvalidate dependency to pyproject.toml using `uv add pathvalidate` (for path sanitization)
-- [ ] T004 [P] Create export module directory structure: `src/lookervault/export/__init__.py`
-- [ ] T005 [P] Create test directory structure: `tests/export/`, `tests/integration/`
-- [ ] T006 [P] Create fixtures directory: `tests/fixtures/yaml_samples/`
+- [X] T001 [P] Add PyYAML dependency to pyproject.toml using `uv add pyyaml`
+- [X] T002 [P] Add ruamel.yaml dependency to pyproject.toml using `uv add ruamel.yaml` (per research.md decision)
+- [X] T003 [P] Add pathvalidate dependency to pyproject.toml using `uv add pathvalidate` (for path sanitization)
+- [X] T004 [P] Create export module directory structure: `src/lookervault/export/__init__.py`
+- [X] T005 [P] Create test directory structure: `tests/export/`, `tests/integration/`
+- [X] T006 [P] Create fixtures directory: `tests/fixtures/yaml_samples/`
 
 ---
 
@@ -39,15 +39,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 [P] Implement YamlSerializer class in `src/lookervault/export/yaml_serializer.py` with serialize(), deserialize(), validate() methods using ruamel.yaml
-- [ ] T008 [P] Implement YamlContentMetadata dataclass in `src/lookervault/export/metadata.py` with fields: db_id, content_type, exported_at, content_size, checksum, folder_path
-- [ ] T009 [P] Implement ExportMetadata dataclass in `src/lookervault/export/metadata.py` with fields per metadata-schema.json
-- [ ] T010 [P] Implement MetadataManager class in `src/lookervault/export/metadata.py` with generate_metadata() and load_metadata() methods
-- [ ] T011 [P] Implement path sanitization utilities in `src/lookervault/export/path_utils.py` using pathvalidate with collision resolution (numeric suffixes)
-- [ ] T012 [P] Implement YamlValidator class in `src/lookervault/export/validator.py` with multi-stage validation pipeline (syntax → schema → SDK conversion)
-- [ ] T013 [P] Implement checksum utilities in `src/lookervault/export/checksum.py` with compute_export_checksum() using SHA-256
-- [ ] T014 Implement FolderTreeNode dataclass in `src/lookervault/export/folder_tree.py` with filesystem_path property and is_root method
-- [ ] T015 Implement FolderTreeBuilder class in `src/lookervault/export/folder_tree.py` with build_from_folders() method using BFS traversal with cycle detection (per research.md)
+- [X] T007 [P] Implement YamlSerializer class in `src/lookervault/export/yaml_serializer.py` with serialize(), deserialize(), validate() methods using ruamel.yaml
+- [X] T008 [P] Implement YamlContentMetadata dataclass in `src/lookervault/export/metadata.py` with fields: db_id, content_type, exported_at, content_size, checksum, folder_path
+- [X] T009 [P] Implement ExportMetadata dataclass in `src/lookervault/export/metadata.py` with fields per metadata-schema.json
+- [X] T010 [P] Implement MetadataManager class in `src/lookervault/export/metadata.py` with generate_metadata() and load_metadata() methods
+- [X] T011 [P] Implement path sanitization utilities in `src/lookervault/export/path_utils.py` using pathvalidate with collision resolution (numeric suffixes)
+- [X] T012 [P] Implement YamlValidator class in `src/lookervault/export/validator.py` with multi-stage validation pipeline (syntax → schema → SDK conversion)
+- [X] T013 [P] Implement checksum utilities in `src/lookervault/export/checksum.py` with compute_export_checksum() using SHA-256
+- [X] T014 Implement FolderTreeNode dataclass in `src/lookervault/export/folder_tree.py` with filesystem_path property and is_root method
+- [X] T015 Implement FolderTreeBuilder class in `src/lookervault/export/folder_tree.py` with build_from_folders() method using BFS traversal with cycle detection (per research.md)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -63,31 +63,31 @@
 
 #### Core Unpacker (Full Strategy)
 
-- [ ] T016 [P] [US1] Implement ContentUnpacker class skeleton in `src/lookervault/export/unpacker.py` with __init__ taking repository and yaml_serializer
-- [ ] T017 [US1] Implement ContentUnpacker.unpack_full() method in `src/lookervault/export/unpacker.py` - iterate all content types, create type subdirectories, export each item to <type>/<id>.yaml
-- [ ] T018 [US1] Add _metadata section generation in ContentUnpacker.unpack_full() - embed db_id, content_type, exported_at, content_size, checksum per data-model.md
-- [ ] T019 [US1] Implement progress tracking in ContentUnpacker.unpack_full() using rich progress bars (FR-015)
-- [ ] T020 [US1] Add metadata.json generation at export completion in ContentUnpacker.unpack_full() - call MetadataManager.generate_metadata() with strategy="full", content_type_counts, checksum
+- [X] T016 [P] [US1] Implement ContentUnpacker class skeleton in `src/lookervault/export/unpacker.py` with __init__ taking repository and yaml_serializer
+- [X] T017 [US1] Implement ContentUnpacker.unpack_full() method in `src/lookervault/export/unpacker.py` - iterate all content types, create type subdirectories, export each item to <type>/<id>.yaml
+- [X] T018 [US1] Add _metadata section generation in ContentUnpacker.unpack_full() - embed db_id, content_type, exported_at, content_size, checksum per data-model.md
+- [X] T019 [US1] Implement progress tracking in ContentUnpacker.unpack_full() using rich progress bars (FR-015)
+- [X] T020 [US1] Add metadata.json generation at export completion in ContentUnpacker.unpack_full() - call MetadataManager.generate_metadata() with strategy="full", content_type_counts, checksum
 
 #### Core Packer (Full Strategy)
 
-- [ ] T021 [P] [US1] Implement ContentPacker class skeleton in `src/lookervault/export/packer.py` with __init__ taking repository and yaml_serializer
-- [ ] T022 [US1] Implement ContentPacker.pack() method in `src/lookervault/export/packer.py` - load metadata.json, discover YAML files, validate each file, deserialize to dict, extract _metadata, convert to ContentItem
-- [ ] T023 [US1] Add YAML validation in ContentPacker.pack() - call YamlValidator for syntax → schema → SDK conversion → business rules (FR-009)
-- [ ] T024 [US1] Implement database write logic in ContentPacker.pack() - use repository.save_content() with BEGIN IMMEDIATE transaction (FR-018)
-- [ ] T025 [US1] Add concurrent modification detection in ContentPacker.pack() - check database schema version, abort if mismatch (FR-019)
-- [ ] T026 [US1] Implement progress tracking in ContentPacker.pack() using rich progress bars (FR-015)
-- [ ] T027 [US1] Add checksum validation in ContentPacker.pack() - compare metadata.json checksum with recomputed value, warn if mismatch
+- [X] T021 [P] [US1] Implement ContentPacker class skeleton in `src/lookervault/export/packer.py` with __init__ taking repository and yaml_serializer
+- [X] T022 [US1] Implement ContentPacker.pack() method in `src/lookervault/export/packer.py` - load metadata.json, discover YAML files, validate each file, deserialize to dict, extract _metadata, convert to ContentItem
+- [X] T023 [US1] Add YAML validation in ContentPacker.pack() - call YamlValidator for syntax → schema → SDK conversion → business rules (FR-009)
+- [X] T024 [US1] Implement database write logic in ContentPacker.pack() - use repository.save_content() with BEGIN IMMEDIATE transaction (FR-018)
+- [X] T025 [US1] Add concurrent modification detection in ContentPacker.pack() - check database schema version, abort if mismatch (FR-019)
+- [X] T026 [US1] Implement progress tracking in ContentPacker.pack() using rich progress bars (FR-015)
+- [X] T027 [US1] Add checksum validation in ContentPacker.pack() - compare metadata.json checksum with recomputed value, warn if mismatch
 
 #### CLI Commands
 
-- [ ] T028 [US1] Implement unpack CLI command in `src/lookervault/cli/commands/unpack.py` with --db-path, --output-dir, --strategy (default: full), --content-types, --overwrite, --json, --verbose options per cli-contracts.yaml
-- [ ] T029 [US1] Implement pack CLI command in `src/lookervault/cli/commands/pack.py` with --input-dir, --db-path, --dry-run, --force, --json, --verbose options per cli-contracts.yaml
-- [ ] T030 [US1] Register unpack and pack commands in `src/lookervault/cli/main.py` typer app
-- [ ] T031 [US1] Add --overwrite flag handling in unpack.py - check if output_dir exists, prompt or abort (exit code 2 per cli-contracts.yaml)
-- [ ] T032 [US1] Add --dry-run flag handling in pack.py - run validation pipeline without database writes (FR-014)
-- [ ] T033 [US1] Add --json output formatting in unpack.py and pack.py - output structured JSON per cli-contracts.yaml examples
-- [ ] T034 [US1] Add error handling and exit codes in unpack.py and pack.py per cli-contracts.yaml (0=success, 1=general error, 2=dir exists, 3=schema mismatch, 4=cycle detected, 5=transaction failed)
+- [X] T028 [US1] Implement unpack CLI command in `src/lookervault/cli/commands/unpack.py` with --db-path, --output-dir, --strategy (default: full), --content-types, --overwrite, --json, --verbose options per cli-contracts.yaml
+- [X] T029 [US1] Implement pack CLI command in `src/lookervault/cli/commands/pack.py` with --input-dir, --db-path, --dry-run, --force, --json, --verbose options per cli-contracts.yaml
+- [X] T030 [US1] Register unpack and pack commands in `src/lookervault/cli/main.py` typer app
+- [X] T031 [US1] Add --overwrite flag handling in unpack.py - check if output_dir exists, prompt or abort (exit code 2 per cli-contracts.yaml)
+- [X] T032 [US1] Add --dry-run flag handling in pack.py - run validation pipeline without database writes (FR-014)
+- [X] T033 [US1] Add --json output formatting in unpack.py and pack.py - output structured JSON per cli-contracts.yaml examples
+- [X] T034 [US1] Add error handling and exit codes in unpack.py and pack.py per cli-contracts.yaml (0=success, 1=general error, 2=dir exists, 3=schema mismatch, 4=cycle detected, 5=transaction failed)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - full strategy unpack/pack with round-trip fidelity
 
@@ -103,25 +103,25 @@
 
 #### Folder Strategy Unpacker
 
-- [ ] T035 [P] [US2] Implement ContentUnpacker.unpack_folder() method in `src/lookervault/export/unpacker.py` - load all folders from database, build FolderTreeNode hierarchy using FolderTreeBuilder
-- [ ] T036 [US2] Add folder path construction in ContentUnpacker.unpack_folder() - for each dashboard/look, lookup folder_id in tree, get filesystem_path, create nested directories
-- [ ] T037 [US2] Add folder name sanitization in ContentUnpacker.unpack_folder() - call path_utils.sanitize_folder_name() for each folder level, store original_name in metadata if sanitized
-- [ ] T038 [US2] Add orphaned item handling in ContentUnpacker.unpack_folder() - items with missing/invalid folder_id go to _orphaned/ directory (per edge cases)
-- [ ] T039 [US2] Add circular reference detection in ContentUnpacker.unpack_folder() - use FolderTreeBuilder.detect_cycles(), report error with cycle path (exit code 4 per cli-contracts.yaml)
-- [ ] T040 [US2] Add folder_map generation in ContentUnpacker.unpack_folder() - populate ExportMetadata.folder_map with FolderInfo for each folder (id, name, parent_id, path, depth, child_count, original_name, sanitized)
-- [ ] T041 [US2] Update metadata.json generation for folder strategy - include folder_map, set strategy="folder"
+- [X] T035 [P] [US2] Implement ContentUnpacker.unpack_folder() method in `src/lookervault/export/unpacker.py` - load all folders from database, build FolderTreeNode hierarchy using FolderTreeBuilder
+- [X] T036 [US2] Add folder path construction in ContentUnpacker.unpack_folder() - for each dashboard/look, lookup folder_id in tree, get filesystem_path, create nested directories
+- [X] T037 [US2] Add folder name sanitization in ContentUnpacker.unpack_folder() - call path_utils.sanitize_folder_name() for each folder level, store original_name in metadata if sanitized
+- [X] T038 [US2] Add orphaned item handling in ContentUnpacker.unpack_folder() - items with missing/invalid folder_id go to _orphaned/ directory (per edge cases)
+- [X] T039 [US2] Add circular reference detection in ContentUnpacker.unpack_folder() - use FolderTreeBuilder.detect_cycles(), report error with cycle path (exit code 4 per cli-contracts.yaml)
+- [X] T040 [US2] Add folder_map generation in ContentUnpacker.unpack_folder() - populate ExportMetadata.folder_map with FolderInfo for each folder (id, name, parent_id, path, depth, child_count, original_name, sanitized)
+- [X] T041 [US2] Update metadata.json generation for folder strategy - include folder_map, set strategy="folder"
 
 #### Folder Strategy Packer
 
-- [ ] T042 [US2] Implement folder strategy detection in ContentPacker.pack() - load metadata.json, check strategy field, branch to folder-specific logic if strategy="folder"
-- [ ] T043 [US2] Add folder hierarchy reconstruction in ContentPacker.pack() for folder strategy - load folder_map from metadata.json, map YAML file paths to folder_id using FolderInfo.path
-- [ ] T044 [US2] Add folder validation in ContentPacker.pack() for folder strategy - verify folder_id references exist in folder_map, warn for orphaned items
+- [X] T042 [US2] Implement folder strategy detection in ContentPacker.pack() - load metadata.json, check strategy field, branch to folder-specific logic if strategy="folder"
+- [X] T043 [US2] Add folder hierarchy reconstruction in ContentPacker.pack() for folder strategy - load folder_map from metadata.json, map YAML file paths to folder_id using FolderInfo.path
+- [X] T044 [US2] Add folder validation in ContentPacker.pack() for folder strategy - verify folder_id references exist in folder_map, warn for orphaned items
 
 #### CLI Integration
 
-- [ ] T045 [US2] Update unpack.py to support --strategy folder flag - call ContentUnpacker.unpack_folder() instead of unpack_full()
-- [ ] T046 [US2] Add folder strategy validation in unpack.py - ensure database contains folders before allowing folder strategy, error if no folders found
-- [ ] T047 [US2] Add folder strategy output formatting in unpack.py --json mode - include folder_map summary in JSON output
+- [X] T045 [US2] Update unpack.py to support --strategy folder flag - call ContentUnpacker.unpack_folder() instead of unpack_full()
+- [X] T046 [US2] Add folder strategy validation in unpack.py - ensure database contains folders before allowing folder strategy, error if no folders found
+- [X] T047 [US2] Add folder strategy output formatting in unpack.py --json mode - include folder_map summary in JSON output
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - full strategy and folder strategy
 
@@ -137,21 +137,21 @@
 
 #### Modification Detection
 
-- [ ] T048 [P] [US3] Implement modification tracking in ContentPacker.pack() - compare YAML file timestamps with exported_at from _metadata, track modified vs unchanged items
-- [ ] T049 [US3] Add selective repacking logic in ContentPacker.pack() - only write modified items to database, skip unchanged items (FR-020)
-- [ ] T050 [US3] Add modification summary in pack output - report counts: created, updated, unchanged, errors
+- [X] T048 [P] [US3] Implement modification tracking in ContentPacker.pack() - compare YAML file timestamps with exported_at from _metadata, track modified vs unchanged items
+- [X] T049 [US3] Add selective repacking logic in ContentPacker.pack() - only write modified items to database, skip unchanged items (FR-020)
+- [X] T050 [US3] Add modification summary in pack output - report counts: created, updated, unchanged, errors
 
 #### Validation Enhancements
 
-- [ ] T051 [P] [US3] Add field-level validation in YamlValidator - validate common bulk edit patterns (title changes, model references, filter values) against Looker SDK schemas
-- [ ] T052 [US3] Add detailed error reporting in YamlValidator - include file path, line number, field name, expected type, actual value for all validation failures (SC-006)
-- [ ] T053 [US3] Add validation error aggregation in ContentPacker.pack() - collect all validation errors before aborting, display grouped by error type
+- [X] T051 [P] [US3] Add field-level validation in YamlValidator - validate common bulk edit patterns (title changes, model references, filter values) against Looker SDK schemas
+- [X] T052 [US3] Add detailed error reporting in YamlValidator - include file path, line number, field name, expected type, actual value for all validation failures (SC-006)
+- [X] T053 [US3] Add validation error aggregation in ContentPacker.pack() - collect all validation errors before aborting, display grouped by error type
 
 #### Script Integration Examples
 
-- [ ] T054 [US3] Add example Python script in `tests/fixtures/scripts/update_filters.py` - modify query filters in dashboard YAMLs (per quickstart.md Example 2)
-- [ ] T055 [US3] Add example sed script in `tests/fixtures/scripts/update_titles.sh` - modify dashboard titles (per quickstart.md Example 1)
-- [ ] T056 [US3] Add example awk script in `tests/fixtures/scripts/replace_models.sh` - replace LookML model references (per quickstart.md Example 3)
+- [X] T054 [US3] Add example Python script in `tests/fixtures/scripts/update_filters.py` - modify query filters in dashboard YAMLs (per quickstart.md Example 2)
+- [X] T055 [US3] Add example sed script in `tests/fixtures/scripts/update_titles.sh` - modify dashboard titles (per quickstart.md Example 1)
+- [X] T056 [US3] Add example awk script in `tests/fixtures/scripts/replace_models.sh` - replace LookML model references (per quickstart.md Example 3)
 
 **Checkpoint**: At this point, bulk modification workflows should be validated and examples documented
 
@@ -167,23 +167,23 @@
 
 #### Query Remapping Infrastructure
 
-- [ ] T057 [P] [US4] Implement QueryRemapEntry dataclass in `src/lookervault/export/query_remapper.py` with fields: original_query_id, new_query_id, query_hash, dashboard_element_ids, created_at
-- [ ] T058 [P] [US4] Implement QueryRemappingTable class in `src/lookervault/export/query_remapper.py` with entries dict, hash_index dict, get_or_create() method, _hash_query() using SHA-256
-- [ ] T059 [US4] Implement query hash computation in QueryRemappingTable._hash_query() - normalize query dict (sort keys, canonical JSON), compute SHA-256 hash (per research.md)
-- [ ] T060 [US4] Implement shared query deduplication in QueryRemappingTable.get_or_create() - check hash_index for existing new_query_id, reuse if found, otherwise mark for creation
+- [X] T057 [P] [US4] Implement QueryRemapEntry dataclass in `src/lookervault/export/query_remapper.py` with fields: original_query_id, new_query_id, query_hash, dashboard_element_ids, created_at
+- [X] T058 [P] [US4] Implement QueryRemappingTable class in `src/lookervault/export/query_remapper.py` with entries dict, hash_index dict, get_or_create() method, _hash_query() using SHA-256
+- [X] T059 [US4] Implement query hash computation in QueryRemappingTable._hash_query() - normalize query dict (sort keys, canonical JSON), compute SHA-256 hash (per research.md)
+- [X] T060 [US4] Implement shared query deduplication in QueryRemappingTable.get_or_create() - check hash_index for existing new_query_id, reuse if found, otherwise mark for creation
 
 #### Query Modification Detection
 
-- [ ] T061 [US4] Add query modification detection in ContentPacker.pack() for dashboard items - compare query definition hash with original, detect changes
-- [ ] T062 [US4] Implement new query creation logic in ContentPacker.pack() - for modified queries, generate new_query_id, store in QueryRemappingTable, update dashboard_element.query_id
-- [ ] T063 [US4] Add query reference updating in ContentPacker.pack() - for all dashboard_elements referencing modified query, update query_id to new_query_id from remapping table
-- [ ] T064 [US4] Add query remapping table persistence in ContentPacker.pack() - optionally write QueryRemappingTable to <input_dir>/.pack_state/query_remapping.json for debugging
+- [X] T061 [US4] Add query modification detection in ContentPacker.pack() for dashboard items - compare query definition hash with original, detect changes
+- [X] T062 [US4] Implement new query creation logic in ContentPacker.pack() - for modified queries, generate new_query_id, store in QueryRemappingTable, update dashboard_element.query_id
+- [X] T063 [US4] Add query reference updating in ContentPacker.pack() - for all dashboard_elements referencing modified query, update query_id to new_query_id from remapping table
+- [X] T064 [US4] Add query remapping table persistence in ContentPacker.pack() - optionally write QueryRemappingTable to <input_dir>/.pack_state/query_remapping.json for debugging
 
 #### Validation and Error Handling
 
-- [ ] T065 [US4] Add query validation in YamlValidator - validate query definitions against Looker SDK Query model schema, check required fields (model, view, fields)
-- [ ] T066 [US4] Add query creation failure handling in ContentPacker.pack() - if query validation fails, report clear error with query definition and missing fields (AS-4 from spec.md)
-- [ ] T067 [US4] Add query remapping summary in pack output - report: modified queries detected, new queries created, shared queries deduplicated
+- [X] T065 [US4] Add query validation in YamlValidator - validate query definitions against Looker SDK Query model schema, check required fields (model, view, fields)
+- [X] T066 [US4] Add query creation failure handling in ContentPacker.pack() - if query validation fails, report clear error with query definition and missing fields (AS-4 from spec.md)
+- [X] T067 [US4] Add query remapping summary in pack output - report: modified queries detected, new queries created, shared queries deduplicated
 
 **Checkpoint**: All user stories should now be independently functional - query remapping completes advanced editing workflows
 
