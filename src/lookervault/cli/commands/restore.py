@@ -39,6 +39,7 @@ from lookervault.restoration.dead_letter_queue import DeadLetterQueue
 from lookervault.restoration.deserializer import ContentDeserializer
 from lookervault.restoration.parallel_orchestrator import ParallelRestorationOrchestrator
 from lookervault.restoration.restorer import LookerContentRestorer
+from lookervault.restoration.validation import RestorationValidator
 from lookervault.storage.models import ContentType
 from lookervault.storage.repository import SQLiteContentRepository
 
@@ -469,12 +470,39 @@ def restore_single(
             logger.error(f"Failed to check if content exists in destination: {e}")
             raise typer.Exit(EXIT_API_ERROR) from e
 
-        # Step 6: Validate dependencies (placeholder)
+        # Step 6: Validate dependencies
         if not json_output:
             console.print("Validating dependencies...", end="")
 
-        # TODO: Implement dependency validation
-        # For now, just pass
+        validator = RestorationValidator()
+        dependency_errors = validator.validate_dependencies(
+            content_dict, content_type_enum, looker_client
+        )
+
+        if dependency_errors:
+            if not json_output:
+                console.print(" [red]✗[/red]")
+                console.print("[red]Dependency validation failed:[/red]")
+                for error in dependency_errors:
+                    console.print(f"  • {error}")
+                console.print(
+                    "\n[dim]Ensure all referenced content exists in the destination instance.[/dim]"
+                )
+            else:
+                import json
+
+                error_output = {
+                    "status": "error",
+                    "error_type": "DependencyError",
+                    "error_message": "Missing required dependencies",
+                    "validation_errors": dependency_errors,
+                    "content_type": content_type_name,
+                    "content_id": content_id,
+                }
+                console.print(json.dumps(error_output, indent=2))
+
+            raise typer.Exit(EXIT_VALIDATION_ERROR)
+
         if not json_output:
             console.print(" [green]✓[/green]")
 
