@@ -164,6 +164,143 @@ lookervault restore dashboards --from-snapshot 1
 lookervault snapshot cleanup
 ```
 
+#### Retention Policy Configuration
+
+LookerVault supports automated retention policies to control storage costs by automatically deleting old snapshots. Retention policies use a two-tier approach:
+
+1. **GCS Retention Policy**: Minimum retention period (prevents deletion before age)
+2. **Application-Level Enforcement**: Maximum age and minimum count protection
+
+**Configuration Example** (`~/.lookervault/config.toml`):
+
+```toml
+[snapshot]
+# GCS Storage Provider
+bucket_name = "lookervault-backups"
+project_id = "my-gcp-project"  # Optional, auto-detected from credentials
+region = "us-central1"
+storage_class = "STANDARD"
+autoclass_enabled = true
+prefix = "snapshots/"
+filename_prefix = "looker"
+
+# Compression
+compression_enabled = true
+compression_level = 6  # 1 (fast) to 9 (best)
+
+# Retention Policy
+[snapshot.retention]
+min_days = 30          # Minimum retention (compliance/safety)
+max_days = 90          # Maximum retention (cost optimization)
+min_count = 5          # Minimum backups to always retain
+lock_policy = false    # Lock retention policy (irreversible)
+enabled = true         # Enable retention policy enforcement
+
+# Caching
+cache_ttl_minutes = 5
+
+# Audit Logging
+audit_log_path = "~/.lookervault/audit.log"
+audit_gcs_bucket = "lookervault-audit-logs"  # Optional
+```
+
+**Retention Policy Options**:
+
+- `min_days` (integer): Minimum retention period in days (default: 30)
+  - Snapshots cannot be deleted before this age
+  - Enforced via GCS bucket-level retention policy
+  - Protects against accidental deletion
+  - Must be >= 1 day (GCS minimum)
+
+- `max_days` (integer): Maximum retention period in days (default: 90)
+  - Snapshots older than this are automatically deleted
+  - Enforced via GCS Lifecycle Management
+  - Must be >= `min_days`
+  - Use for cost control
+
+- `min_count` (integer): Minimum number of snapshots to always retain (default: 5)
+  - Always keeps N most recent snapshots regardless of age
+  - Application-level protection using GCS temporary holds
+  - Set to 0 to disable minimum count protection
+  - Prevents deletion of all backups
+
+- `lock_policy` (boolean): Lock retention policy (default: false)
+  - **WARNING**: Locking is IRREVERSIBLE - cannot be undone
+  - Once locked, `min_days` becomes permanent (cannot be decreased)
+  - Only lock for compliance scenarios (GDPR, HIPAA, SOX)
+  - Leave false for typical use cases
+
+- `enabled` (boolean): Enable retention policy enforcement (default: true)
+  - Set to false to disable automatic cleanup
+  - Snapshots accumulate without limit when disabled
+  - Can be toggled without affecting existing snapshots
+
+**Environment Variables**:
+
+```bash
+# GCS credentials (uses Application Default Credentials if not set)
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+
+# GCS bucket configuration
+export LOOKERVAULT_GCS_BUCKET="lookervault-backups"
+export LOOKERVAULT_GCS_PROJECT="my-gcp-project"
+export LOOKERVAULT_GCS_REGION="us-central1"
+
+# Retention policy overrides
+export LOOKERVAULT_RETENTION_MIN_DAYS=30
+export LOOKERVAULT_RETENTION_MAX_DAYS=90
+export LOOKERVAULT_RETENTION_MIN_COUNT=5
+```
+
+**Common Retention Patterns**:
+
+**1. Daily Backups with 90-Day Retention** (Recommended):
+```toml
+[snapshot.retention]
+min_days = 7           # Keep minimum 7 days
+max_days = 90          # Delete after 90 days
+min_count = 14         # Always keep 14 most recent (2 weeks)
+enabled = true
+```
+
+**2. Weekly Backups with 1-Year Retention**:
+```toml
+[snapshot.retention]
+min_days = 30          # Keep minimum 30 days
+max_days = 365         # Delete after 1 year
+min_count = 12         # Always keep 12 most recent (~3 months)
+enabled = true
+```
+
+**3. Compliance Mode (GDPR 7-Year Retention)**:
+```toml
+[snapshot.retention]
+min_days = 2555        # 7 years (GDPR/SOX compliance)
+max_days = 2555        # Same as min_days (no automatic deletion)
+min_count = 0          # No minimum count protection needed
+lock_policy = false    # Only lock if required by auditors
+enabled = true
+```
+
+**4. Development/Testing (No Retention)**:
+```toml
+[snapshot.retention]
+enabled = false        # Disable retention policy
+```
+
+**Cost Optimization with Retention Policies**:
+
+- **Autoclass**: Automatically transitions snapshots to cheaper storage classes (Archive is 94% cheaper than Standard)
+- **Compression**: Gzip reduces file size by 70-80% (5-10x cost savings)
+- **Retention Limits**: `max_days = 90` prevents runaway storage costs
+- **Minimum Count Protection**: `min_count = 5` ensures disaster recovery capability
+
+**Expected Storage Costs** (US regions):
+- **Without optimization**: $0.020/GB/month (Standard, uncompressed)
+- **With compression (70% reduction)**: $0.006/GB/month
+- **With Autoclass → Archive (94% reduction)**: $0.00036/GB/month
+- **Total savings**: ~98% cost reduction vs. uncompressed Standard storage
+
 **See**: [specs/005-cloud-snapshot-storage/quickstart.md](specs/005-cloud-snapshot-storage/quickstart.md) for detailed workflows and best practices
 
 ### 📝 YAML Export/Import Workflow

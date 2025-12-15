@@ -20,3 +20,34 @@ verify_ssl = true
 # Output formatting preferences
 default_format = "table"  # "table" or "json"
 color_enabled = true
+
+# Cloud Snapshot Management (optional)
+# Uncomment and configure to enable cloud snapshot storage
+# [snapshot]
+# # GCS Storage Provider
+# bucket_name = "lookervault-backups"
+# project_id = "my-gcp-project"  # Optional, auto-detected from credentials
+# region = "us-central1"
+# storage_class = "STANDARD"
+# autoclass_enabled = true
+# prefix = "snapshots/"
+# filename_prefix = "looker"
+#
+# # Compression
+# compression_enabled = true
+# compression_level = 6  # 1 (fast) to 9 (best)
+#
+# # Retention Policy
+# [snapshot.retention]
+# min_days = 30          # Minimum retention (compliance/safety)
+# max_days = 90          # Maximum retention (cost optimization)
+# min_count = 5          # Minimum backups to always retain
+# lock_policy = false    # Lock retention policy (irreversible, WARNING: cannot be undone)
+# enabled = true         # Enable retention policy enforcement
+#
+# # Caching
+# cache_ttl_minutes = 5
+#
+# # Audit Logging
+# audit_log_path = "~/.lookervault/audit.log"
+# audit_gcs_bucket = "lookervault-audit-logs"  # Optional
