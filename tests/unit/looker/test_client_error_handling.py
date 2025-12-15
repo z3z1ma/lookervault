@@ -676,16 +676,6 @@ class TestExtractAllErrorHandling:
         with pytest.raises(ExtractionError):
             list(extractor.extract_all(ContentType.DASHBOARD))
 
-    def test_extract_all_unsupported_content_type(self):
-        """Test extract_all raises ExtractionError for unsupported types."""
-        mock_client = Mock()
-        extractor = LookerContentExtractor(client=mock_client)
-
-        # Note: All content types in ContentType enum are now supported
-        # This test is kept for future extensibility
-        # If we need to test unsupported types, we'd need to add a new enum value
-        pass
-
     def test_extract_all_generic_exception(self):
         """Test extract_all wraps generic exceptions as ExtractionError."""
         mock_client = Mock()

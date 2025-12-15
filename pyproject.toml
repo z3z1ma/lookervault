@@ -60,7 +60,15 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105"]  # Allow assert and hardcoded secrets in tests
+"tests/**/*.py" = [
+  "S101",
+  "S105",
+  "S106",
+  "ARG",
+  "FBT",
+  "PLR2004",
+  "S311"
+]
 "src/lookervault/cli/commands/*.py" = ["B008", "B904"]  # Allow typer.Option defaults and typer.Exit exception pattern
 
 [tool.ruff.format]
