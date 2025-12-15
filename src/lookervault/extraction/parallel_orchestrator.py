@@ -24,6 +24,7 @@ from lookervault.storage.models import (
 )
 from lookervault.storage.repository import ContentRepository
 from lookervault.storage.serializer import ContentSerializer
+from lookervault.utils.datetime_parsing import parse_timestamp
 
 if TYPE_CHECKING:
     from lookervault.looker.extractor import ContentExtractor
@@ -772,48 +773,8 @@ class ParallelOrchestrator:
             folder_id = str(item_dict["folder_id"])
 
         # Parse timestamps
-        created_at = datetime.now(UTC)
-        updated_at = datetime.now(UTC)
-
-        if "created_at" in item_dict and item_dict["created_at"]:
-            try:
-                created_at_val = item_dict["created_at"]
-                if isinstance(created_at_val, str):
-                    created_at = datetime.fromisoformat(created_at_val.replace("Z", "+00:00"))
-                elif isinstance(created_at_val, datetime):
-                    created_at = created_at_val
-                elif isinstance(created_at_val, int | float):
-                    # Unix timestamp
-                    created_at = datetime.fromtimestamp(created_at_val, tz=UTC)
-                else:
-                    logger.warning(
-                        f"Unexpected type for created_at: {type(created_at_val).__name__} = {created_at_val}"
-                    )
-            except (ValueError, AttributeError, TypeError) as e:
-                logger.warning(
-                    f"Could not parse created_at (type: {type(item_dict['created_at']).__name__}) "
-                    f"'{item_dict['created_at']}' for item {item_id}: {e}"
-                )
-
-        if "updated_at" in item_dict and item_dict["updated_at"]:
-            try:
-                updated_at_val = item_dict["updated_at"]
-                if isinstance(updated_at_val, str):
-                    updated_at = datetime.fromisoformat(updated_at_val.replace("Z", "+00:00"))
-                elif isinstance(updated_at_val, datetime):
-                    updated_at = updated_at_val
-                elif isinstance(updated_at_val, int | float):
-                    # Unix timestamp
-                    updated_at = datetime.fromtimestamp(updated_at_val, tz=UTC)
-                else:
-                    logger.warning(
-                        f"Unexpected type for updated_at: {type(updated_at_val).__name__} = {updated_at_val}"
-                    )
-            except (ValueError, AttributeError, TypeError) as e:
-                logger.warning(
-                    f"Could not parse updated_at (type: {type(item_dict['updated_at']).__name__}) "
-                    f"'{item_dict['updated_at']}' for item {item_id}: {e}"
-                )
+        created_at = parse_timestamp(item_dict.get("created_at"), "created_at", item_id)
+        updated_at = parse_timestamp(item_dict.get("updated_at"), "updated_at", item_id)
 
         return ContentItem(
             id=item_id,

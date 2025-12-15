@@ -1,7 +1,5 @@
 """Tests for QueryRemappingTable."""
 
-
-
 from lookervault.export.query_remapper import QueryRemappingTable
 
 
@@ -96,7 +94,7 @@ class TestQueryRemappingTable:
         table = QueryRemappingTable()
         query_def = {"model": "sales", "view": "orders", "fields": ["orders.count"]}
 
-        new_id = table.get_or_create(query_def, "original_123")
+        table.get_or_create(query_def, "original_123")
         query_hash = table._hash_query(query_def)
         table.record_element_reference(query_hash, "element_1")
 
@@ -108,7 +106,7 @@ class TestQueryRemappingTable:
         table = QueryRemappingTable()
         query_def = {"model": "sales", "view": "orders", "fields": ["orders.count"]}
 
-        new_id = table.get_or_create(query_def, "original_123")
+        table.get_or_create(query_def, "original_123")
         query_hash = table._hash_query(query_def)
         table.record_element_reference(query_hash, "element_1")
         table.record_element_reference(query_hash, "element_2")
@@ -148,7 +146,7 @@ class TestToDict:
         """Serialized entry contains all required fields."""
         table = QueryRemappingTable()
         query_def = {"model": "sales", "view": "orders", "fields": ["orders.count"]}
-        new_id = table.get_or_create(query_def, "original_123")
+        table.get_or_create(query_def, "original_123")
         query_hash = table._hash_query(query_def)
         table.record_element_reference(query_hash, "element_1")
 
@@ -165,7 +163,7 @@ class TestToDict:
         """Element references are preserved in serialization."""
         table = QueryRemappingTable()
         query_def = {"model": "sales", "view": "orders", "fields": ["orders.count"]}
-        new_id = table.get_or_create(query_def, "original_123")
+        table.get_or_create(query_def, "original_123")
         query_hash = table._hash_query(query_def)
         table.record_element_reference(query_hash, "element_1")
         table.record_element_reference(query_hash, "element_2")

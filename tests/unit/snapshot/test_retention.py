@@ -421,7 +421,7 @@ class TestDeleteOldSnapshots:
         mock_bucket.blob.return_value = mock_blob
         mock_blob.exists.return_value = True
 
-        result = delete_old_snapshots(
+        delete_old_snapshots(
             client=mock_client,
             bucket_name="test-bucket",
             snapshots_to_delete=mock_snapshots,
