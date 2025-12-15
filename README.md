@@ -131,6 +131,7 @@ lookervault restore dlq retry <id>
 - **Thread-Safe Operations**: Thread-local SQLite connections with proper transaction management
 - **Comprehensive Error Handling**: Transient errors retried with exponential backoff (default: 5 attempts)
 - **Dry Run Mode**: Validate operations without making actual changes
+- **Idempotent Operations**: Safe to re-run extractions without creating duplicates (see below)
 
 ### ☁️ Cloud Snapshot Management
 
@@ -360,6 +361,84 @@ export LOOKERVAULT_CLIENT_SECRET="your_client_secret"
 ```
 
 For permanent configuration, add these to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+### 3. Configure Cloud Snapshot Storage (Optional)
+
+To use cloud snapshot features (upload, list, download snapshots), configure Google Cloud Storage access:
+
+#### A. Create GCS Bucket
+
+```bash
+# Create bucket for snapshot storage
+gcloud storage buckets create gs://lookervault-backups \
+  --location=us-central1 \
+  --uniform-bucket-level-access
+
+# Enable Autoclass for cost optimization (optional)
+gcloud storage buckets update gs://lookervault-backups --autoclass
+```
+
+#### B. Set Up Service Account
+
+```bash
+# Create service account
+gcloud iam service-accounts create lookervault-snapshots \
+  --display-name="LookerVault Snapshot Manager"
+
+# Grant Storage Admin role for the bucket
+gcloud storage buckets add-iam-policy-binding gs://lookervault-backups \
+  --member="serviceAccount:lookervault-snapshots@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+
+# Create and download service account key
+gcloud iam service-accounts keys create ~/lookervault-sa-key.json \
+  --iam-account=lookervault-snapshots@PROJECT_ID.iam.gserviceaccount.com
+```
+
+**Important**: Replace `PROJECT_ID` with your actual GCP project ID.
+
+#### C. Configure Credentials
+
+**Option 1: Environment Variable (Recommended for production)**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="$HOME/lookervault-sa-key.json"
+```
+
+**Option 2: Application Default Credentials (Development)**
+```bash
+gcloud auth application-default login
+```
+
+#### D. Update Configuration File
+
+Add GCS settings to `~/.lookervault/config.toml`:
+
+```toml
+[lookervault.snapshot]
+bucket_name = "lookervault-backups"
+project_id = "my-gcp-project"      # Optional, auto-detected from credentials
+region = "us-central1"
+prefix = "snapshots/"              # Optional subdirectory in bucket
+filename_prefix = "looker"
+
+[lookervault.snapshot.retention]
+enabled = true
+min_days = 30      # Minimum age before deletion
+max_days = 90      # Automatically delete snapshots older than this
+min_count = 5      # Always keep this many recent snapshots
+```
+
+#### E. Verify Setup
+
+```bash
+# Test GCS access
+lookervault snapshot list
+
+# Upload a snapshot
+lookervault snapshot upload
+```
+
+**For detailed setup instructions, troubleshooting, and best practices**, see [Cloud Snapshot Management Quickstart](specs/005-cloud-snapshot-storage/quickstart.md).
 
 ## Quick Start Guide
 
