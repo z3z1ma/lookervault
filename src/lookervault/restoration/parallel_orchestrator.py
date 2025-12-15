@@ -549,9 +549,7 @@ class ParallelRestorationOrchestrator:
 
         Examples:
             >>> # Resume interrupted restoration
-            >>> summary = orchestrator.resume(
-            ...     content_type=ContentType.DASHBOARD, session_id="abc-123"
-            ... )
+            >>> summary = orchestrator.resume(content_type=ContentType.DASHBOARD, session_id="abc-123")
             >>> print(f"Resumed: {summary.success_count} additional items restored")
 
             >>> # Check if checkpoint exists

@@ -165,6 +165,133 @@ lookervault snapshot cleanup
 
 **See**: [specs/005-cloud-snapshot-storage/quickstart.md](specs/005-cloud-snapshot-storage/quickstart.md) for detailed workflows and best practices
 
+### 📝 YAML Export/Import Workflow
+
+Modify Looker content in bulk using human-editable YAML files with the `unpack` and `pack` commands. Edit dashboards, looks, and other content through simple text manipulation.
+
+#### Key Features
+- **Full and Folder Strategies**: Export content organized by type or folder hierarchy
+- **Bulk Modifications**: Edit YAML files with standard text tools (sed, grep, Python)
+- **Complete Validation**: Check modifications before restoration
+- **Checkpoint-Based**: Resume interrupted pack/unpack operations
+- **Dry Run Mode**: Validate without making changes
+
+#### Workflow: Extract → Unpack → Modify → Pack → Restore
+
+```bash
+# 1. Extract content to SQLite database
+lookervault extract --workers 8 dashboards looks
+
+# 2. Unpack to YAML files (full strategy)
+lookervault unpack --output-dir export/ --strategy full
+
+# 3. Modify YAML files (multiple approaches)
+# A. Bash: Update filter using sed
+sed -i 's/model: old_model/model: new_model/g' export/dashboards/*.yaml
+
+# B. Python: Complex transformations
+python scripts/update_dashboards.py export/dashboards/
+
+# C. Text Editor: Manual edits
+# Open export/dashboards/ and modify files directly
+
+# 4. Pack modified YAML back to database
+lookervault pack --input-dir export/ --db-path modified.db
+
+# 5. Restore to Looker
+lookervault restore bulk dashboards --workers 8
+```
+
+#### Bulk Modification Examples
+
+**1. Update Dashboard Model References**
+```bash
+# Replace model references across all dashboards
+sed -i 's/model: "old_sales_model"/model: "new_sales_model"/g' export/dashboards/*.yaml
+```
+
+**2. Update Titles with Python**
+```python
+# update_titles.py
+import yaml
+from pathlib import Path
+
+def update_dashboard_titles(export_dir):
+    for yaml_file in Path(export_dir).glob("dashboards/*.yaml"):
+        with open(yaml_file, 'r') as f:
+            dashboard = yaml.safe_load(f)
+
+        # Add prefix to all dashboard titles
+        dashboard['title'] = f"[Updated] {dashboard['title']}"
+
+        with open(yaml_file, 'w') as f:
+            yaml.safe_dump(dashboard, f)
+
+update_dashboard_titles("export/")
+```
+
+**3. Filter Transformations**
+```python
+# update_filters.py
+import yaml
+from pathlib import Path
+
+def update_dashboard_filters(export_dir):
+    for yaml_file in Path(export_dir).glob("dashboards/*.yaml"):
+        with open(yaml_file, 'r') as f:
+            dashboard = yaml.safe_load(f)
+
+        for element in dashboard.get('dashboard_elements', []):
+            query = element.get('query', {})
+            filters = query.get('filters', {})
+
+            # Update time-based filters
+            if filters.get('date') == '30 days':
+                filters['date'] = '90 days'
+
+        with open(yaml_file, 'w') as f:
+            yaml.safe_dump(dashboard, f)
+
+update_dashboard_filters("export/")
+```
+
+#### Unpack/Pack Command Options
+
+**Unpack Command**:
+```bash
+# Full strategy: content by type
+lookervault unpack --output-dir export/ --strategy full
+
+# Folder strategy: mirror Looker folder hierarchy
+lookervault unpack --output-dir export/ --strategy folder
+
+# Specific content types
+lookervault unpack --content-types dashboards,looks
+
+# Dry run (validate without unpacking)
+lookervault unpack --dry-run
+
+# Verbose output
+lookervault unpack --verbose
+```
+
+**Pack Command**:
+```bash
+# Pack modified YAML back to database
+lookervault pack --input-dir export/ --db-path modified.db
+
+# Dry run (validate without changes)
+lookervault pack --dry-run
+
+# Force mode (delete items for missing YAML)
+lookervault pack --force
+
+# Verbose output
+lookervault pack --verbose
+```
+
+**See**: [YAML Export/Import Documentation](CLAUDE.md#yaml-export-import-006-yaml-export-import) for complete details.
+
 ## Installation
 
 ### Prerequisites
@@ -321,6 +448,28 @@ lookervault extract dashboards looks --workers 8
 # Extract only user-related content
 lookervault extract users groups roles --workers 4
 ```
+
+### Folder-Level Filtering
+```bash
+# Extract dashboards from specific folder(s)
+lookervault extract dashboards --folder-ids "123,456" --workers 8
+
+# Recursive folder extraction (includes all subfolders)
+lookervault extract dashboards --folder-ids "789" --recursive --workers 8
+
+# Restore dashboards to specific folder(s)
+lookervault restore bulk dashboards --folder-ids "123,456" --workers 8
+
+# Recursive folder restoration
+lookervault restore bulk dashboards --folder-ids "789" --recursive --workers 8
+```
+
+#### Folder Filtering Notes
+- **Supported Content Types**: Currently, only dashboards and looks support native folder-level SDK filtering
+- **Performance**: Folder filtering uses SDK-level filtering for dashboards and looks, resulting in faster extraction
+- **Other Content Types**: User, group, role, and other content types are fetched fully and filtered in-memory
+- **Recursive Option**: `--recursive` includes all child folders and their contents
+- **Multiple Folders**: Specify multiple folder IDs separated by commas
 
 #### JSON Output for Automation
 ```bash
@@ -581,6 +730,10 @@ src/lookervault/
 - `--rate-limit-per-second N` - Burst rate limit (default: 10 req/sec)
 - `--resume` - Resume interrupted extraction from checkpoint
 - `--output json|table` - Output format (default: table)
+- `--folder-ids ID1,ID2,...` - Extract content from specific folder(s)
+- `--recursive` - Include all subfolders when using `--folder-ids`
+  - **Note**: Only works for dashboards and looks
+  - Other content types will filter in-memory
 
 ### Restoration Configuration
 
@@ -592,6 +745,10 @@ src/lookervault/
 - `--max-retries N` - Max retry attempts for transient errors (default: 5)
 - `--dry-run` - Validate without making changes
 - `--json` - JSON output for scripting
+- `--folder-ids ID1,ID2,...` - Restore content to specific folder(s)
+- `--recursive` - Include all subfolders when using `--folder-ids`
+  - **Note**: Defaults to specific folder replacement
+  - Useful for targeted content restoration
 
 ### Environment Variables
 

@@ -34,24 +34,65 @@ class ContentRepository(Protocol):
     """Protocol for content storage operations."""
 
     def save_content(self, item: ContentItem) -> None:
-        """Save or update a content item.
+        """Save or update a content item in the storage repository.
+
+        This method provides an idempotent way to persist content items. If an item with the same
+        ID already exists, it will be updated with the new content details. If no existing item is
+        found, a new item will be created.
+
+        This method is typically used during content extraction and syncing processes to maintain
+        a comprehensive local representation of Looker content.
 
         Args:
-            item: ContentItem to persist
+            item: A ContentItem object representing the Looker content to be saved.
+                  This includes metadata like ID, name, owner, timestamps, and the actual content data.
 
         Raises:
-            StorageError: If save fails
+            StorageError: If the save operation encounters a database-related error,
+                          such as connection issues, constraint violations, or transaction failures.
+
+        Examples:
+            >>> repository.save_content(
+            ...     ContentItem(
+            ...         id="dashboard_123",
+            ...         name="Sales Performance Dashboard",
+            ...         content_type=ContentType.DASHBOARD.value,
+            ...         content_data=dashboard_json,
+            ...         created_at=datetime.now(),
+            ...         updated_at=datetime.now(),
+            ...     )
+            ... )
         """
         ...
 
     def get_content(self, content_id: str) -> ContentItem | None:
-        """Retrieve content by ID.
+        """Retrieve a specific content item from the storage repository by its unique identifier.
+
+        This method allows for fetching a single content item using its unique ID. It returns the full
+        content details if found, or None if no matching content exists.
 
         Args:
-            content_id: Unique content identifier
+            content_id: A unique string identifier for the content item.
+                        This is typically the original Looker content ID.
 
         Returns:
-            ContentItem if found, None otherwise
+            A ContentItem object containing the full details of the requested content,
+            or None if no content is found with the given ID.
+
+        Raises:
+            StorageError: If there's an error accessing the storage during retrieval.
+
+        Examples:
+            >>> dashboard = repository.get_content("dashboard_123")
+            >>> if dashboard:
+            ...     print(f"Dashboard Name: {dashboard.name}")
+            >>> # If no dashboard found, returns None
+
+            >>> # Handling potential storage errors
+            >>> try:
+            ...     content = repository.get_content("dashboard_456")
+            ... except StorageError as e:
+            ...     print(f"Could not retrieve content: {e}")
         """
         ...
 
@@ -62,16 +103,45 @@ class ContentRepository(Protocol):
         limit: int | None = None,
         offset: int = 0,
     ) -> Sequence[ContentItem]:
-        """List content items by type.
+        """Retrieve a list of content items filtered by content type with optional pagination.
+
+        This method allows fetching a collection of content items with flexible filtering and
+        pagination support. By default, it returns only non-deleted items, but can be configured
+        to include soft-deleted items as well.
+
+        The method is typically used for bulk content retrieval, supporting scenarios like content
+        export, migration, or comprehensive content analysis.
 
         Args:
-            content_type: ContentType enum value
-            include_deleted: Include soft-deleted items
-            limit: Maximum items to return
-            offset: Pagination offset
+            content_type: An integer representing the content type (e.g., DASHBOARD, LOOK).
+                          Use ContentType enum values to specify the desired content type.
+            include_deleted: If True, includes soft-deleted items in the result.
+                             If False (default), only returns active (non-deleted) items.
+            limit: Maximum number of items to return. Useful for pagination and
+                   preventing large memory allocations. If None, returns all matching items.
+            offset: Number of items to skip before starting to return results.
+                    Used for pagination to implement page-based content retrieval.
 
         Returns:
-            Sequence of ContentItem objects
+            A sequence of ContentItem objects matching the specified criteria.
+            Items are ordered by their update timestamp in descending order.
+
+        Raises:
+            StorageError: If there's an error accessing the storage during retrieval.
+
+        Examples:
+            >>> # Retrieve all active dashboards
+            >>> dashboards = repository.list_content(
+            ...     content_type=ContentType.DASHBOARD.value, limit=100, offset=0
+            ... )
+            >>> print(f"Found {len(dashboards)} dashboards")
+
+            >>> # Include soft-deleted looks with pagination
+            >>> deleted_looks = repository.list_content(
+            ...     content_type=ContentType.LOOK.value, include_deleted=True, limit=50, offset=100
+            ... )
+            >>> for look in deleted_looks:
+            ...     print(f"Deleted Look: {look.name}")
         """
         ...
 
@@ -80,40 +150,131 @@ class ContentRepository(Protocol):
         content_type: int,
         include_deleted: bool = False,
     ) -> int:
-        """Count content items by type.
+        """Count the number of content items for a specific content type.
+
+        This method provides a quick way to determine the total number of items
+        for a given content type. By default, it only counts active (non-deleted) items,
+        but can be configured to include soft-deleted items as well.
+
+        Useful for generating statistics, understanding content volume, or
+        implementing pagination logic in content retrieval workflows.
 
         Args:
-            content_type: ContentType enum value
-            include_deleted: Include soft-deleted items
+            content_type: An integer representing the content type (e.g., DASHBOARD, LOOK).
+                          Use ContentType enum values to specify the desired content type.
+            include_deleted: If True, includes soft-deleted items in the count.
+                             If False (default), only counts active (non-deleted) items.
 
         Returns:
-            Total count of matching items
+            The total number of content items matching the specified criteria.
+
+        Raises:
+            StorageError: If there's an error accessing the storage during counting.
+
+        Examples:
+            >>> # Count active dashboards
+            >>> dashboard_count = repository.count_content(content_type=ContentType.DASHBOARD.value)
+            >>> print(f"Total active dashboards: {dashboard_count}")
+
+            >>> # Count all dashboards, including soft-deleted
+            >>> total_dashboard_count = repository.count_content(
+            ...     content_type=ContentType.DASHBOARD.value, include_deleted=True
+            ... )
+            >>> print(f"Total dashboards (including deleted): {total_dashboard_count}")
         """
         ...
 
     def delete_content(self, content_id: str, soft: bool = True) -> None:
-        """Delete content item.
+        """Delete a content item from the storage repository.
+
+        This method provides two deletion strategies:
+        1. Soft Delete (default): Marks the content as deleted without removing it from the database.
+           Allows for potential recovery and maintains historical record.
+        2. Hard Delete: Permanently removes the content item from the database.
+
+        Soft delete is recommended in most cases to preserve data integrity and
+        support potential restoration or auditing workflows.
 
         Args:
-            content_id: Unique content identifier
-            soft: If True, soft delete. If False, hard delete.
+            content_id: A unique string identifier for the content item to be deleted.
+                        This is typically the original Looker content ID.
+            soft: Deletion strategy flag:
+                  - True (default): Performs a soft delete by setting a deletion timestamp
+                  - False: Permanently removes the content item from the database
 
         Raises:
-            NotFoundError: If content doesn't exist
+            NotFoundError: If no content item is found with the specified content_id.
+                           This prevents silent failures when attempting to delete
+                           non-existent content.
+            StorageError: If there's an error during the deletion process, such as
+                          database connection issues or transaction failures.
+
+        Examples:
+            >>> # Soft delete a dashboard
+            >>> repository.delete_content("dashboard_123")
+            >>> # Hard delete a look
+            >>> repository.delete_content("look_456", soft=False)
+
+            >>> # Handling potential errors
+            >>> try:
+            ...     repository.delete_content("nonexistent_789")
+            ... except NotFoundError as e:
+            ...     print(f"Deletion failed: {e}")
         """
         ...
 
     def save_checkpoint(self, checkpoint: Checkpoint) -> int:
-        """Save extraction checkpoint.
+        """Save an extraction checkpoint to enable resumable content synchronization.
+
+        This method allows storing detailed information about a specific extraction process,
+        capturing its progress, state, and potential errors. It supports resumable extraction
+        by providing a mechanism to track and recover interrupted sync processes.
+
+        Key features:
+        - Idempotent checkpoint saving
+        - Captures comprehensive extraction state
+        - Supports retrying or resuming interrupted extractions
+        - Thread-safe with optimized transaction handling
 
         Args:
-            checkpoint: Checkpoint object
+            checkpoint: A Checkpoint object containing extraction session metadata.
+                        This includes:
+                        - session_id: Unique identifier for the extraction session
+                        - content_type: Type of content being extracted
+                        - checkpoint_data: Arbitrary JSON-serializable state data
+                        - started_at: Timestamp when extraction began
+                        - completed_at: Optional timestamp of extraction completion
+                        - item_count: Number of items processed during this checkpoint
+                        - error_message: Optional error details if extraction encountered issues
 
         Returns:
-            Checkpoint ID
+            An integer representing the unique database ID of the saved checkpoint.
+            This ID can be used for future reference, updating, or resuming the checkpoint.
 
         Raises:
-            StorageError: If save fails
+            StorageError: If the checkpoint cannot be saved due to:
+                          - Database connection issues
+                          - Transaction failures
+                          - Constraint violations
+                          - Other database-related errors
+
+        Examples:
+            >>> # Save a checkpoint during dashboard extraction
+            >>> checkpoint = Checkpoint(
+            ...     session_id="extraction_2025_06_15",
+            ...     content_type=ContentType.DASHBOARD.value,
+            ...     checkpoint_data={"last_processed_id": "dashboard_456"},
+            ...     started_at=datetime.now(),
+            ...     item_count=50,
+            ... )
+            >>> checkpoint_id = repository.save_checkpoint(checkpoint)
+            >>> print(f"Checkpoint saved with ID: {checkpoint_id}")
+
+            >>> # Handling potential storage errors
+            >>> try:
+            ...     repository.save_checkpoint(checkpoint)
+            ... except StorageError as e:
+            ...     print(f"Checkpoint save failed: {e}")
         """
         ...
 

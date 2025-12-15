@@ -213,9 +213,7 @@ class RestorationConfig(BaseModel):
         ... )
 
         >>> # Dry run mode (no actual API calls)
-        >>> config = RestorationConfig(
-        ...     destination_instance="https://looker.example.com", dry_run=True
-        ... )
+        >>> config = RestorationConfig(destination_instance="https://looker.example.com", dry_run=True)
 
         >>> # High-throughput restoration
         >>> config = RestorationConfig(

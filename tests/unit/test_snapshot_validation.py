@@ -51,9 +51,9 @@ class TestBucketNameValidation:
         for name, expected_msg in invalid_cases:
             is_valid, msg = validate_gcs_bucket_name(name)
             assert not is_valid, f"Expected '{name}' to be invalid"
-            assert expected_msg.lower() in msg.lower(), (
-                f"Expected error message to contain '{expected_msg}', got: {msg}"
-            )
+            assert (
+                expected_msg.lower() in msg.lower()
+            ), f"Expected error message to contain '{expected_msg}', got: {msg}"
 
     def test_bucket_name_normalization(self) -> None:
         """Test that bucket names are normalized to lowercase."""
@@ -115,9 +115,9 @@ class TestRegionValidation:
         for region, expected_msg in invalid_cases:
             is_valid, msg = validate_gcs_region(region)
             assert not is_valid, f"Expected '{region}' to be invalid"
-            assert expected_msg in msg, (
-                f"Expected error message to contain '{expected_msg}', got: {msg}"
-            )
+            assert (
+                expected_msg in msg
+            ), f"Expected error message to contain '{expected_msg}', got: {msg}"
 
     def test_region_suggestions(self) -> None:
         """Test that validation provides helpful suggestions for similar regions."""

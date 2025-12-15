@@ -223,7 +223,7 @@ class RestorationValidator:
 
         # Type validation for common fields
         if "id" in content_dict and content_dict["id"] is not None:
-            if not isinstance(content_dict["id"], (str, int)):
+            if not isinstance(content_dict["id"], str | int):
                 errors.append(
                     f"Field 'id' must be string or integer, got {type(content_dict['id']).__name__}"
                 )
@@ -233,7 +233,7 @@ class RestorationValidator:
         for fk_field in fk_fields:
             if fk_field in content_dict and content_dict[fk_field] is not None:
                 # Most FKs are strings or integers
-                if not isinstance(content_dict[fk_field], (str, int, list)):
+                if not isinstance(content_dict[fk_field], str | int | list):
                     errors.append(
                         f"Foreign key field '{fk_field}' must be string, integer, or list, "
                         f"got {type(content_dict[fk_field]).__name__}"

@@ -451,7 +451,7 @@ class ExtractionOrchestrator:
                         created_at = datetime.fromisoformat(created_at_val.replace("Z", "+00:00"))
                     elif isinstance(created_at_val, datetime):
                         created_at = created_at_val
-                    elif isinstance(created_at_val, (int, float)):
+                    elif isinstance(created_at_val, int | float):
                         # Unix timestamp
                         created_at = datetime.fromtimestamp(created_at_val, tz=UTC)
                     else:
@@ -471,7 +471,7 @@ class ExtractionOrchestrator:
                         updated_at = datetime.fromisoformat(updated_at_val.replace("Z", "+00:00"))
                     elif isinstance(updated_at_val, datetime):
                         updated_at = updated_at_val
-                    elif isinstance(updated_at_val, (int, float)):
+                    elif isinstance(updated_at_val, int | float):
                         # Unix timestamp
                         updated_at = datetime.fromtimestamp(updated_at_val, tz=UTC)
                     else:
