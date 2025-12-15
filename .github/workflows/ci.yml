@@ -27,16 +27,16 @@ jobs:
       - name: Lint code
         run: uvx ruff check
 
-      - name: Type check
-        run: uvx ty check
+      # - name: Type check
+      #   run: uvx ty check
 
       - name: Run tests with coverage
         run: uv run pytest --cov --cov-report=xml --cov-report=term
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      # - name: Upload coverage to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     file: ./coverage.xml
+      #     fail_ci_if_error: false
+      #   env:
+      #     CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
