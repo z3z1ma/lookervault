@@ -303,6 +303,86 @@ enabled = false        # Disable retention policy
 
 **See**: [specs/005-cloud-snapshot-storage/quickstart.md](specs/005-cloud-snapshot-storage/quickstart.md) for detailed workflows and best practices
 
+#### Snapshot Workflow Examples
+
+**Retention Policy Cleanup**:
+```bash
+# Preview cleanup (dry-run - default behavior)
+lookervault snapshot cleanup
+
+# Expected output:
+# [DRY-RUN] Retention Policy Cleanup Preview
+# Snapshots to protect (5 most recent): 5 snapshots
+# Snapshots to delete (older than 90 days): 2 snapshots
+#   ✗ looker-2025-09-10T14-30-00.db.gz (95 days old, 98.2 MB)
+#   ✗ looker-2025-09-05T14-30-00.db.gz (100 days old, 97.8 MB)
+# [DRY-RUN] Would delete 2 snapshots, saving 196.0 MB.
+
+# Execute cleanup (requires --no-dry-run and --force)
+lookervault snapshot cleanup --no-dry-run --force
+
+# Automate daily cleanup (cron job at 3 AM)
+# Add to crontab: 0 3 * * * cd /path/to/lookervault && lookervault snapshot cleanup --no-dry-run --force
+```
+
+**Download with Filtering**:
+```bash
+# List snapshots with filters
+lookervault snapshot list --limit 10                    # Show 10 most recent
+lookervault snapshot list --filter "2025-12"            # December 2025 snapshots
+lookervault snapshot list --filter "last-7-days"        # Last week
+lookervault snapshot list --verbose                     # Detailed metadata
+
+# Download to custom location
+lookervault snapshot download 1 --output /backups/looker-recovery.db
+
+# Overwrite existing file
+lookervault snapshot download 1 --output looker.db --overwrite
+
+# Filter by name pattern and download
+lookervault snapshot list --filter "2025-12-13" | jq '.snapshots[0].sequential_index' | xargs lookervault snapshot download
+```
+
+**Restore from Specific Snapshot**:
+```bash
+# Restore from snapshot by sequential index
+lookervault restore dashboards --from-snapshot 1         # Most recent
+lookervault restore dashboards --from-snapshot 5         # 5th most recent
+
+# Restore from snapshot with timestamp reference
+lookervault snapshot list --filter "2025-12-13T14-30"   # Find snapshot index
+lookervault restore dashboards --from-snapshot 3         # Use index from list
+
+# Restore multiple content types from snapshot
+lookervault restore dashboards looks folders --from-snapshot 3
+
+# Dry-run first to preview restoration
+lookervault restore dashboards --from-snapshot 3 --dry-run
+
+# Full restoration workflow from cloud snapshot
+lookervault snapshot list                                # 1. List available snapshots
+lookervault snapshot download 7 --output /tmp/test.db    # 2. Download for testing
+lookervault restore dashboards --from-snapshot 7 --dry-run  # 3. Test restore
+lookervault restore dashboards --from-snapshot 7         # 4. Execute restore
+```
+
+**Daily Backup Automation**:
+```bash
+# Create automated backup script (~/bin/lookervault-daily-backup.sh)
+#!/bin/bash
+set -euo pipefail
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+cd /path/to/lookervault
+lookervault extract --workers 8
+lookervault snapshot upload --json > /tmp/upload-result.json
+echo "$(date): Backup complete" >> /var/log/lookervault-backup.log
+
+# Make executable and add to crontab (daily at 2 AM)
+# chmod +x ~/bin/lookervault-daily-backup.sh
+# crontab -e
+# 0 2 * * * /home/user/bin/lookervault-daily-backup.sh
+```
+
 ### 📝 YAML Export/Import Workflow
 
 Modify Looker content in bulk using human-editable YAML files with the `unpack` and `pack` commands. Edit dashboards, looks, and other content through simple text manipulation.
