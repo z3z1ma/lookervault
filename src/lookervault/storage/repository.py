@@ -292,6 +292,23 @@ class SQLiteContentRepository:
         """
         self.close_thread_connection()
 
+    def get_schema_version(self) -> int:
+        """Get current database schema version.
+
+        Returns:
+            Current schema version number
+
+        Raises:
+            StorageError: If schema version cannot be retrieved
+        """
+        from lookervault.storage.schema import get_schema_version
+
+        conn = self._get_connection()
+        version = get_schema_version(conn)
+        if version is None:
+            raise StorageError("Database schema version not found")
+        return version
+
     def _retry_on_busy(
         self,
         operation: Callable[[], T],

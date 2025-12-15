@@ -27,7 +27,7 @@ from rich.progress import (
 
 from lookervault.export.checksum import compute_export_checksum
 from lookervault.export.folder_tree import FolderTreeBuilder, FolderTreeNode
-from lookervault.export.metadata import MetadataManager
+from lookervault.export.metadata import ExportStrategy, MetadataManager
 from lookervault.export.yaml_serializer import YamlSerializer
 from lookervault.storage.models import ContentItem, ContentType
 from lookervault.storage.repository import ContentRepository
@@ -213,10 +213,11 @@ class ContentUnpacker:
 
         # Generate metadata
         metadata = self._metadata_manager.generate_metadata(
-            strategy="full",
-            content_counts=content_type_counts,
+            strategy=ExportStrategy.FULL,
+            content_type_counts=content_type_counts,
+            database_schema_version=self._repository.get_schema_version(),
+            source_database=db_path,
             folder_map=None,
-            source_database=str(db_path),
             checksum=export_checksum,
         )
 
@@ -391,10 +392,11 @@ class ContentUnpacker:
 
         # Generate metadata
         metadata = self._metadata_manager.generate_metadata(
-            strategy="folder",
-            content_counts=content_type_counts,
+            strategy=ExportStrategy.FOLDER,
+            content_type_counts=content_type_counts,
+            database_schema_version=self._repository.get_schema_version(),
+            source_database=db_path,
             folder_map=folder_map,
-            source_database=str(db_path),
             checksum=export_checksum,
         )
 
