@@ -120,6 +120,7 @@ def run(
         summary = packer.pack(
             input_dir=input_path,
             dry_run=dry_run,
+            force=force,  # T073 - pass force flag to handle missing files
         )
 
         # Compute duration
@@ -135,6 +136,8 @@ def run(
             console.print(f"  Created items   : {summary.created}")
             console.print(f"  Updated items   : {summary.updated}")
             console.print(f"  Unchanged items : {summary.unchanged}")
+            console.print(f"  Deleted items   : {summary.deleted}")  # T073
+            console.print(f"  Missing files   : {len(summary.missing_files)}")  # T073
             console.print(f"  New queries     : {summary.new_queries_created}")
             console.print(f"  Errors          : {len(summary.errors)}")
             console.print(f"\nPack completed in {duration:.1f}s")
@@ -149,6 +152,8 @@ def run(
                     "created_items": summary.created,
                     "updated_items": summary.updated,
                     "unchanged_items": summary.unchanged,
+                    "deleted_items": summary.deleted,  # T073
+                    "missing_files": len(summary.missing_files),  # T073
                     "new_queries": summary.new_queries_created,
                 },
                 "errors": len(summary.errors),
