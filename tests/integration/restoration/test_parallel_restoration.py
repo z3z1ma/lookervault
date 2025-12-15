@@ -147,7 +147,9 @@ class TestParallelRestorationEndToEnd:
         assert result.success_count >= 0  # Depends on implementation
         assert isinstance(result.duration_seconds, float)
 
-    @pytest.mark.skip(reason="Test overcoupled to implementation details - worker thread tracking not currently supported")
+    @pytest.mark.skip(
+        reason="Test overcoupled to implementation details - worker thread tracking not currently supported"
+    )
     def test_worker_thread_coordination(self, orchestrator, repository, mock_client, config):
         """Test multiple worker threads coordinate correctly."""
         # Setup: Insert 50 items to ensure parallel processing
@@ -181,7 +183,9 @@ class TestParallelRestorationEndToEnd:
         # Assert: Multiple threads were used
         assert len(thread_ids) > 1, "Expected multiple worker threads to be used"
 
-    @pytest.mark.skip(reason="Test overcoupled to implementation details - checkpoint flow needs updating")
+    @pytest.mark.skip(
+        reason="Test overcoupled to implementation details - checkpoint flow needs updating"
+    )
     def test_checkpoint_and_resume_flow(self, orchestrator, repository, mock_client, config):
         """Test checkpoint saving and resume functionality with real database."""
         # Setup: Insert 30 items
@@ -213,8 +217,9 @@ class TestParallelRestorationEndToEnd:
         # Execute first restoration (will fail partway through)
         try:
             orchestrator.restore(ContentType.DASHBOARD, config.session_id)
-        except Exception:
-            pass  # Expected to fail
+        except Exception as e:
+            # Expected to fail after processing 3 items
+            assert "Simulated failure" in str(e) or "RuntimeError" in str(type(e).__name__)
 
         # Verify checkpoint was saved
         checkpoint = repository.get_latest_restoration_checkpoint(ContentType.DASHBOARD.value)
@@ -231,7 +236,9 @@ class TestParallelRestorationEndToEnd:
         assert result.total_items > 0
         assert result.total_items < 30  # Should be less than original total
 
-    @pytest.mark.skip(reason="DLQ integration has SQLite datatype mismatch - needs schema investigation")
+    @pytest.mark.skip(
+        reason="DLQ integration has SQLite datatype mismatch - needs schema investigation"
+    )
     def test_dlq_integration_on_errors(self, orchestrator, repository, mock_client, dlq, config):
         """Test DLQ captures failures during parallel restoration."""
         # Setup: Insert 10 items
@@ -311,7 +318,9 @@ class TestThreadSafeDatabaseOperations:
         # Assert: No errors from concurrent saves
         assert len(errors) == 0, f"Concurrent checkpoint saves failed: {errors}"
 
-    @pytest.mark.skip(reason="DLQ concurrent operations have SQLite datatype mismatch - needs schema investigation")
+    @pytest.mark.skip(
+        reason="DLQ concurrent operations have SQLite datatype mismatch - needs schema investigation"
+    )
     def test_concurrent_dlq_adds(self, repository):
         """Test concurrent DLQ item additions don't cause race conditions."""
         # Setup
@@ -437,8 +446,10 @@ class TestParallelRestorationPerformance:
         )
 
         start = time.time()
-        result_sequential = orchestrator_sequential.restore(ContentType.DASHBOARD, config_sequential.session_id)
-        duration_sequential = time.time() - start
+        result_sequential = orchestrator_sequential.restore(
+            ContentType.DASHBOARD, config_sequential.session_id
+        )
+        _duration_sequential = time.time() - start
 
         # Test parallel (4 workers)
         config_parallel = Mock()
@@ -462,8 +473,10 @@ class TestParallelRestorationPerformance:
         mock_client.sdk.create_dashboard.side_effect = create_with_delay
 
         start = time.time()
-        result_parallel = orchestrator_parallel.restore(ContentType.DASHBOARD, config_parallel.session_id)
-        duration_parallel = time.time() - start
+        result_parallel = orchestrator_parallel.restore(
+            ContentType.DASHBOARD, config_parallel.session_id
+        )
+        _duration_parallel = time.time() - start
 
         # Assert: Parallel is faster than sequential
         # Note: This may be flaky depending on test environment
@@ -524,7 +537,9 @@ class TestParallelRestorationPerformance:
 class TestErrorRecoveryScenarios:
     """Test error recovery and resilience in parallel restoration."""
 
-    def test_recovery_from_transient_network_errors(self, orchestrator, repository, mock_client, config):
+    def test_recovery_from_transient_network_errors(
+        self, orchestrator, repository, mock_client, config
+    ):
         """Test system recovers from transient network errors."""
         # Setup: Insert items
         for i in range(1, 11):

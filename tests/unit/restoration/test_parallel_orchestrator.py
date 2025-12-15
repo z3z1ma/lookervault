@@ -14,8 +14,7 @@ Test Coverage:
 - Thread safety and worker coordination
 """
 
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -609,7 +608,7 @@ class TestParallelOrchestratorResume:
         )
 
         # Execute
-        result = orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
+        _result = orchestrator.resume(ContentType.DASHBOARD, mock_config.session_id)
 
         # Assert: only IDs ["3", "4"] should be processed
         assert mock_restorer.restore_single.call_count == 2
