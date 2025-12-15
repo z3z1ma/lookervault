@@ -1,6 +1,7 @@
 """CLI commands for snapshot operations."""
 
 import logging
+import re
 from pathlib import Path
 
 import typer
@@ -27,6 +28,9 @@ EXIT_VALIDATION_ERROR = 2
 @app.command()
 def upload(
     source: str = typer.Option("./looker.db", help="Path to local database file"),
+    name: str | None = typer.Option(
+        None, help="Custom snapshot name prefix (e.g., 'pre-migration', 'test-run')"
+    ),
     compress: bool = typer.Option(True, help="Enable gzip compression"),
     compression_level: int = typer.Option(6, help="Gzip compression level (1-9)"),
     dry_run: bool = typer.Option(False, help="Preview upload without executing"),
@@ -44,6 +48,10 @@ def upload(
     Examples:
         # Upload with default settings
         lookervault snapshot upload
+
+        # Upload with custom name for context
+        lookervault snapshot upload --name pre-migration
+        # Creates: pre-migration-2025-12-14T12-00-00.db.gz
 
         # Upload specific file with maximum compression
         lookervault snapshot upload --source /path/to/backup.db --compression-level 9
@@ -94,10 +102,22 @@ def upload(
             print_error(f"Source file not found: {source_path}")
             raise typer.Exit(EXIT_VALIDATION_ERROR)
 
-        # Override compression settings if provided
+        # Validate custom snapshot name if provided
+        if name:
+            # Name must match pattern: lowercase letters, digits, underscores, hyphens
+            if not re.match(r"^[a-z0-9_-]+$", name):
+                print_error(
+                    f"Invalid snapshot name: '{name}'\n"
+                    "Name must contain only lowercase letters, digits, underscores, and hyphens"
+                )
+                raise typer.Exit(EXIT_VALIDATION_ERROR)
+
+        # Override compression settings and snapshot name if provided
         provider_config = cfg.snapshot.provider.model_copy()
         provider_config.compression_enabled = compress
         provider_config.compression_level = compression_level
+        if name:
+            provider_config.filename_prefix = name
 
         # Perform upload
         try:
