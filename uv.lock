@@ -293,7 +293,7 @@ wheels = [
 
 [[package]]
 name = "looker-sdk"
-version = "24.0.0"
+version = "25.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -301,9 +301,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/71/67c46cc387d6ccd53edf86638b2c69f1bbae208f31b7c43ce8cf51688be2/looker_sdk-24.0.0.tar.gz", hash = "sha256:a670dc4b1466b5024b84488ea4293ef3658d944fdf7f76eca91a1730bf5a52e3", size = 203186, upload-time = "2024-02-03T01:30:50.071Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/50/b772b449fdcea21e778b30b63b3c4362c500966d7397e80b1ea0a1116d1b/looker_sdk-25.20.0.tar.gz", hash = "sha256:298dbe12b45a7192b499253d731b72e37b3f12c3f543467a39e3c4698152fbd4", size = 218926, upload-time = "2025-11-05T20:38:11.665Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/20/787d76ce3bc401ef4af810d31924a3a2eb7e9f7da4a911c4a73343e62599/looker_sdk-24.0.0-py3-none-any.whl", hash = "sha256:56252f4389094bdb5f6b0c677a204922173acdad0260a8b9f6ce6f7be3711558", size = 224684, upload-time = "2024-02-03T01:30:46.785Z" },
+    { url = "https://files.pythonhosted.org/packages/00/94/20e7df982f551e7e94eeec38d6554574de4260f095d94d6836264843f565/looker_sdk-25.20.0-py3-none-any.whl", hash = "sha256:a306af96aa342fe9e44d6dbe6d6163551047ee3e2f4663889daceb6e99de618b", size = 240161, upload-time = "2025-11-05T20:38:10.272Z" },
 ]
 
 [[package]]
