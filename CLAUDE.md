@@ -717,7 +717,7 @@ elements:
       model: "sales"
       view: "transactions"
       fields: ["transactions.total_revenue"]
-      
+
 _metadata:
   db_id: "123"
   content_type: "DASHBOARD"
@@ -803,11 +803,11 @@ lookervault restore bulk dashboards            # Looker restoration
 ```bash
 # Cloud backup workflow
 lookervault extract --workers 16               # Extract to SQLite
-lookervault snapshot push --name "pre-mod"     # Backup to GCS
+lookervault snapshot upload --name "pre-mod"   # Backup to GCS
 lookervault unpack --output-dir export/        # Export to YAML
 # [Modify YAML files]
 lookervault pack --input-dir export/           # Import changes
-lookervault snapshot push --name "post-mod"    # Backup to GCS
+lookervault snapshot upload --name "post-mod"  # Backup to GCS
 lookervault restore bulk dashboards            # Apply to Looker
 ```
 
@@ -848,7 +848,7 @@ from pathlib import Path
 for yaml_file in Path("export/dashboards").glob("*.yaml"):
     with open(yaml_file) as f:
         dashboard = yaml.safe_load(f)
-    
+
     # Update filters
     for element in dashboard.get("dashboard_elements", []):
         query = element.get("query", {})
@@ -856,7 +856,7 @@ for yaml_file in Path("export/dashboards").glob("*.yaml"):
         if "30 days" in str(filters):
             # Update time period
             filters["period"] = "90 days"
-    
+
     with open(yaml_file, "w") as f:
         yaml.dump(dashboard, f)
 ```

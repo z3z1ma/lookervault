@@ -498,7 +498,7 @@ Create snapshots before major modifications:
 
 ```bash
 # Backup to cloud
-lookervault snapshot push --name "pre-bulk-update"
+lookervault snapshot upload --name "pre-bulk-update"
 
 # Make modifications
 lookervault unpack --output-dir export/
@@ -506,10 +506,10 @@ lookervault unpack --output-dir export/
 lookervault pack --input-dir export/
 
 # Backup modified version
-lookervault snapshot push --name "post-bulk-update"
+lookervault snapshot upload --name "post-bulk-update"
 
 # Restore if needed
-lookervault snapshot pull --name "pre-bulk-update"
+lookervault snapshot download --name "pre-bulk-update"
 ```
 
 ### 5. Use Scripts for Complex Modifications
