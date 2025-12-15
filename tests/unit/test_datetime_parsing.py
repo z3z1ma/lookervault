@@ -2,8 +2,6 @@
 
 from datetime import UTC, datetime
 
-import pytest
-
 from lookervault.utils.datetime_parsing import parse_timestamp
 
 

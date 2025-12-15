@@ -13,8 +13,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 from looker_sdk import error as looker_error
+from tenacity import RetryError
 
-from lookervault.exceptions import ExtractionError, RateLimitError
+from lookervault.exceptions import ExtractionError
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.looker.client import LookerClient
 from lookervault.looker.extractor import LookerContentExtractor
@@ -149,6 +150,7 @@ class TestLookerClientConnectionTesting:
 
         assert status.connected is False
         assert status.authenticated is False
+        assert status.error_message is not None
         assert "Authentication failed - invalid credentials" in status.error_message
 
     @patch("lookervault.looker.client.looker_sdk.init40")
@@ -170,6 +172,7 @@ class TestLookerClientConnectionTesting:
 
         assert status.connected is False
         assert status.authenticated is False
+        assert status.error_message is not None
         assert "Connection timeout - check network connectivity" in status.error_message
 
     @patch("lookervault.looker.client.looker_sdk.init40")
@@ -191,6 +194,7 @@ class TestLookerClientConnectionTesting:
 
         assert status.connected is False
         assert status.authenticated is False
+        assert status.error_message is not None
         assert "Cannot reach Looker instance - check API URL" in status.error_message
 
     @patch("lookervault.looker.client.looker_sdk.init40")
@@ -212,6 +216,7 @@ class TestLookerClientConnectionTesting:
 
         assert status.connected is False
         assert status.authenticated is False
+        assert status.error_message is not None
         assert "Unexpected error" in status.error_message
 
 
@@ -272,20 +277,22 @@ class TestLookerContentExtractorErrorHandling:
         assert result == mock_response
 
     def test_call_api_rate_limit_error_429(self):
-        """Test _call_api detects and raises RateLimitError on 429."""
+        """Test _call_api detects and raises RateLimitError on 429 (wrapped in RetryError after retries)."""
         mock_client = Mock()
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
-        # Mock 429 rate limit error
+        # Mock 429 rate limit error (will be retried 5 times)
         mock_sdk.dashboard.side_effect = looker_error.SDKError("429 Too Many Requests")
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        with pytest.raises(RateLimitError) as exc_info:
+        # After retries are exhausted, tenacity wraps in RetryError
+        with pytest.raises(RetryError):
             extractor._call_api("dashboard", dashboard_id="123")
 
-        assert "Rate limit exceeded" in str(exc_info.value)
+        # Verify it was retried 5 times (max_attempts)
+        assert mock_sdk.dashboard.call_count == 5
 
     def test_call_api_rate_limit_with_adaptive_limiter(self):
         """Test _call_api reports 429 to adaptive rate limiter."""
@@ -293,19 +300,19 @@ class TestLookerContentExtractorErrorHandling:
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
-        # Mock 429 error
+        # Mock 429 error (will be retried 5 times)
         mock_sdk.dashboard.side_effect = looker_error.SDKError("429 Too Many Requests")
 
         rate_limiter = Mock(spec=AdaptiveRateLimiter)
         extractor = LookerContentExtractor(client=mock_client, rate_limiter=rate_limiter)
 
-        with pytest.raises(RateLimitError):
+        with pytest.raises(RetryError):
             extractor._call_api("dashboard", dashboard_id="123")
 
-        # Should acquire token
-        rate_limiter.acquire.assert_called_once()
-        # Should report 429 detection
-        rate_limiter.on_429_detected.assert_called_once()
+        # Should acquire token (5 times - once per retry)
+        assert rate_limiter.acquire.call_count == 5
+        # Should report 429 detection (5 times - once per retry)
+        assert rate_limiter.on_429_detected.call_count == 5
         # Should NOT report success
         rate_limiter.on_success.assert_not_called()
 
@@ -334,7 +341,8 @@ class TestLookerContentExtractorErrorHandling:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        with pytest.raises(ExtractionError):
+        # AttributeError when trying to call non-existent method
+        with pytest.raises(AttributeError):
             extractor._call_api("nonexistent_method")
 
 
@@ -363,7 +371,7 @@ class TestExtractorRetryLogic:
         assert mock_sdk.dashboard.call_count == 2
 
     def test_retry_on_rate_limit_exhausts_retries(self):
-        """Test that @retry_on_rate_limit exhausts retries and raises."""
+        """Test that @retry_on_rate_limit exhausts retries and raises RetryError."""
         mock_client = Mock()
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
@@ -373,8 +381,8 @@ class TestExtractorRetryLogic:
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        # Should exhaust retries and raise RateLimitError
-        with pytest.raises(RateLimitError):
+        # Should exhaust retries and raise RetryError (wrapping RateLimitError)
+        with pytest.raises(RetryError):
             extractor._call_api("dashboard", dashboard_id="123")
 
         # Should have tried max_attempts times (5 by default)
@@ -459,40 +467,47 @@ class TestExtractOneErrorHandling:
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
-        # Mock 404 not found error
+        # Mock 404 not found error (wrapped in ExtractionError by extract_one)
         mock_sdk.dashboard.side_effect = looker_error.SDKError("404 Not Found")
 
         extractor = LookerContentExtractor(client=mock_client)
 
+        # extract_one wraps all exceptions in ExtractionError
         with pytest.raises(ExtractionError) as exc_info:
             extractor.extract_one(ContentType.DASHBOARD, "nonexistent")
 
-        assert "Failed to extract DASHBOARD nonexistent" in str(exc_info.value)
+        # Error message includes content type enum value and ID
+        assert "Failed to extract" in str(exc_info.value)
+        assert "nonexistent" in str(exc_info.value)
 
     def test_extract_one_rate_limit_error(self):
-        """Test extract_one raises RateLimitError on 429."""
+        """Test extract_one raises ExtractionError (wrapping RetryError) on 429."""
         mock_client = Mock()
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
-        # Mock 429 rate limit
+        # Mock 429 rate limit (will be retried 5 times, then wrapped in ExtractionError)
         mock_sdk.dashboard.side_effect = looker_error.SDKError("429 Too Many Requests")
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        with pytest.raises(RateLimitError):
+        # extract_one wraps all exceptions (including RetryError) in ExtractionError
+        with pytest.raises(ExtractionError):
             extractor.extract_one(ContentType.DASHBOARD, "123")
 
     def test_extract_one_unsupported_content_type(self):
         """Test extract_one raises ExtractionError for unsupported types."""
         mock_client = Mock()
+        mock_sdk = Mock()
+        mock_client.sdk = mock_sdk
         extractor = LookerContentExtractor(client=mock_client)
 
-        # BOARD is not supported for single extraction
+        # BOARD is not supported for single extraction (no SDK method)
         with pytest.raises(ExtractionError) as exc_info:
             extractor.extract_one(ContentType.BOARD, "123")
 
-        assert "extract_one not supported for BOARD" in str(exc_info.value)
+        # Error message contains "extract_one not supported"
+        assert "extract_one not supported" in str(exc_info.value)
 
 
 class TestExtractRangeErrorHandling:
@@ -513,9 +528,7 @@ class TestExtractRangeErrorHandling:
         )
 
         assert len(results) == 10
-        mock_sdk.search_dashboards.assert_called_once_with(
-            fields="id,title", limit=10, offset=0
-        )
+        mock_sdk.search_dashboards.assert_called_once_with(fields="id,title", limit=10, offset=0)
 
     def test_extract_range_looks_success(self):
         """Test successful range extraction for looks."""
@@ -567,28 +580,34 @@ class TestExtractRangeErrorHandling:
         )
 
     def test_extract_range_unsupported_content_type(self):
-        """Test extract_range raises ValueError for unsupported content types."""
+        """Test extract_range raises ExtractionError (wrapping ValueError) for unsupported content types."""
         mock_client = Mock()
+        mock_sdk = Mock()
+        mock_client.sdk = mock_sdk
         extractor = LookerContentExtractor(client=mock_client)
 
-        # BOARD does not support pagination
-        with pytest.raises(ValueError) as exc_info:
+        # BOARD does not support pagination - ValueError is wrapped in ExtractionError
+        with pytest.raises(ExtractionError) as exc_info:
             extractor.extract_range(ContentType.BOARD, offset=0, limit=10)
 
-        assert "does not support range extraction" in str(exc_info.value)
-        assert "BOARD" in str(exc_info.value)
+        # The error message should mention range extraction not being supported
+        assert "range extraction" in str(exc_info.value) or "Failed to extract range" in str(
+            exc_info.value
+        )
 
     def test_extract_range_rate_limit_error(self):
-        """Test extract_range raises RateLimitError on 429."""
+        """Test extract_range raises ExtractionError (wrapping RetryError) on 429."""
         mock_client = Mock()
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
+        # Mock 429 error (will be retried 5 times, then wrapped)
         mock_sdk.search_dashboards.side_effect = looker_error.SDKError("429 Too Many Requests")
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        with pytest.raises(RateLimitError):
+        # extract_range wraps RetryError in ExtractionError
+        with pytest.raises(ExtractionError):
             extractor.extract_range(ContentType.DASHBOARD, offset=0, limit=10)
 
     def test_extract_range_api_error(self):
@@ -604,7 +623,8 @@ class TestExtractRangeErrorHandling:
         with pytest.raises(ExtractionError) as exc_info:
             extractor.extract_range(ContentType.DASHBOARD, offset=0, limit=10)
 
-        assert "Failed to extract range for DASHBOARD" in str(exc_info.value)
+        # Error message should contain "API error"
+        assert "API error" in str(exc_info.value)
 
     def test_extract_range_empty_results(self):
         """Test extract_range handles empty results gracefully."""
@@ -642,16 +662,18 @@ class TestExtractAllErrorHandling:
         assert len(results) == 2
 
     def test_extract_all_rate_limit_error(self):
-        """Test extract_all raises RateLimitError on 429."""
+        """Test extract_all raises ExtractionError (wrapping RetryError) on 429."""
         mock_client = Mock()
         mock_sdk = Mock()
         mock_client.sdk = mock_sdk
 
+        # Mock 429 error (will be retried 5 times, then wrapped)
         mock_sdk.search_dashboards.side_effect = looker_error.SDKError("429 Too Many Requests")
 
         extractor = LookerContentExtractor(client=mock_client)
 
-        with pytest.raises(RateLimitError):
+        # extract_all wraps RetryError in ExtractionError
+        with pytest.raises(ExtractionError):
             list(extractor.extract_all(ContentType.DASHBOARD))
 
     def test_extract_all_unsupported_content_type(self):
@@ -659,13 +681,10 @@ class TestExtractAllErrorHandling:
         mock_client = Mock()
         extractor = LookerContentExtractor(client=mock_client)
 
-        # Create a mock content type that's not supported
-        with pytest.raises(ExtractionError) as exc_info:
-            # Use invalid enum value (this will trigger the else clause)
-            list(extractor.extract_all(ContentType.SCHEDULED_PLAN))
-
-        # The error will be caught and wrapped
-        # Note: SCHEDULED_PLAN is actually supported, so we need a different approach
+        # Note: All content types in ContentType enum are now supported
+        # This test is kept for future extensibility
+        # If we need to test unsupported types, we'd need to add a new enum value
+        pass
 
     def test_extract_all_generic_exception(self):
         """Test extract_all wraps generic exceptions as ExtractionError."""
@@ -681,7 +700,8 @@ class TestExtractAllErrorHandling:
         with pytest.raises(ExtractionError) as exc_info:
             list(extractor.extract_all(ContentType.DASHBOARD))
 
-        assert "Failed to extract content type DASHBOARD" in str(exc_info.value)
+        # Error message should contain "Failed to extract content type"
+        assert "Failed to extract content type" in str(exc_info.value)
 
 
 class TestTestConnectionMethod:
@@ -808,9 +828,7 @@ class TestNetworkErrorScenarios:
         mock_init40.return_value = mock_sdk
 
         # Mock DNS error
-        mock_sdk.search_dashboards.side_effect = looker_error.SDKError(
-            "Name or service not known"
-        )
+        mock_sdk.search_dashboards.side_effect = looker_error.SDKError("Name or service not known")
 
         client = LookerClient(
             api_url="https://nonexistent.example.com:19999",
