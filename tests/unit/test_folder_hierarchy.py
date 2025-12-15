@@ -13,7 +13,7 @@ from lookervault.storage.models import ContentItem, ContentType
 
 
 @pytest.fixture
-def mock_repository() -> Generator[MagicMock, None, None]:
+def mock_repository() -> Generator[MagicMock]:
     """Create mock repository with configurable folder data."""
     repo = MagicMock()
     repo._content_items: list[ContentItem] = []

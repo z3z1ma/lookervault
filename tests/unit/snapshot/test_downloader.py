@@ -3,12 +3,10 @@
 import base64
 import gzip
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import google_crc32c
 import pytest
-from google.api_core import exceptions as api_exceptions
 from google.cloud import exceptions as gcs_exceptions
 
 from lookervault.snapshot.downloader import (

@@ -3,17 +3,15 @@
 import json
 import os
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core.exceptions import Forbidden, GoogleAPICallError
+from google.api_core.exceptions import Forbidden
 
 from lookervault.snapshot.models import RetentionPolicy, SnapshotMetadata
 from lookervault.snapshot.retention import (
     AuditLogger,
     delete_old_snapshots,
-    delete_snapshot,
     evaluate_retention_policy,
     preview_cleanup,
     protect_minimum_backups,

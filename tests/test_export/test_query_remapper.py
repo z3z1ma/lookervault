@@ -1,10 +1,8 @@
 """Tests for QueryRemappingTable."""
 
-from datetime import datetime
 
-import pytest
 
-from lookervault.export.query_remapper import QueryRemapEntry, QueryRemappingTable
+from lookervault.export.query_remapper import QueryRemappingTable
 
 
 class TestQueryRemappingTable:

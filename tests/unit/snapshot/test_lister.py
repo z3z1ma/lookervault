@@ -2,7 +2,6 @@
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +10,6 @@ from lookervault.snapshot.lister import (
     BlobCache,
     filter_by_date_range,
     get_snapshot_by_index,
-    get_snapshot_by_timestamp,
     list_snapshots,
     parse_timestamp_from_filename,
 )

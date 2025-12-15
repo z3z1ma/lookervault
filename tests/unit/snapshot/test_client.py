@@ -102,7 +102,6 @@ class TestValidateBucketAccess:
 
     def test_validate_bucket_access_bucket_not_found(self):
         """Test validation fails when bucket doesn't exist."""
-        from google.cloud import exceptions as gcs_exceptions
 
         mock_client = MagicMock()
         mock_bucket = MagicMock()

@@ -1,6 +1,5 @@
 """Tests for FolderTreeBuilder."""
 
-from pathlib import Path
 
 import pytest
 
