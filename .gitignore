@@ -69,3 +69,6 @@ config.toml
 *.sqlite3-journal
 *.db-shm
 *.db-wal
+
+# bv (beads viewer) local config and caches
+.bv/

@@ -1,889 +1,129 @@
-**Note**: This project uses [bd (beads)](https://github.com/steveyegge/beads) for issue tracking. Use `bd` commands instead of markdown TODOs. See @AGENTS.md for workflow details.
+## Project Overview
+
+LookerVault is a Looker content backup/restore tool with parallel extraction, cloud storage, and YAML export/import capabilities.
+
+**Issue Tracking**: This project uses [bd (beads)](https://github.com/steveyegge/beads) for issue tracking. Use `bd` commands instead of markdown TODOs. See @AGENTS.md for workflow details.
 
 ## Package Management
 
-**IMPORTANT**: This project uses `uv` for all Python package management operations.
+**CRITICAL**: This project uses `uv` exclusively for Python package management.
 
 - **DO NOT** use `pip install`, `pip freeze`, `virtualenv`, `poetry`, or similar tools
 - **DO NOT** manually edit `[project]`, `[project.optional-dependencies]`, `[project.scripts]`, or `[build-system]` in pyproject.toml
-- **DO** use `uv` commands exclusively:
-  - `uv venv` - Create virtual environment
-  - `uv add <package>` - Add dependency (manages pyproject.toml and uv.lock automatically)
-  - `uv add --dev <package>` - Add dev dependency
-  - `uv lock` - Update lockfile
-  - `uv sync` - Sync environment with lockfile
+- **DO** use `uv` commands: `uv add <package>`, `uv add --dev <package>`, `uv sync`, `uv lock`
 
-**pyproject.toml**: Only manually edit `[tool.*]` sections (pytest, mypy, ruff, etc.). All dependencies and project metadata are managed by `uv add` commands.
+**pyproject.toml**: Only manually edit `[tool.*]` sections. Dependencies are managed by `uv add` commands.
 
 ## Code Conventions
 
 ### Absolute Imports
 
-**IMPORTANT**: This project uses absolute imports exclusively.
+**CRITICAL**: This project uses absolute imports exclusively.
 
-- **DO** use absolute imports: `from lookervault.config.models import Configuration`
+- **DO** use: `from lookervault.config.models import Configuration`
 - **DO NOT** use relative imports: `from ..config.models import Configuration`
-
-All imports should reference the full module path starting from the package root (`lookervault`). This improves code readability, makes refactoring easier, and prevents import errors when files are moved.
-
-**Examples:**
-```python
-# Good - Absolute imports
-from lookervault.config.models import Configuration, ConnectionStatus
-from lookervault.looker.client import LookerClient
-from lookervault.exceptions import ConfigError
-
-# Bad - Relative imports (DO NOT USE)
-from ..config.models import Configuration
-from .client import LookerClient
-from ...exceptions import ConfigError
-```
 
 ## Code Quality Tools
 
-This project uses modern Rust-based tools from [Astral](https://astral.sh) for code quality:
+### Pre-Commit Requirements
 
-### Ruff - Linting and Formatting
-
-**Ruff** is an extremely fast Python linter and code formatter written in Rust. It replaces multiple tools (Black, Flake8, isort, pylint, etc.) with a single, high-performance tool.
-
-**Basic Commands:**
-```bash
-# Linting
-ruff check                    # Lint all files in current directory
-ruff check path/to/file.py    # Lint specific file
-ruff check --fix              # Lint and auto-fix violations
-
-# Formatting
-ruff format                   # Format all files in current directory
-ruff format path/to/file.py   # Format specific file
-ruff format --check           # Check formatting without modifying files
-ruff format --diff            # Show what would be formatted
-
-# Using uvx (no installation required)
-uvx ruff check
-uvx ruff format
-```
-
-**Configuration:** Ruff is configured in `pyproject.toml` under `[tool.ruff]`, `[tool.ruff.lint]`, and `[tool.ruff.format]` sections.
-
-**Key Features:**
-- 10-100x faster than traditional Python linters
-- Black-compatible code formatting
-- 800+ lint rules with auto-fix support
-- Native Jupyter Notebook support
-- Drop-in replacement for Flake8, isort, and Black
-
-### Ty - Type Checking
-
-**Ty** is an extremely fast Python type checker and language server written in Rust, designed as a modern alternative to mypy.
-
-**Basic Commands:**
-```bash
-# Type checking
-ty check                      # Check entire project (auto-discovers pyproject.toml)
-ty check path/to/file.py      # Check specific file
-ty check src/ tests/          # Check specific directories
-ty check --watch              # Watch mode (recheck on file changes)
-
-# Output formats
-ty check --output-format concise    # Concise output
-ty check --output-format github     # GitHub Actions annotations
-ty check --output-format gitlab     # GitLab Code Quality JSON
-
-# Configuration
-ty check --python-version 3.11      # Target specific Python version
-ty check --python .venv/bin/python3 # Specify Python environment
-ty check -vv                        # Verbose output for debugging
-
-# Using uvx (no installation required)
-uvx ty check
-```
-
-**Configuration:** Ty is configured in `pyproject.toml` under `[tool.ty]` section.
-
-**Key Features:**
-- Significantly faster than mypy (written in Rust)
-- Built-in language server for IDE integration
-- Watch mode for continuous type checking
-- Multiple output formats for CI/CD integration
-- Compatible with existing Python type hints
-
-### Workflow Integration
-
-**Development Workflow:**
-1. Write code
-2. Run `ruff format` to auto-format
-3. Run `ruff check --fix` to lint and auto-fix issues
-4. Run `ty check` to verify types
-5. Run `uv run pytest` to ensure tests pass
-6. Commit changes
-
-**Pre-commit Integration:** Both tools work well in pre-commit hooks to ensure code quality before commits.
-
-**Note:** Line length and formatting rules should be consistent between ruff's formatter and linter. Ruff makes a best-effort attempt to wrap lines at the configured `line-length`, but may exceed it in some cases.
-
-## Pre-Commit Requirements
-
-**CRITICAL**: No changes should be committed without running ALL of the following checks:
+**CRITICAL**: Run ALL checks before committing:
 
 ```bash
-# Format code
-uvx ruff format
-
-# Lint and auto-fix issues
-uvx ruff check --fix
-
-# Type check
-uvx ty check
-
-# Run tests
-uv run pytest
+uvx ruff format              # Format code
+uvx ruff check --fix         # Lint and auto-fix
+uvx ty check                 # Type check
+uv run pytest                # Run tests
 ```
 
-All checks must pass before committing. If any check fails, fix the issues before proceeding with the commit.
+### Tools
 
-## Active Technologies
-- Python 3.13 (per pyproject.toml) (002-looker-content-extraction)
-- SQLite database with binary blob storage + metadata columns (002-looker-content-extraction)
-- Python 3.13 + looker-sdk, typer, pydantic, tenacity, concurrent.futures (stdlib) (003-parallel-extraction)
-- SQLite (existing repository pattern) (003-parallel-extraction)
-- Python 3.13 + looker-sdk (24.0.0+), typer, pydantic, tenacity, rich, msgspec (004-looker-restoration)
-- SQLite database (existing repository pattern with thread-local connections, BEGIN IMMEDIATE transactions) (004-looker-restoration)
-- Python 3.13 + google-cloud-storage (GCS SDK), google-crc32c (checksum verification), typer (CLI), rich (UI/progress), tenacity (retry logic), pydantic (config validation) (005-cloud-snapshot-storage)
-- Google Cloud Storage (GCS) buckets for snapshot storage; existing SQLite database for local operations (005-cloud-snapshot-storage)
-- Python 3.13 (per pyproject.toml) + msgspec (msgpack), PyYAML (new - YAML serialization), typer (CLI), pydantic (validation), rich (progress/output) (006-yaml-export-import)
-- SQLite database with content_items table (existing schema), YAML files on filesystem (new) (006-yaml-export-import)
+- **Ruff**: Fast linter/formatter (replaces Black, Flake8, isort). Config: `pyproject.toml` `[tool.ruff]`
+- **Ty**: Fast type checker (mypy alternative). Config: `pyproject.toml` `[tool.ty]`
 
-## Recent Changes
-- **Multi-Folder SDK Optimization** (2025-12-14): Replaced multi-folder in-memory filtering with parallel SDK API calls for 10-100x performance improvement. Uses MultiFolderOffsetCoordinator to distribute work across N folders using round-robin selection. For 3 folders × 1,000 dashboards: 20s → 2s (10x faster). See history/multi-folder-sdk-optimization-plan.md for detailed design.
-- **Folder-Level Filtering** (2025-12-14): Added folder-level filtering for extract and restore operations with SDK-level filtering (primary). Supports --folder-ids and --recursive flags for selective content operations.
-- **YAML Export/Import (pack/unpack)** (006-yaml-export-import): Added bidirectional conversion between SQLite backups and human-editable YAML files. Supports two strategies: `--strategy full` (organized by content type) and `--strategy folder` (preserves folder hierarchy). Enables bulk content modification workflows via `lookervault unpack` (SQLite → YAML) and `lookervault pack` (YAML → SQLite). See YAML Export/Import section below for detailed CLI usage.
-- 005-cloud-snapshot-storage: Added cloud snapshot management with GCS integration, automated retention policies, and interactive snapshot selection UI
-- 004-looker-restoration: Added Looker content restoration with dependency ordering, parallel workers, DLQ error recovery, and checkpoint-based resume
-- 003-parallel-extraction: Added parallel content extraction with thread pool, adaptive rate limiting, and resume capability
-- 003-parallel-api-fetching: Parallelized Looker API calls using dynamic work stealing for 8-10x throughput improvement
+## Tech Stack
 
-## Parallel Content Extraction
+- Python 3.13
+- looker-sdk, typer, pydantic, tenacity, rich, msgspec, PyYAML
+- SQLite (local storage)
+- Google Cloud Storage (cloud snapshots)
 
-The project supports parallel content extraction using a **dynamic work stealing** pattern that parallelizes Looker API calls. This feature significantly reduces extraction time for large Looker instances (10k+ items), achieving 400-600 items/second vs. ~50 items/second sequential.
+## Architecture Overview
 
-### Key Features
+### Parallel Content Extraction
 
-1. **Parallel API Fetching**: Workers fetch data directly from Looker API in parallel (not just database writes)
-2. **Dynamic Work Stealing**: Workers atomically claim offset ranges from a shared coordinator
-3. **Adaptive Rate Limiting**: Automatically detects HTTP 429 responses and adjusts request rate across all workers
-4. **Resume Capability**: Checkpoint-based resumption allows interrupted extractions to continue from last completed content type
-5. **Thread-Safe SQLite**: Thread-local connections with BEGIN IMMEDIATE transactions prevent write contention
-6. **Strategy Routing**: Automatically selects parallel or sequential strategy based on content type
+High-performance extraction using dynamic work stealing pattern with parallel API fetching. Achieves 400-600 items/second (8-16 workers) vs. ~50 items/second sequential.
 
-### Architecture
+**Key features**: Parallel API fetching, adaptive rate limiting, checkpoint-based resume, thread-safe SQLite, multi-folder SDK optimization (10x speedup).
 
-**Two extraction strategies** based on content type:
+**Important**: Only dashboards and looks support SDK-level `folder_id` filtering. Other content types require in-memory filtering.
 
-#### Parallel Fetch Strategy (Paginated Types)
-For paginated content types (dashboards, looks, users, groups, roles) with workers > 1:
-- **Workers** (thread pool): Claim offset ranges, fetch from Looker API in parallel, save to database
-- **OffsetCoordinator**: Thread-safe coordinator that atomically assigns offset ranges (0-100, 100-200, etc.)
-- **Shared Rate Limiter**: Coordinates API rate limiting across all workers using sliding window algorithm
-- **Thread-Safe Metrics**: Aggregates statistics (items processed, errors, throughput) safely across threads
+**Module**: `src/lookervault/extraction/`
 
-**Flow**: Worker claims range → Fetches from API → Saves to DB → Claims next range (repeat until end)
+**CLI**: `lookervault extract --workers 8 dashboards`
 
-#### Sequential Strategy (Non-Paginated Types)
-For non-paginated content types (models, folders, boards, etc.) or single-worker mode:
-- **Single Thread**: Fetches from API sequentially, saves to database directly
-- Same checkpointing and error handling as parallel mode
+**Docs**: See `specs/003-parallel-extraction/` for detailed architecture
 
-### New Components
+### Folder Filtering
 
-- `src/lookervault/extraction/offset_coordinator.py`: Thread-safe offset range coordinator
-- `src/lookervault/extraction/multi_folder_coordinator.py`: Multi-folder coordinator for parallel SDK calls
-- `src/lookervault/looker/extractor.py`: Added `extract_range(offset, limit, folder_id)` for parallel workers
-- `src/lookervault/extraction/parallel_orchestrator.py`: Updated with parallel fetch workers
-
-### Multi-Folder SDK Optimization
-
-**Problem**: Previously, when extracting from multiple folders, the system would fetch ALL content and filter in Python (in-memory filtering). For 3 folders × 1,000 dashboards each, this meant fetching 10,000 dashboards and filtering to 3,000 (~20 seconds).
-
-**Solution**: Replace in-memory filtering with N parallel SDK API calls (one per folder_id), merging results. For the same scenario, this makes 3 parallel SDK calls, fetching only 3,000 dashboards total (~2 seconds).
-
-**Performance Impact**:
-- 3 folders × 1,000 dashboards: **20s → 2s (10x faster)**
-- 10 folders × 500 dashboards: **38s → 3s (12x faster)**
-- 5 folders × 2,000 dashboards: **52s → 4s (13x faster)**
-
-**Architecture**:
-- **MultiFolderOffsetCoordinator**: Distributes work across multiple folder_ids using round-robin selection
-- **Per-folder offset tracking**: Each folder maintains its own offset range (starting at 0)
-- **Lazy offset discovery**: Workers discover end-of-data naturally by receiving empty results
-- **Thread-safe coordination**: Single mutex protects all coordinator state
-- **SDK-level filtering**: Workers call `extract_range(folder_id="123")` for direct API filtering
-
-**Algorithm**:
-1. Worker calls `coordinator.claim_range()` → receives `(folder_id, offset, limit)`
-2. Worker fetches from API: `extract_range(folder_id="123", offset=0, limit=100)`
-3. If empty results, worker calls `coordinator.mark_folder_complete(folder_id)`
-4. Coordinator round-robins to next folder
-5. When all folders exhausted, coordinator returns `None` and workers exit
-
-**Usage**:
-```bash
-# Multi-folder extraction (automatic SDK optimization)
-lookervault extract --folder-ids "123,456,789" --workers 8 dashboards
-# Uses MultiFolderOffsetCoordinator for 10x speedup
-
-# Single-folder extraction (SDK filtering)
-lookervault extract --folder-ids "123" --workers 8 dashboards
-# Uses standard OffsetCoordinator with SDK filtering
-```
-
-### Looker SDK Folder Filtering Support
-
-**Summary**: Only **dashboards** and **looks** support native SDK-level `folder_id` filtering via search methods. All other content types do NOT support folder filtering at the API level.
-
-#### Content Types with Folder Filtering Support
-
-| Content Type | SDK Method | Folder Parameter | Pagination | Notes |
-|--------------|------------|------------------|------------|-------|
-| **Dashboard** | `search_dashboards()` | ✅ `folder_id` | ✅ Yes (limit/offset) | Primary method for folder-filtered extraction |
-| **Dashboard** | `folder_dashboards()` | ✅ `folder_id` (path param) | ❌ No | Alternative: GET `/folders/{folder_id}/dashboards` |
-| **Look** | `search_looks()` | ✅ `folder_id` | ✅ Yes (limit/offset) | Primary method for folder-filtered extraction |
-| **Look** | `folder_looks()` | ✅ `folder_id` (path param) | ❌ No | Alternative: GET `/folders/{folder_id}/looks` |
-
-#### Content Types WITHOUT Folder Filtering Support
-
-| Content Type | SDK Method | Folder Support | Pagination | Notes |
-|--------------|------------|----------------|------------|-------|
-| **Board** | `all_boards()` | ❌ No | ❌ No | Only supports `fields` parameter |
-| **Board** | `search_boards()` | ❌ No | ✅ Yes (limit/offset) | Supports user/metadata filtering, but NO folder_id |
-| **User** | `all_users()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for users |
-| **Group** | `all_groups()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for groups |
-| **Role** | `search_roles()` | ❌ No | ✅ Yes (limit/offset) | No folder concept for roles |
-| **LookML Model** | `all_lookml_models()` | ❌ No | ❌ No | Returns all models (supports exclude filters) |
-| **Folder** | `all_folders()` | ❌ No | ❌ No | Returns all folders (only supports `fields`) |
-| **Permission Set** | `all_permission_sets()` | ❌ No | ❌ No | Only supports `fields` parameter |
-| **Model Set** | `all_model_sets()` | ❌ No | ❌ No | Only supports `fields` parameter |
-| **Scheduled Plan** | `all_scheduled_plans()` | ❌ No | ❌ No | Supports `user_id` and `all_users` filtering |
-
-#### Implementation Implications
-
-**For Dashboards and Looks** (SDK-level filtering available):
-- Use `search_dashboards(folder_id="123", limit=100, offset=0)` for SDK-level filtering
-- Multi-folder optimization uses N parallel SDK calls (one per folder_id) for 10-100x speedup
-- Single-folder optimization passes `folder_id` parameter directly to SDK method
-- See `extract_range()` in `src/lookervault/looker/extractor.py` (lines 284-285)
-
-**For All Other Content Types** (NO SDK-level filtering):
-- Folder filtering must be done in Python after fetching all items (in-memory filtering)
-- No performance optimization possible via multi-folder SDK calls
-- Boards, users, groups, roles, etc. have no folder concept in Looker's data model
-- Models, permission sets, model sets are global configuration objects
-
-#### SDK Method Reference
-
-**Dashboards**:
-- `search_dashboards(folder_id="123", limit=100, offset=0, fields="id,title", ...)` - ✅ Supports folder filtering
-- `folder_dashboards(folder_id="123", fields="id,title")` - ✅ Alternative (no pagination)
-
-**Looks**:
-- `search_looks(folder_id="123", limit=100, offset=0, fields="id,title", ...)` - ✅ Supports folder filtering
-- `folder_looks(folder_id="123", fields="id,title")` - ✅ Alternative (no pagination)
-
-**Boards**:
-- `search_boards(limit=100, offset=0, creator_id="42", ...)` - ❌ No folder_id parameter
-- `all_boards(fields="id,title")` - ❌ No folder_id parameter
-
-**Other Content Types**:
-- All other `all_*()` and `search_*()` methods lack folder filtering parameters
-- See individual SDK method documentation for supported parameters
-
-#### Sources
-
-- [Search Dashboards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Dashboard/search_dashboards)
-- [Search Looks | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Look/search_looks)
-- [Folder Dashboards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/folder_dashboards)
-- [Folder Looks | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/folder_looks)
-- [Search Boards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Board/search_boards)
-- [All Boards | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Board/all_boards)
-- [All Users | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/User/all_users)
-- [All Groups | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Group/all_groups)
-- [Search Roles | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/search_roles)
-- [All LookML Models | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/LookmlModel/all_lookml_models)
-- [All Folders | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Folder/all_folders)
-- [All Permission Sets | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/all_permission_sets)
-- [All Model Sets | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/Role/all_model_sets)
-- [All Scheduled Plans | Looker API](https://docs.cloud.google.com/looker/docs/reference/looker-api/latest/methods/ScheduledPlan/all_scheduled_plans)
-
-### Usage
-
-```bash
-# Parallel extraction with 8 workers (default)
-lookervault extract --workers 8 dashboards
-
-# High-throughput extraction (16 workers)
-lookervault extract --workers 16 dashboards looks
-
-# With custom rate limits (100 req/min, 10 req/sec burst)
-lookervault extract --workers 8 --rate-limit-per-minute 100 --rate-limit-per-second 10
-
-# Sequential extraction (backward compatible)
-lookervault extract --workers 1 dashboards
-
-# Resume interrupted extraction
-lookervault extract --workers 8 --resume
-```
-
-### Performance Guidelines
-
-- **Optimal Workers**: 8-16 workers provides best throughput for most use cases
-- **API-Bound Scaling**: With parallel API fetching, throughput scales near-linearly with worker count up to 8 workers
-- **SQLite Limit**: Beyond 16 workers, SQLite write contention plateaus throughput gains
-- **Memory Usage**: No intermediate queue needed for parallel fetch, memory stays low regardless of worker count
-- **Expected Throughput**:
-  - **8 workers**: ~400 items/second (8x speedup)
-  - **16 workers**: ~600 items/second (12x speedup)
-  - **Sequential (1 worker)**: ~50 items/second
-- **Large Datasets**: 10,000 items in ~15-25 seconds with 8-16 workers (vs. 3-4 minutes sequential)
-
-### Thread Safety Implementation
-
-All parallel extraction code follows strict thread-safety patterns:
-
-- **Thread-Local Connections**: Each worker thread gets its own SQLite connection (`threading.local()`)
-- **BEGIN IMMEDIATE Transactions**: Acquires write lock immediately to prevent deadlocks
-- **SQLITE_BUSY Retry Logic**: Exponential backoff with jitter handles write contention gracefully
-- **Thread-Safe Metrics**: All metrics use `threading.Lock` for safe concurrent access
-- **Bounded Queue**: `queue.Queue` with maxsize provides backpressure and prevents memory issues
-
-### Configuration Files
-
-- `src/lookervault/extraction/parallel_orchestrator.py`: Main parallel extraction engine
-- `src/lookervault/extraction/work_queue.py`: Thread-safe work distribution
-- `src/lookervault/extraction/metrics.py`: Thread-safe metrics aggregation
-- `src/lookervault/extraction/rate_limiter.py`: Adaptive rate limiting
-- `src/lookervault/extraction/performance.py`: Performance tuning utilities and recommendations
-- `src/lookervault/config/models.py`: `ParallelConfig` Pydantic model with validation
-- `src/lookervault/storage/repository.py`: Thread-safe repository with retry logic
-
-### Performance Tuning
-
-The `PerformanceTuner` class provides automatic configuration recommendations:
-
-```python
-from lookervault.extraction.performance import PerformanceTuner
-
-tuner = PerformanceTuner()
-profile = tuner.recommend_for_dataset(total_items=50000, avg_item_size_kb=5.0)
-
-print(f"Recommended workers: {profile.workers}")
-print(f"Expected throughput: {profile.expected_throughput:.1f} items/sec")
-```
-
-The CLI automatically validates configurations and provides recommendations in verbose mode:
-
-```bash
-lookervault extract --workers 20 --verbose dashboards
-# Will warn: "Worker count 20 exceeds SQLite write limit (16)"
-# Will suggest: "Recommended: 16 workers (expected throughput: 500 items/sec)"
-```
-
-### Troubleshooting
-
-**High worker count warnings**: If you see warnings about SQLite write contention (workers > 16), reduce worker count to 8-16 for optimal throughput.
-
-**SQLITE_BUSY errors**: These are automatically retried with exponential backoff. If errors persist, reduce worker count or check database lock contention.
-
-**Rate limit errors (HTTP 429)**: Adaptive rate limiting automatically slows down all workers when 429 detected. Gradual recovery occurs after sustained success.
-
-**Memory issues**: Increase queue size or reduce batch size if memory usage is high (queue_size defaults to workers * 100).
+- **Dashboards/Looks**: SDK-level filtering via `search_dashboards(folder_id="123")` (fast)
+- **Other types**: In-memory filtering after fetching all items (slower)
+- **Multi-folder**: N parallel SDK calls for dashboards/looks (10x faster than in-memory filtering)
 
 ---
 
-## Looker Content Restoration
+### Content Restoration
 
-The project supports restoring Looker content from SQLite backups back to Looker instances with **dependency-aware ordering**, **parallel workers**, and **robust error recovery**. This feature enables disaster recovery, content migration, and safe production testing of restoration workflows.
+Restores Looker content from SQLite backups with dependency-aware ordering, parallel workers, and robust error recovery.
 
-### Key Features
+**Key features**: Single-item and bulk restoration, dependency ordering (Users → Groups → Folders → Looks → Dashboards → Boards), Dead Letter Queue (DLQ) for failures, checkpoint-based resume, dry-run mode.
 
-1. **Single-Item Restoration**: Restore individual content items (dashboards, looks, etc.) for safe testing before bulk operations
-2. **Dependency-Aware Bulk Restoration**: Automatically respects dependency order (Users → Groups → Folders → Models → Explores → Looks → Dashboards → Boards)
-3. **Parallel Restoration**: Multi-worker restoration with shared rate limiting for high-throughput operations
-4. **Smart Update/Create Logic**: Automatically updates existing content (PATCH) or creates new content (POST) based on destination state
-5. **Resume Capability**: Checkpoint-based resumption allows interrupted restorations to continue from last completed item
-6. **Dead Letter Queue (DLQ)**: Captures unrecoverable failures with full error context for manual review and retry
-7. **Adaptive Rate Limiting**: Automatically detects HTTP 429 responses and adjusts request rate across all workers
-8. **Dry Run Mode**: Validate restoration plan without making actual changes
+**Module**: `src/lookervault/restoration/`
 
-### Architecture Highlights
+**CLI**: `lookervault restore single dashboard <id>` or `lookervault restore bulk dashboards --workers 8`
 
-**Core Components**:
-- **LookerContentRestorer**: Single-item restoration with update/create logic and retry handling
-- **ParallelRestorationOrchestrator**: Multi-worker coordinator with checkpointing and DLQ integration
-- **DeadLetterQueue**: Captures and manages failed restoration attempts with retry capability
-- **ContentDeserializer**: Deserializes binary SQLite blobs back into Looker SDK objects
-- **DependencyGraph**: Hardcoded dependency relationships ensure proper restoration order
+**Important**: Same-instance only (no cross-instance ID remapping). Always use `--dry-run` first.
 
-**Thread Safety**: Same patterns as extraction - thread-local SQLite connections, BEGIN IMMEDIATE transactions, shared rate limiter with atomic operations.
+**Docs**: See `specs/004-looker-restoration/` for detailed architecture
 
-**Error Handling**: Transient errors (rate limits, network issues) are retried with exponential backoff. After max retries (default: 5), items move to DLQ for manual intervention.
+### Cloud Snapshot Management
 
-### CLI Commands
+GCS-backed snapshot storage with automated retention policies and interactive selection UI.
 
-```bash
-# Single-item restoration (production-safe testing)
-lookervault restore single dashboard <dashboard_id>
-lookervault restore single look <look_id> --dry-run
+**Module**: `src/lookervault/snapshot/`
 
-# Bulk restoration of content type
-lookervault restore bulk dashboards
-lookervault restore bulk looks --workers 8 --rate-limit-per-minute 120
+**CLI**: `lookervault snapshot upload --name "backup-name"`, `lookervault snapshot list`, `lookervault snapshot download <id>`
 
-# Bulk restoration with parallel workers (high-throughput)
-lookervault restore bulk dashboards --workers 16 --checkpoint-interval 100
-
-# Resume interrupted restoration
-lookervault restore resume dashboards
-lookervault restore resume looks --session-id <session_id>
-
-# Dead letter queue management
-lookervault restore dlq list                          # List failed items
-lookervault restore dlq list --session-id <id>        # Filter by session
-lookervault restore dlq show <dlq_id>                 # Show error details
-lookervault restore dlq retry <dlq_id>                # Retry single failed item
-lookervault restore dlq clear --session-id <id> --force  # Clear DLQ entries
-
-# Restoration session status
-lookervault restore status                            # Show latest session
-lookervault restore status --session-id <id>          # Show specific session
-lookervault restore status --all                      # List all sessions
-
-# Common options
---dry-run                    # Validate without making changes
---json                       # JSON output for scripting
---workers N                  # Parallel workers (default: 8)
---rate-limit-per-minute N    # API rate limit (default: 120)
---rate-limit-per-second N    # Burst limit (default: 10)
---checkpoint-interval N      # Save checkpoint every N items (default: 100)
---max-retries N              # Max retry attempts (default: 5)
-```
-
-### Usage Examples
-
-**Production Testing Workflow**:
-```bash
-# 1. Test single dashboard restoration (dry run)
-lookervault restore single dashboard abc123 --dry-run
-
-# 2. Restore single dashboard for real
-lookervault restore single dashboard abc123
-
-# 3. Verify dashboard in Looker UI
-# 4. If successful, proceed to bulk restoration
-```
-
-**Bulk Restoration Workflow**:
-```bash
-# 1. Restore users and groups (dependencies for content ownership)
-lookervault restore bulk users --workers 8
-lookervault restore bulk groups --workers 8
-
-# 2. Restore folders (dependencies for content location)
-lookervault restore bulk folders --workers 8
-
-# 3. Restore content (dashboards, looks)
-lookervault restore bulk looks --workers 16
-lookervault restore bulk dashboards --workers 16
-
-# 4. Check for failures
-lookervault restore dlq list
-
-# 5. Retry failed items after fixing issues
-lookervault restore dlq retry <dlq_id>
-```
-
-**Interrupted Restoration Recovery**:
-```bash
-# Restoration interrupted after 5,000 of 10,000 dashboards
-# Ctrl+C or network failure
-
-# Resume from last checkpoint
-lookervault restore resume dashboards
-
-# System skips already-completed items and continues from item 5,001
-```
-
-### Performance Characteristics
-
-- **Single-Item Restoration**: <10 seconds including dependency validation
-- **Bulk Throughput**: 100+ items/second with 8 workers (API-bound, scales with worker count)
-- **Large Datasets**: 50,000 items in <10 minutes with 8 workers (~83 items/sec minimum)
-- **Resume Overhead**: Minimal - checkpoint queries use indexed lookups
-- **Memory Usage**: Low and constant regardless of dataset size (streaming architecture)
-
-**Optimal Configuration**:
-- **8 workers**: Best balance of throughput and SQLite write contention for most use cases
-- **16 workers**: Higher throughput for large datasets (600+ items/sec) if SQLite can handle write load
-- **Checkpoint interval 100**: Good balance of resume granularity vs. database write overhead
-
-### Dependency Restoration Order
-
-Content is restored in this order to respect Looker's dependency relationships:
-
-1. **Users** - Content ownership, permissions
-2. **Groups** - Group membership, role assignments
-3. **Roles** - Access control
-4. **Permission Sets** - Fine-grained permissions
-5. **Folders** - Content organization
-6. **LookML Models** - Data models
-7. **Explores** - Data exploration definitions
-8. **Looks** - Saved queries
-9. **Dashboards** - Dashboard definitions (reference looks)
-10. **Boards** - Board definitions (reference dashboards)
-11. **Scheduled Plans** - Scheduled deliveries (reference dashboards/looks)
-
-**Note**: Dependency validation is currently limited to content type ordering. Future enhancements may add item-level dependency analysis.
-
-### Configuration Options
-
-**RestorationConfig** (Pydantic model):
-- `workers`: Number of parallel workers (default: 8)
-- `rate_limit_per_minute`: API rate limit (default: 120 req/min)
-- `rate_limit_per_second`: Burst rate limit (default: 10 req/sec)
-- `checkpoint_interval`: Save checkpoint every N items (default: 100)
-- `max_retries`: Max retry attempts for transient errors (default: 5)
-- `dry_run`: Validate without making changes (default: False)
-- `skip_if_modified`: Skip items modified in destination since backup (default: False)
-
-**Environment Variables**:
-- `LOOKERVAULT_CLIENT_ID`: Looker API client ID (required)
-- `LOOKERVAULT_CLIENT_SECRET`: Looker API client secret (required)
-- `LOOKERVAULT_DB_PATH`: Path to SQLite database (optional, default: looker.db)
-
-### Troubleshooting
-
-**Rate limit errors (HTTP 429)**: Adaptive rate limiting automatically slows down all workers. If persistent, reduce `--rate-limit-per-minute` or `--rate-limit-per-second`.
-
-**Validation errors**: Content schema validation failures indicate corrupted backup data or API version incompatibility. Check DLQ for full error details (`lookervault restore dlq show <id>`).
-
-**Dependency errors**: If content references missing dependencies, check if referenced items exist in backup. Restore dependencies first (e.g., restore folders before dashboards).
-
-**Resume not working**: Verify checkpoint exists (`lookervault restore status --all`). If checkpoint corrupted, delete session and restart restoration.
-
-**High DLQ count**: Review error types (`lookervault restore dlq list`). Common causes: missing dependencies, API validation changes, permission issues, network failures.
-
-### Important Notes
-
-- **Same-Instance Only**: This implementation only supports restoring to the same Looker instance (IDs remain consistent). Cross-instance migration with ID remapping is not implemented.
-- **Destructive Operations**: Restoration updates existing content without confirmation. Always test with `--dry-run` first or restore single items before bulk operations.
-- **API Compatibility**: Content must be compatible with destination Looker version. API schema changes between versions may cause validation errors.
-- **Credentials Required**: All restore commands require valid Looker API credentials (`LOOKERVAULT_CLIENT_ID`, `LOOKERVAULT_CLIENT_SECRET`).
-
-### Design Documentation
-
-For detailed design specifications, see:
-- **Feature Spec**: `specs/004-looker-restoration/spec.md` - User stories, requirements, success criteria
-- **Implementation Plan**: `specs/004-looker-restoration/plan.md` - Architecture, component design, integration contracts
-- **Task Breakdown**: `specs/004-looker-restoration/tasks.md` - Implementation tasks and dependencies
-
-**Recent Updates** (2025-12-13):
-- Phase 3 complete: Single-item restoration (User Story 1)
-- Phase 4 complete: Bulk restoration with dependency ordering (User Story 2)
-- Phase 5 complete: Parallel restoration with DLQ and error recovery (User Story 3)
-- Phase 6 skipped: Cross-instance ID mapping (not required for current use cases)
+**Docs**: See `specs/005-cloud-snapshot-storage/` for details
 
 ---
 
-## YAML Export/Import (006-yaml-export-import)
+### YAML Export/Import
 
-The YAML export/import module enables bidirectional conversion between SQLite backups and human-editable YAML files for bulk content modification workflows.
+Bidirectional conversion between SQLite backups and human-editable YAML files for bulk content modification workflows.
 
-### Architecture
+**Export strategies**:
+- `--strategy full`: Organize by content type (`dashboards/`, `looks/`, etc.) - best for bulk operations
+- `--strategy folder`: Mirror Looker folder hierarchy - best for folder-scoped modifications
 
-**Module Location**: `src/lookervault/export/`
+**Key features**: Query remapping (auto-creates new query objects for modified dashboards), multi-stage validation (syntax, schema, SDK, business rules), path sanitization, modification tracking.
 
-**Core Components**:
-- **ContentUnpacker** (`unpacker.py`) - Exports SQLite content to YAML files
-- **ContentPacker** (`packer.py`) - Imports YAML files back to SQLite
-- **YamlSerializer** (`yaml_serializer.py`) - YAML serialization using ruamel.yaml
-- **YamlValidator** (`validator.py`) - Multi-stage validation pipeline
-- **FolderTreeBuilder** (`folder_tree.py`) - Folder hierarchy construction with BFS traversal
-- **QueryRemappingTable** (`query_remapper.py`) - Hash-based query deduplication
-- **MetadataManager** (`metadata.py`) - Export metadata generation/loading
-- **PathCollisionResolver** (`path_utils.py`) - Cross-platform path sanitization
+**Module**: `src/lookervault/export/`
 
-### Export Strategies
-
-**1. Full Strategy** (`--strategy full`):
-- Organizes content by type: `dashboards/`, `looks/`, `users/`, etc.
-- Simple directory structure for bulk operations
-- Best for applying same modification across all content of a type
-
-**2. Folder Strategy** (`--strategy folder`):
-- Mirrors Looker's folder hierarchy
-- Nested directories match folder structure
-- Orphaned content goes to `_orphaned/` directory
-- Best for folder-scoped modifications
-
-### CLI Commands
-
-**Export (Unpack)**:
+**CLI**:
 ```bash
-# Full strategy (all content by type)
-lookervault unpack --db-path looker.db --output-dir export/ --strategy full
+# Export: SQLite → YAML
+lookervault unpack --output-dir export/ --strategy full
 
-# Folder strategy (preserves hierarchy)
-lookervault unpack --db-path looker.db --output-dir export/ --strategy folder
-
-# Export specific content types
-lookervault unpack --content-types dashboards,looks --strategy full
-
-# With verbose output
-lookervault unpack --output-dir export/ --verbose
-
-# JSON output for scripting
-lookervault unpack --output-dir export/ --json
-```
-
-**Import (Pack)**:
-```bash
-# Pack YAML files back to database
-lookervault pack --input-dir export/ --db-path looker_modified.db
-
-# Dry run (validate without changes)
-lookervault pack --input-dir export/ --dry-run
-
-# Force mode (delete items for missing YAML files)
-lookervault pack --input-dir export/ --force
-
-# JSON output
-lookervault pack --input-dir export/ --json
-```
-
-### Bulk Modification Workflow
-
-```bash
-# 1. Export content to YAML
-lookervault extract --workers 8 dashboards looks
-lookervault unpack --db-path looker.db --output-dir export/ --strategy full
-
-# 2. Modify YAML files using scripts
+# Modify YAML files
 sed -i 's/old_model/new_model/g' export/dashboards/*.yaml
-python scripts/update_filters.py export/dashboards/
 
-# 3. Pack modified YAML back to database
-lookervault pack --input-dir export/ --db-path looker_modified.db
-
-# 4. Restore to Looker
-lookervault restore bulk dashboards --workers 8
+# Import: YAML → SQLite
+lookervault pack --input-dir export/ --dry-run  # Validate first
+lookervault pack --input-dir export/            # Then import
 ```
 
-### Metadata Structure
+**Workflow**: Extract → Unpack → Modify YAML → Pack → Restore
 
-Each export creates a `metadata.json` file:
-
-```json
-{
-  "version": "1.0",
-  "exported_at": "2025-12-14T12:00:00",
-  "strategy": "full",
-  "database_schema_version": "2",
-  "source_database": "/path/to/looker.db",
-  "total_items": 1500,
-  "content_counts": {
-    "DASHBOARD": 500,
-    "LOOK": 300,
-    "USER": 50,
-    "FOLDER": 100
-  },
-  "checksum": "sha256:abc123...",
-  "folder_map": { }  // Present if strategy=folder
-}
-```
-
-### YAML File Format
-
-Each YAML file contains:
-- **Content data**: Dashboard/look/user definition
-- **_metadata section**: Export metadata for round-trip fidelity
-
-```yaml
-# dashboard.yaml
-id: "123"
-title: "Sales Dashboard"
-elements:
-  - id: "elem1"
-    title: "Total Revenue"
-    query:
-      model: "sales"
-      view: "transactions"
-      fields: ["transactions.total_revenue"]
-
-_metadata:
-  db_id: "123"
-  content_type: "DASHBOARD"
-  exported_at: "2025-12-14T12:00:00"
-  content_size: 5432
-  checksum: "sha256:def456..."
-  folder_path: "Sales/Regional"  // Present if strategy=folder
-```
-
-### Performance Characteristics
-
-**Unpack Performance** (after optimization):
-- 10,000 items: <3 minutes (2-3x faster than before)
-- Eliminated redundant JSON serializations
-- Direct msgpack blob checksum calculation
-- Streaming I/O for large files
-
-**Pack Performance**:
-- Batch commits (100 items/transaction)
-- 10,000 items: <8 minutes
-- Validation errors aggregated before abort
-- Resume capability via checkpoints
-
-### Advanced Features
-
-**1. Query Remapping** (Dashboard modifications):
-- Detects modified query definitions via SHA-256 hash
-- Automatically creates new query objects
-- Updates dashboard element references
-- Deduplicates shared queries (hash-based)
-- Remapping table saved to `.pack_state/query_remapping.json`
-
-**2. Modification Tracking**:
-- Compares YAML file mtime with `exported_at` timestamp
-- Tracks created/updated/unchanged counts
-- Supports selective repacking (only modified items)
-
-**3. Missing File Handling** (`--force`):
-- Detects YAML files deleted from export directory
-- Optionally deletes corresponding database items
-- Reports missing file count in summary
-
-**4. Error Handling**:
-- Disk space pre-flight checks (3.5x database size estimate)
-- Filesystem permission errors with clear messages
-- Validation error aggregation (grouped by type)
-- Field-level validation with file path + line number
-
-**5. Path Sanitization**:
-- Unicode NFC normalization for cross-platform compatibility
-- 255-byte path length limits with hash suffixes
-- Collision resolution with numeric suffixes
-- Windows-compatible path sanitization
-
-### Validation Pipeline
-
-**Multi-stage validation**:
-1. **Syntax**: YAML parsing (ruamel.yaml)
-2. **Schema**: Required fields per content type
-3. **SDK Conversion**: Looker SDK model validation
-4. **Business Rules**: Field-level constraints
-
-**Example validation errors**:
-```
-[Structure] DASHBOARD missing required 'elements' field
-[Field] Field 'title' cannot be empty in dashboards/123.yaml:5
-[Query] Missing required query fields: model, view in dashboards/456.yaml:15
-```
-
-### Integration with Existing Features
-
-**Extraction → Export → Modification → Import → Restoration**:
-```bash
-# Full workflow
-lookervault extract --workers 8 dashboards    # SQLite backup
-lookervault unpack --output-dir export/        # YAML export
-# [Modify YAML files]
-lookervault pack --input-dir export/           # YAML import
-lookervault restore bulk dashboards            # Looker restoration
-```
-
-**Snapshot Integration**:
-```bash
-# Cloud backup workflow
-lookervault extract --workers 16               # Extract to SQLite
-lookervault snapshot upload --name "pre-mod"   # Backup to GCS
-lookervault unpack --output-dir export/        # Export to YAML
-# [Modify YAML files]
-lookervault pack --input-dir export/           # Import changes
-lookervault snapshot upload --name "post-mod"  # Backup to GCS
-lookervault restore bulk dashboards            # Apply to Looker
-```
-
-### Troubleshooting
-
-**Slow unpack performance**:
-- Already optimized (2-3x faster after removing redundant JSON serialization)
-- Expect ~3 minutes for 10,000 items
-
-**Validation errors after modification**:
-- Check `--dry-run` output for detailed error messages
-- Errors include file path, line number, field name
-- Grouped by error type for easier debugging
-
-**Missing files during pack**:
-- Use `--force` to delete corresponding database items
-- Missing files tracked in summary output
-- Review before committing changes
-
-**Disk space errors**:
-- Pre-flight check estimates 3.5x database size
-- Warning if <2x estimated size available
-- Check available space before unpack
-
-**Path length issues**:
-- Automatic truncation to 255 bytes with hash suffix
-- Unicode normalization prevents duplicate issues
-- Windows-compatible path sanitization
-
-### Example Scripts
-
-**Bulk filter update** (`tests/fixtures/scripts/update_filters.py`):
-```python
-#!/usr/bin/env python3
-import yaml
-from pathlib import Path
-
-for yaml_file in Path("export/dashboards").glob("*.yaml"):
-    with open(yaml_file) as f:
-        dashboard = yaml.safe_load(f)
-
-    # Update filters
-    for element in dashboard.get("dashboard_elements", []):
-        query = element.get("query", {})
-        filters = query.get("filters", {})
-        if "30 days" in str(filters):
-            # Update time period
-            filters["period"] = "90 days"
-
-    with open(yaml_file, "w") as f:
-        yaml.dump(dashboard, f)
-```
-
-**Bulk title update** (`tests/fixtures/scripts/update_titles.sh`):
-```bash
-#!/bin/bash
-# Update dashboard titles
-sed -i '' 's/title: "Old Prefix/title: "New Prefix/g' export/dashboards/*.yaml
-```
-
-**Model replacement** (`tests/fixtures/scripts/replace_models.sh`):
-```bash
-#!/bin/bash
-# Replace model references
-awk '{gsub(/model: old_model/, "model: new_model")} {print}' \
-  export/dashboards/*.yaml > tmp && mv tmp export/dashboards/*.yaml
-```
-
-### Design Documentation
-
-For detailed specifications:
-- **Feature Spec**: `specs/006-yaml-export-import/spec.md`
-- **Implementation Plan**: `specs/006-yaml-export-import/plan.md`
-- **Tasks**: `specs/006-yaml-export-import/tasks.md` (86 tasks, 73 completed)
-- **Quickstart Guide**: `specs/006-yaml-export-import/quickstart.md`
-- **Data Model**: `specs/006-yaml-export-import/data-model.md`
-- **Research**: `specs/006-yaml-export-import/research.md`
+**Docs**: See `specs/006-yaml-export-import/` for detailed architecture
 

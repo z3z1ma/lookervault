@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "mcp-agent-mail": {
+      "command": "uv",
+      "args": [
+        "tool",
+        "run",
+        "--from",
+        "mcp-agent-mail @ git+https://github.com/alexx-ftw/mcp_agent_mail@feat/add-serve-stdio",
+        "python",
+        "-m",
+        "mcp_agent_mail.cli",
+        "--",
+        "serve-stdio"
+      ],
+      "env": {
+        "DATABASE_URL": "sqlite+aiosqlite:///./.claude/mcp_mail.db"
+      }
+    }
+  }
+}
+
