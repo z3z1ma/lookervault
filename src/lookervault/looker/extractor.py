@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from looker_sdk import error as looker_error
 
@@ -16,6 +16,18 @@ if TYPE_CHECKING:
 
 # Content types that support SDK-level folder filtering
 FOLDER_FILTERABLE_TYPES = {ContentType.DASHBOARD, ContentType.LOOK}
+
+# Type variables for SDK object conversion
+T_SDKModel = TypeVar("T_SDKModel", bound=object)
+
+
+class SDKModel(Protocol):
+    """Protocol for Looker SDK model objects.
+
+    All Looker SDK models have a __dict__ attribute containing their fields.
+    """
+
+    __dict__: dict[str, Any]
 
 
 def is_rate_limit_error(error_str: str) -> bool:
@@ -562,14 +574,22 @@ class LookerContentExtractor:
             return False
 
     @staticmethod
-    def _sdk_object_to_dict(obj: Any) -> dict[str, Any]:
-        """Convert SDK object to dictionary.
+    def _sdk_object_to_dict(obj: SDKModel) -> dict[str, Any]:
+        """Convert Looker SDK model object to dictionary.
+
+        Extracts all non-None public attributes from the SDK model object.
+        Private attributes (starting with '_') and None values are filtered out.
 
         Args:
-            obj: SDK model object
+            obj: Looker SDK model object (e.g., Dashboard, Look, User, etc.)
 
         Returns:
-            Dictionary representation
+            Dictionary with all public, non-null fields from the SDK object.
+
+        Examples:
+            >>> dashboard = Dashboard(id="123", title="My Dashboard", deleted=None)
+            >>> result = LookerContentExtractor._sdk_object_to_dict(dashboard)
+            >>> assert result == {"id": "123", "title": "My Dashboard"}
         """
         # Looker SDK objects have __dict__ attribute
         # Filter out None values and private attributes
@@ -580,7 +600,7 @@ class LookerContentExtractor:
         """Check if item should be included based on updated_after timestamp.
 
         Args:
-            item_dict: Item dictionary from Looker API
+            item_dict: Item dictionary from Looker API (output from _sdk_object_to_dict)
             updated_after: Timestamp filter (None means include all)
 
         Returns:

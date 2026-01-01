@@ -5,7 +5,7 @@ description = "LookerVault is a CLI tool that backs up your entire Looker conten
 authors = [
     { name = "z3z1ma", email = "butler.alex2010@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     # Critical dependencies with upper bounds for API stability
     "google-cloud-storage>=3.7.0,<4.0.0",  # Cloud storage API - major version lock
@@ -38,6 +38,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Archiving :: Backup",
 ]
@@ -57,7 +60,7 @@ addopts = "-v --cov=lookervault --cov-report=term-missing"
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py310"
 
 [tool.ruff.lint]
 # Enable common linting rules
@@ -98,7 +101,7 @@ skip-magic-trailing-comma = false
 
 [tool.ty]
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.10"
 python = ".venv"
 root = ["./src"]
 
