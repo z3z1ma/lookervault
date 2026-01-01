@@ -16,7 +16,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FolderNode:
-    """Represents a folder in the hierarchy tree."""
+    """Represents a folder node in the folder hierarchy tree.
+
+    Attributes:
+        folder_id: Unique identifier for the folder
+        parent_id: Parent folder ID (None for root folders)
+        name: Display name of the folder
+        children: List of child FolderNode objects
+        depth: Nesting depth in the hierarchy (0 for root folders)
+    """
 
     folder_id: str
     parent_id: str | None
@@ -195,7 +203,15 @@ class FolderHierarchyResolver:
         self.validate_folders_exist(root_folder_ids)
 
         def build_node(folder_id: str, depth: int) -> FolderNode:
-            """Recursively build FolderNode tree."""
+            """Recursively build a FolderNode tree from a folder ID.
+
+            Args:
+                folder_id: The folder ID to build a node for
+                depth: Current depth in the hierarchy tree
+
+            Returns:
+                A FolderNode with populated children and metadata
+            """
             metadata = self._folder_cache[folder_id]
 
             # Build children recursively

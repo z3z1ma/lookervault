@@ -24,6 +24,7 @@ from lookervault.storage.models import (
     RestorationSession,
 )
 from lookervault.storage.schema import create_schema, optimize_database
+from lookervault.utils import transaction_rollback
 
 logger = logging.getLogger(__name__)
 
@@ -557,7 +558,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -596,9 +597,6 @@ class SQLiteContentRepository:
                         ),
                     )
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to save content: {e}") from e
 
@@ -814,7 +812,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe checkpoint writes
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -845,9 +843,6 @@ class SQLiteContentRepository:
                     checkpoint_id = cursor.lastrowid
                     conn.commit()
                     return checkpoint_id
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to save checkpoint: {e}") from e
 
@@ -924,7 +919,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe checkpoint updates
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -946,9 +941,6 @@ class SQLiteContentRepository:
                     )
 
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to update checkpoint: {e}") from e
 
@@ -1393,7 +1385,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe DLQ writes
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -1428,9 +1420,6 @@ class SQLiteContentRepository:
                     dlq_id = cursor.lastrowid
                     conn.commit()
                     return dlq_id
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to save dead letter item: {e}") from e
 
@@ -1610,7 +1599,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe DLQ deletion
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -1625,9 +1614,6 @@ class SQLiteContentRepository:
                         raise NotFoundError(f"Dead letter item not found: {dlq_id}")
 
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to delete dead letter item: {e}") from e
 
@@ -1650,7 +1636,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -1674,9 +1660,6 @@ class SQLiteContentRepository:
                         ),
                     )
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to save ID mapping: {e}") from e
 
@@ -1858,7 +1841,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe checkpoint writes
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -1889,9 +1872,6 @@ class SQLiteContentRepository:
                     checkpoint_id = cursor.lastrowid
                     conn.commit()
                     return checkpoint_id
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to save restoration checkpoint: {e}") from e
 
@@ -1916,7 +1896,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Thread-safe checkpoint updates
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -1938,9 +1918,6 @@ class SQLiteContentRepository:
                     )
 
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to update restoration checkpoint: {e}") from e
 
@@ -2021,7 +1998,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -2059,9 +2036,6 @@ class SQLiteContentRepository:
                     )
 
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to create restoration session: {e}") from e
 
@@ -2087,7 +2061,7 @@ class SQLiteContentRepository:
                 # BEGIN IMMEDIATE: Acquire write lock immediately to prevent deadlocks
                 conn.execute("BEGIN IMMEDIATE")
 
-                try:
+                with transaction_rollback(conn):
                     cursor = conn.cursor()
 
                     cursor.execute(
@@ -2114,9 +2088,6 @@ class SQLiteContentRepository:
                     )
 
                     conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to update restoration session: {e}") from e
 

@@ -1,4 +1,38 @@
-"""Adaptive rate limiting for coordinated API request throttling across workers."""
+"""Adaptive rate limiting for coordinated API request throttling across workers.
+
+This module implements a two-layer rate limiting system for coordinating API
+requests across multiple parallel worker threads:
+
+1. **Proactive Layer (Sliding Window)**:
+   - Prevents exceeding configured rate limits before they happen
+   - Uses sliding window algorithm for smooth request distribution
+   - Blocks workers proactively when limits would be exceeded
+   - Respects both per-minute and per-second (burst) limits
+
+2. **Reactive Layer (Adaptive Backoff)**:
+   - Reacts to HTTP 429 responses from the API
+   - Dynamically adjusts request rates based on feedback
+   - Implements exponential backoff on rate limit detection
+   - Gradually recovers normal speed after sustained success
+
+Adaptive Recovery Algorithm:
+    The reactive layer uses an adaptive backoff multiplier that:
+    - Increases by 1.5x on each HTTP 429 detection (exponential slowdown)
+    - Decreases by 10% after 10 consecutive successes (gradual recovery)
+    - Never goes below 1.0x (normal speed)
+    - Resets success counter on any rate limit error
+
+    This creates a self-tuning system that:
+    - Slows down quickly when hitting limits
+    - Recovers gradually when API is healthy
+    - Coordinates slowdown across all workers via shared state
+    - Provides visibility into rate limiting statistics
+
+Thread Safety:
+    All public methods are thread-safe and can be called concurrently from
+    multiple worker threads. The adaptive state is shared across all workers
+    to coordinate their response to rate limiting.
+"""
 
 import logging
 import threading
@@ -14,9 +48,51 @@ logger = logging.getLogger(__name__)
 class RateLimiterState:
     """Thread-safe state tracking for adaptive rate limiting.
 
-    Tracks rate limit violations (HTTP 429 responses) and adjusts request
-    rates dynamically to prevent future violations. Uses exponential backoff
-    on 429 detection and gradual recovery after sustained success.
+    This class implements the core adaptive recovery algorithm. It tracks
+    rate limit violations (HTTP 429 responses) and dynamically adjusts the
+    request rate multiplier to prevent future violations while maximizing
+    throughput.
+
+    Algorithm Details:
+    ------------------
+    1. **Backoff Multiplier**: Controls how much to slow down requests.
+       - 1.0 = normal speed (no backoff)
+       - 1.5 = 50% slower (1.5x delay between requests)
+       - 2.0 = 2x slower, etc.
+
+    2. **Rate Limit Detection (on_429_detected)**:
+       - Triggered by any worker receiving HTTP 429
+       - Multiplier increases by 1.5x (exponential growth)
+       - Examples: 1.0 -> 1.5 -> 2.25 -> 3.375 -> 5.06...
+       - Success counter resets to 0
+       - All workers see the updated multiplier (shared state)
+
+    3. **Recovery Logic (on_success)**:
+       - Called after each successful API request
+       - After 10 consecutive successes, reduce multiplier by 10%
+       - Formula: new_multiplier = max(1.0, current_multiplier * 0.9)
+       - Success counter resets after each recovery cycle
+       - Examples: 5.0 -> 4.5 -> 4.05 -> 3.645 -> 3.28...
+
+    4. **Recovery Threshold**:
+       - Multiplier never goes below 1.0 (normal speed)
+       - This prevents the system from accelerating beyond baseline
+
+    Why This Works:
+    ---------------
+    - **Fast slowdown**: Exponential backoff (1.5x) responds quickly to limits
+    - **Slow recovery**: 10% reduction after 10 successes prevents oscillation
+    - **Shared state**: All workers coordinate via single multiplier
+    - **Hysteresis**: Asymmetric response prevents rapid on/off cycling
+
+    Example Scenario:
+    -----------------
+    1. System running at 1.0x (normal speed)
+    2. Worker receives 429: multiplier -> 1.5x
+    3. Another 429: multiplier -> 2.25x
+    4. No more 429s, 10 successes: multiplier -> 2.03x
+    5. 10 more successes: multiplier -> 1.82x
+    6. Eventually recovers to 1.0x after sustained success
 
     Attributes:
         backoff_multiplier: Current rate reduction factor (1.0 = normal, >1.0 = slowed down)
@@ -38,11 +114,28 @@ class RateLimiterState:
         Called by workers when they receive a 429 response. Increases
         the backoff multiplier by 1.5x, causing all future requests
         to slow down proportionally.
+
+        Algorithm:
+            - Multiply backoff by 1.5 (exponential increase)
+            - Reset consecutive_successes to 0 (recovery must start over)
+            - Record timestamp for debugging/monitoring
+            - Increment total counter for statistics
+
+        Example progression:
+            1.0 -> 1.5 -> 2.25 -> 3.375 -> 5.06 -> 7.59
+
+        Thread-safe: Uses reentrant lock to ensure atomic updates.
         """
         with self._lock:
+            # Exponential backoff: 1.5x multiplier increase
+            # This creates rapid slowdown when limits are hit
             self.backoff_multiplier *= 1.5
             self.last_429_timestamp = datetime.now()
+
+            # Reset recovery counter - must start fresh after rate limit
             self.consecutive_successes = 0
+
+            # Track total rate limit violations for monitoring
             self.total_429_count += 1
 
             logger.warning(
@@ -55,14 +148,41 @@ class RateLimiterState:
 
         Called after successful API requests. After 10 consecutive successes,
         reduces the backoff multiplier by 10% (towards 1.0 = normal speed).
+
+        Algorithm:
+            - Increment success counter on each call
+            - After 10 consecutive successes: reduce multiplier by 10%
+            - Formula: new_multiplier = max(1.0, current_multiplier * 0.9)
+            - Reset success counter to 0 after recovery step
+            - Never go below 1.0 (normal speed baseline)
+
+        Design Rationale:
+            - 10-request threshold ensures stability before recovery
+            - 10% reduction is conservative (prevents oscillation)
+            - Asymmetric response (fast slowdown, slow recovery) creates hysteresis
+            - This prevents rapid on/off cycling if rate limits are flaky
+
+        Example recovery from 5.0x:
+            - After 10 successes: 5.0 -> 4.5 (10% reduction)
+            - After 20 successes: 4.5 -> 4.05 (another 10%)
+            - After 30 successes: 4.05 -> 3.65 (another 10%)
+            - Continues until reaching 1.0x (normal speed)
+
+        Thread-safe: Uses reentrant lock to ensure atomic updates.
         """
         with self._lock:
             self.consecutive_successes += 1
 
             # Gradual recovery: reduce backoff after 10 successful requests
+            # The 10-request threshold ensures stable recovery, not flappy behavior
             if self.consecutive_successes >= 10:
                 old_multiplier = self.backoff_multiplier
+
+                # Reduce by 10%, but never below 1.0 (normal speed)
+                # This creates gradual recovery curve: 5.0 -> 4.5 -> 4.05 -> 3.65...
                 self.backoff_multiplier = max(1.0, self.backoff_multiplier * 0.9)
+
+                # Reset counter for next recovery cycle
                 self.consecutive_successes = 0
 
                 if self.backoff_multiplier < old_multiplier:
@@ -100,29 +220,60 @@ class RateLimiterState:
 class AdaptiveRateLimiter:
     """Thread-safe adaptive rate limiter using sliding window algorithm.
 
-    Coordinates API request rates across multiple worker threads using:
-    - Sliding window rate limiting for proactive throttling
-    - Adaptive backoff on HTTP 429 detection (reactive adjustment)
-    - Shared state across all workers for coordinated slowdown
+    This class implements a two-layer rate limiting system that coordinates
+    API request rates across multiple parallel worker threads:
 
-    The rate limiter operates in two layers:
-    1. Proactive: Sliding window prevents exceeding configured limits
-    2. Reactive: Adaptive backoff slows down further when 429s are detected
+    Layer 1: Proactive Sliding Window (Prevents 429s before they happen)
+    -------------------------------------------------------------------
+    Uses a sliding window algorithm to track request timestamps and block
+    workers BEFORE exceeding configured limits. This prevents most rate
+    limit errors from occurring in the first place.
 
-    Thread-safe: All methods can be called concurrently from multiple workers.
+    - Tracks requests in two windows: 1-second and 60-second
+    - Blocks worker if either window would be exceeded
+    - Smoothing effect: prevents request bursts
+    - Configurable limits: requests_per_minute, requests_per_second
 
-    Example:
-        >>> # Shared across all workers
-        >>> rate_limiter = AdaptiveRateLimiter(requests_per_minute=100, requests_per_second=10)
+    Layer 2: Reactive Adaptive Backoff (Responds to 429s that slip through)
+    -------------------------------------------------------------------------
+    When HTTP 429 responses occur despite proactive limiting, this layer
+    dynamically adjusts the shared backoff multiplier to slow down all workers.
+
+    - Triggered by on_429_detected() call
+    - Increases backoff multiplier by 1.5x (exponential)
+    - After 10 consecutive successes, reduces by 10% (gradual recovery)
+    - Shared state coordinates all workers
+
+    How the Two Layers Work Together:
+    ---------------------------------
+    1. Proactive layer prevents most rate limit errors
+    2. Reactive layer handles edge cases (API limits lower than config)
+    3. Together they create a robust, self-tuning system
+
+    Worker Usage Pattern:
+    ---------------------
+    Each worker thread follows this pattern:
+
+        >>> # Before API call: acquire permission
+        >>> rate_limiter.acquire()  # Blocks if needed
         >>>
-        >>> # In worker thread before API call:
-        >>> rate_limiter.acquire()  # Blocks if rate limit would be exceeded
         >>> try:
+        >>> # Make the actual API request
         >>>     response = make_api_call()
+        >>>
+        >>> # Report success for recovery tracking
         >>>     rate_limiter.on_success()
-        >>> except RateLimitError:  # HTTP 429
+        >>>
+        >>> except RateLimitError:  # HTTP 429 received
+        >>> # Report rate limit for adaptive backoff
         >>>     rate_limiter.on_429_detected()
-        >>>     raise
+        >>>     raise  # Re-raise for retry logic
+
+    Thread Safety:
+    --------------
+    All public methods are fully thread-safe. Multiple workers can call
+    acquire(), on_success(), and on_429_detected() concurrently without
+    data races or inconsistent state.
     """
 
     def __init__(
@@ -163,13 +314,50 @@ class AdaptiveRateLimiter:
         Blocks if rate limit would be exceeded. Uses sliding window algorithm
         to smooth out request bursts while respecting configured limits.
 
-        Thread-safe: Can be called concurrently from multiple workers.
+        Sliding Window Algorithm:
+        -------------------------
+        1. Maintain two deques of request timestamps:
+           - _second_window: timestamps in the last 1 second
+           - _minute_window: timestamps in the last 60 seconds
+
+        2. On each acquire():
+           - Remove timestamps older than window boundaries
+           - Check if both windows have capacity
+           - If yes: add current timestamp, return immediately
+           - If no: sleep until oldest timestamp ages out
+
+        3. Sleep calculation:
+           - If minute limit hit: sleep until oldest + 60s
+           - If second limit hit: sleep until oldest + 1s
+           - Takes maximum of both (handles double limit violations)
+
+        Example with requests_per_second=3:
+        -----------------------------------
+        t=0.0s: Request 1, window=[0.0], count=1, OK
+        t=0.1s: Request 2, window=[0.0, 0.1], count=2, OK
+        t=0.2s: Request 3, window=[0.0, 0.1, 0.2], count=3, OK
+        t=0.3s: Request 4, window full, sleep until 1.0s (oldest + 1s)
+        t=1.0s: Request 4 proceeds, window=[0.1, 0.2, 1.0]
+
+        Thread Safety:
+        --------------
+        - Lock held only for window updates (not during sleep)
+        - Multiple workers can wait concurrently
+        - Sleep occurs outside lock to allow other workers to proceed
+
+        Performance:
+        ------------
+        - O(1) amortized (each timestamp added/removed once)
+        - Minimal lock contention (short critical sections)
+        - Fair ordering (FIFO via timestamp order)
         """
         while True:
             with self._lock:
                 now = time.time()
 
                 # Clean old timestamps from windows
+                # Remove timestamps that have aged out of the sliding window
+                # This keeps the deques small and accurate
                 cutoff_minute = now - 60.0
                 while self._minute_window and self._minute_window[0] < cutoff_minute:
                     self._minute_window.popleft()
@@ -186,24 +374,29 @@ class AdaptiveRateLimiter:
                     minute_count < self.requests_per_minute
                     and second_count < self.requests_per_second
                 ):
-                    # Accept request - add timestamps
+                    # Accept request - add timestamps to both windows
                     self._minute_window.append(now)
                     self._second_window.append(now)
                     return
 
                 # Rate limit exceeded - calculate sleep time
+                # Sleep until the oldest timestamp ages out of its window
                 sleep_time = 0.0
                 if minute_count >= self.requests_per_minute:
                     # Oldest request in minute window
+                    # We need to wait for it to age out (60 seconds total)
                     oldest = self._minute_window[0]
                     sleep_time = max(sleep_time, (oldest + 60.0) - now)
 
                 if second_count >= self.requests_per_second:
                     # Oldest request in second window
+                    # We need to wait for it to age out (1 second total)
                     oldest = self._second_window[0]
                     sleep_time = max(sleep_time, (oldest + 1.0) - now)
 
             # Sleep outside lock to allow other threads to proceed
+            # The 10ms buffer ensures the window has actually aged out
+            # when we wake up (accounts for scheduler granularity)
             if sleep_time > 0:
                 time.sleep(sleep_time + 0.01)  # Add 10ms buffer
 

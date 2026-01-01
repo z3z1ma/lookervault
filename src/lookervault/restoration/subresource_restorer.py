@@ -19,6 +19,7 @@ from lookervault.exceptions import RateLimitError, RestorationError
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.extraction.retry import retry_on_rate_limit
 from lookervault.looker.client import LookerClient
+from lookervault.utils import log_and_return_error
 
 logger = logging.getLogger(__name__)
 
@@ -363,9 +364,9 @@ class DashboardSubResourceRestorer:
             existing_by_id = {f["id"]: f for f in existing_filters}
             logger.debug(f"Found {len(existing_filters)} existing filters in destination")
         except Exception as e:
-            logger.error(f"Failed to fetch existing filters for dashboard {dashboard_id}: {e}")
-            result.error_count += 1
-            result.errors.append(f"Failed to fetch existing filters: {e}")
+            log_and_return_error(
+                result, f"Failed to fetch existing filters for dashboard {dashboard_id}", e
+            )
             return result
 
         # Categorize and execute operations
@@ -385,9 +386,9 @@ class DashboardSubResourceRestorer:
                     self._update_dashboard_filter(dashboard_id, filter_id, backup_filter)
                     result.updated_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to update dashboard filter {filter_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Filter {filter_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to update dashboard filter {filter_id}", e
+                    )
             else:
                 # CREATE new filter
                 try:
@@ -400,9 +401,9 @@ class DashboardSubResourceRestorer:
                         result.id_mappings[filter_id] = new_id
                         logger.debug(f"Filter ID mapping: {filter_id} -> {new_id}")
                 except Exception as e:
-                    logger.error(f"Failed to create dashboard filter {filter_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Filter {filter_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to create dashboard filter {filter_id}", e
+                    )
 
         # DELETE: Filters in destination but not in backup
         for existing_id in existing_by_id:
@@ -412,9 +413,9 @@ class DashboardSubResourceRestorer:
                     self._delete_dashboard_filter(existing_id)
                     result.deleted_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to delete dashboard filter {existing_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Delete filter {existing_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to delete dashboard filter {existing_id}", e
+                    )
 
         return result
 
@@ -588,9 +589,9 @@ class DashboardSubResourceRestorer:
             existing_by_id = {e["id"]: e for e in existing_elements}
             logger.debug(f"Found {len(existing_elements)} existing elements in destination")
         except Exception as e:
-            logger.error(f"Failed to fetch existing elements for dashboard {dashboard_id}: {e}")
-            result.error_count += 1
-            result.errors.append(f"Failed to fetch existing elements: {e}")
+            log_and_return_error(
+                result, f"Failed to fetch existing elements for dashboard {dashboard_id}", e
+            )
             return result
 
         # Categorize and execute operations
@@ -610,9 +611,9 @@ class DashboardSubResourceRestorer:
                     self._update_dashboard_element(dashboard_id, element_id, backup_element)
                     result.updated_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to update dashboard element {element_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Element {element_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to update dashboard element {element_id}", e
+                    )
             else:
                 # CREATE new element
                 try:
@@ -625,9 +626,9 @@ class DashboardSubResourceRestorer:
                         result.id_mappings[element_id] = new_id
                         logger.debug(f"Element ID mapping: {element_id} -> {new_id}")
                 except Exception as e:
-                    logger.error(f"Failed to create dashboard element {element_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Element {element_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to create dashboard element {element_id}", e
+                    )
 
         # DELETE: Elements in destination but not in backup
         for existing_id in existing_by_id:
@@ -637,9 +638,9 @@ class DashboardSubResourceRestorer:
                     self._delete_dashboard_element(existing_id)
                     result.deleted_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to delete dashboard element {existing_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Delete element {existing_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to delete dashboard element {existing_id}", e
+                    )
 
         return result
 
@@ -814,9 +815,9 @@ class DashboardSubResourceRestorer:
             existing_by_id = {layout["id"]: layout for layout in existing_layouts}
             logger.debug(f"Found {len(existing_layouts)} existing layouts in destination")
         except Exception as e:
-            logger.error(f"Failed to fetch existing layouts for dashboard {dashboard_id}: {e}")
-            result.error_count += 1
-            result.errors.append(f"Failed to fetch existing layouts: {e}")
+            log_and_return_error(
+                result, f"Failed to fetch existing layouts for dashboard {dashboard_id}", e
+            )
             return result
 
         # Categorize and execute operations
@@ -840,9 +841,9 @@ class DashboardSubResourceRestorer:
                     self._restore_layout_components(layout_id, backup_layout, result)
 
                 except Exception as e:
-                    logger.error(f"Failed to update dashboard layout {layout_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Layout {layout_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to update dashboard layout {layout_id}", e
+                    )
             else:
                 # CREATE new layout
                 try:
@@ -859,9 +860,9 @@ class DashboardSubResourceRestorer:
                     self._restore_layout_components(new_id or layout_id, backup_layout, result)
 
                 except Exception as e:
-                    logger.error(f"Failed to create dashboard layout {layout_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Layout {layout_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to create dashboard layout {layout_id}", e
+                    )
 
         # DELETE: Layouts in destination but not in backup
         for existing_id in existing_by_id:
@@ -871,9 +872,9 @@ class DashboardSubResourceRestorer:
                     self._delete_dashboard_layout(existing_id)
                     result.deleted_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to delete dashboard layout {existing_id}: {e}")
-                    result.error_count += 1
-                    result.errors.append(f"Delete layout {existing_id}: {e}")
+                    log_and_return_error(
+                        result, f"Failed to delete dashboard layout {existing_id}", e
+                    )
 
         return result
 
@@ -908,9 +909,11 @@ class DashboardSubResourceRestorer:
             existing_components = self._fetch_existing_layout_components(layout_id)
             logger.debug(f"Found {len(existing_components)} existing layout components")
         except Exception as e:
-            logger.error(f"Failed to fetch existing layout components for layout {layout_id}: {e}")
-            result.error_count += 1
-            result.errors.append(f"Failed to fetch layout {layout_id} components: {e}")
+            log_and_return_error(
+                result,
+                f"Failed to fetch existing layout components for layout {layout_id}",
+                e,
+            )
             return
 
         # UPDATE each component (Looker API only supports update for layout components, not create/delete)
@@ -926,9 +929,7 @@ class DashboardSubResourceRestorer:
                 logger.debug(f"Updating layout component {component_id}")
                 self._update_dashboard_layout_component(component_id, backup_component)
             except Exception as e:
-                logger.error(f"Failed to update layout component {component_id}: {e}")
-                result.error_count += 1
-                result.errors.append(f"Layout component {component_id}: {e}")
+                log_and_return_error(result, f"Failed to update layout component {component_id}", e)
 
     @retry_on_rate_limit
     def _fetch_existing_layouts(self, dashboard_id: str) -> list[dict[str, Any]]:

@@ -1,10 +1,10 @@
 """Configuration loading with environment variable merging."""
 
 import os
-import tomllib
 from pathlib import Path
 from typing import Any
 
+import tomllib
 import typer
 
 from lookervault.config.models import Configuration
