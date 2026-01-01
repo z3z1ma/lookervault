@@ -9,10 +9,6 @@ class ConfigError(LookerVaultError):
     """Exception raised for configuration errors."""
 
 
-class ConnectionError(LookerVaultError):
-    """Exception raised for Looker connection errors."""
-
-
 class StorageError(LookerVaultError):
     """Exception raised for storage layer errors."""
 
@@ -85,14 +81,4 @@ class DependencyError(RestorationError):
     - Referenced content doesn't exist in source or destination
     - Circular dependencies detected in dependency graph
     - Dependency ordering violation during bulk restoration
-    """
-
-
-class IDMappingError(RestorationError):
-    """Exception raised when ID mapping fails during cross-instance restoration.
-
-    This occurs when:
-    - Source ID cannot be mapped to destination ID
-    - ID mapping table is inconsistent or corrupted
-    - Foreign key references cannot be translated
     """

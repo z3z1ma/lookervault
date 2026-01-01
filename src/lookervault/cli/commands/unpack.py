@@ -1,6 +1,7 @@
 """Unpack command implementation for extracting Looker content from SQLite to YAML."""
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -8,6 +9,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from lookervault.cli.rich_logging import configure_rich_logging
 from lookervault.export.metadata import MetadataManager
 from lookervault.export.unpacker import ContentUnpacker
 from lookervault.export.yaml_serializer import YamlSerializer
@@ -96,7 +98,22 @@ def run(
         typer.Option("--debug", help="Enable debug logging"),
     ] = False,
 ) -> None:
-    """Unpack Looker content from database to YAML files."""
+    """Unpack Looker content from database to YAML files.
+
+    Args:
+        output_dir: Directory to write exported YAML files
+        db_path: Path to SQLite database to export from
+        strategy: Export strategy ('full' or 'folder')
+        content_types: Comma-separated list of content types to export
+        overwrite: Overwrite existing files in output directory
+        json_output: Output results in JSON format
+        verbose: Enable verbose logging
+        debug: Enable debug logging
+    """
+    # Configure rich logging
+    log_level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
+    configure_rich_logging(level=log_level, show_time=debug, show_path=debug)
+
     console = Console()
 
     try:
