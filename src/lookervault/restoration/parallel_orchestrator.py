@@ -170,7 +170,9 @@ class ParallelRestorationOrchestrator:
             f"id_mapper={'enabled' if id_mapper else 'disabled'}"
         )
 
-    def restore(self, content_type: ContentType, session_id: str) -> RestorationSummary:
+    def restore(
+        self, content_type: ContentType, session_id: str, content_ids: list[str] | None = None
+    ) -> RestorationSummary:
         """Restore all content of a given type using parallel worker threads.
 
         This method orchestrates parallel restoration by:
@@ -185,6 +187,8 @@ class ParallelRestorationOrchestrator:
         Args:
             content_type: ContentType enum value to restore
             session_id: Unique session identifier for tracking
+            content_ids: Optional list of content IDs to restore. If None, queries
+                        the repository for all IDs of this content type.
 
         Returns:
             RestorationSummary with aggregated results:
@@ -213,6 +217,11 @@ class ParallelRestorationOrchestrator:
             >>> config.dry_run = True
             >>> summary = orchestrator.restore(ContentType.LOOK, "dry-run-456")
             >>> print(f"Validation: {summary.success_count} items valid")
+
+            >>> # Restore specific content IDs (e.g., for resume)
+            >>> summary = orchestrator.restore(
+            ...     ContentType.DASHBOARD, "session-123", content_ids=["1", "2", "3"]
+            ... )
         """
         start_time = time.time()
 
@@ -226,7 +235,11 @@ class ParallelRestorationOrchestrator:
 
         # Step 1: Query SQLite for all content IDs of this content_type
         # Apply folder filtering if configured
-        if self.config.folder_ids and content_type in [
+        # If content_ids is provided, use it directly (e.g., for resume)
+        if content_ids is not None:
+            content_ids = set(content_ids)
+            logger.info(f"Using provided content IDs: {len(content_ids)} items")
+        elif self.config.folder_ids and content_type in [
             ContentType.DASHBOARD,
             ContentType.LOOK,
             ContentType.BOARD,
@@ -612,32 +625,14 @@ class ParallelRestorationOrchestrator:
             f"(skipped {len(completed_ids)} completed)"
         )
 
-        # Step 4: Temporarily override repository to filter content IDs
-        # We'll create a modified restore flow that only processes remaining_ids
-        original_get_content_ids = self.repository.get_content_ids
+        # Step 4: Call restore() with remaining content IDs
+        summary = self.restore(content_type, session_id, content_ids=remaining_ids)
 
-        def filtered_get_content_ids(content_type_value: int) -> list[str]:
-            """Return only remaining IDs for this content type."""
-            if content_type_value == content_type.value:
-                return remaining_ids
-            return original_get_content_ids(content_type_value)
+        logger.info(
+            f"Resume completed: {summary.success_count}/{summary.total_items} items restored"
+        )
 
-        # Monkey-patch the repository method temporarily
-        self.repository.get_content_ids = filtered_get_content_ids
-
-        try:
-            # Step 5: Call restore() with filtered content IDs
-            summary = self.restore(content_type, session_id)
-
-            logger.info(
-                f"Resume completed: {summary.success_count}/{summary.total_items} items restored"
-            )
-
-            return summary
-
-        finally:
-            # Restore original method
-            self.repository.get_content_ids = original_get_content_ids
+        return summary
 
     def _create_empty_summary(
         self, session_id: str, content_type: ContentType

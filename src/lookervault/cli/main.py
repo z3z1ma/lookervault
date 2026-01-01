@@ -576,10 +576,6 @@ def unpack(
         Path,
         typer.Option("--output-dir", help="Directory to write exported YAML files"),
     ],
-    config: Annotated[
-        Path | None,
-        typer.Option("--config", "-c", help="Path to configuration file"),
-    ] = None,
     db_path: Annotated[
         str,
         typer.Option("--db-path", help="Path to SQLite database to export from"),

@@ -136,7 +136,7 @@ class DependencyGraph:
         # Track visiting state for cycle detection
         # States: white (unvisited), gray (visiting), black (visited)
         white, gray, black = 0, 1, 2
-        state: dict[ContentType, int] = dict.fromkeys(self.DEPENDENCIES, white)
+        state: dict[ContentType, int] = {k: white for k in self.DEPENDENCIES}
         path: list[ContentType] = []
 
         def visit(content_type: ContentType) -> None:

@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from lookervault.export.validator import ValidationError, YamlValidator
+from lookervault.exceptions import ValidationError
+from lookervault.export.validator import YamlValidator
 
 
 @pytest.fixture

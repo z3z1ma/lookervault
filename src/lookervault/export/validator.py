@@ -7,11 +7,7 @@ from looker_sdk import models40 as looker_models
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-
-class ValidationError(Exception):
-    """Raised when YAML validation fails."""
-
-    pass
+from lookervault.exceptions import ValidationError
 
 
 class YamlValidator:

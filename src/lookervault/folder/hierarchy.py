@@ -70,7 +70,7 @@ class FolderHierarchyResolver:
         logger.debug(f"Loaded {len(folders)} folders from repository")
 
         # Deserialize and cache
-        decoder = msgspec.msgpack.Decoder()
+        decoder = msgspec.msgpack.Decoder()  # type: ignore[unresolved-attribute]
         for folder_item in folders:
             # Deserialize content_data BLOB (msgpack-encoded binary)
             folder_metadata = decoder.decode(folder_item.content_data)

@@ -591,7 +591,7 @@ class ParallelOrchestrator:
                             f"at offset {offset}, marking folder complete"
                         )
                         coordinator.mark_folder_complete(folder_id)
-                    else:
+                    elif isinstance(coordinator, OffsetCoordinator):
                         logger.info(
                             f"Worker {worker_id} hit end-of-data at offset {offset}, marking complete"
                         )
@@ -639,7 +639,7 @@ class ParallelOrchestrator:
                             f"for folder {folder_id} at offset {offset}, marking folder complete"
                         )
                         coordinator.mark_folder_complete(folder_id)
-                    else:
+                    elif isinstance(coordinator, OffsetCoordinator):
                         logger.info(
                             f"Worker {worker_id} received {len(items)} < {limit} items at offset {offset}, "
                             f"marking complete"

@@ -89,13 +89,14 @@ class DeserializationError(RestorationError):
     pass
 
 
-class ValidationError(RestorationError):
-    """Exception raised when content fails validation before restoration.
+class ValidationError(LookerVaultError):
+    """Exception raised when content fails validation.
 
     This occurs when:
     - Required fields are missing from content
     - Field values fail type or constraint checks
     - Content structure doesn't match Looker API expectations
+    - YAML syntax or structure is invalid
     """
 
     pass
