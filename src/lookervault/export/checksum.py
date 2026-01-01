@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from lookervault.constants import CHUNK_SIZE_SMALL
+
 
 def compute_file_checksum(file_path: Path) -> str:
     """Compute SHA-256 checksum of a single file.
@@ -28,7 +30,7 @@ def compute_file_checksum(file_path: Path) -> str:
     hasher = hashlib.sha256()
     with file_path.open("rb") as f:
         # Read in chunks to handle large files
-        while chunk := f.read(8192):
+        while chunk := f.read(CHUNK_SIZE_SMALL):
             hasher.update(chunk)
 
     return hasher.hexdigest()
@@ -63,7 +65,7 @@ def compute_export_checksum(output_dir: Path) -> str:
 
         # Hash file contents
         with yaml_file.open("rb") as f:
-            while chunk := f.read(8192):
+            while chunk := f.read(CHUNK_SIZE_SMALL):
                 hasher.update(chunk)
 
     return hasher.hexdigest()

@@ -141,6 +141,29 @@ class ParallelOrchestrator:
     ):
         """Initialize parallel orchestrator with dependencies.
 
+        Thread-Safety Initialization:
+            This constructor is called from a single thread (typically main thread)
+            before parallel execution begins. It sets up thread-safe components:
+
+            1. ThreadSafeMetrics (self.metrics):
+               - All operations protected by internal lock
+               - Safe for concurrent increments and snapshots from workers
+
+            2. AdaptiveRateLimiter (self.rate_limiter):
+               - All state changes protected by internal lock
+               - Shared across all workers for coordinated throttling
+               - Atomic backoff state changes on 429 errors
+
+            3. Configuration Objects:
+               - self.config and self.parallel_config are read-only after init
+               - Safe for workers to read concurrently without locks
+               - No mutation during extraction ensures consistency
+
+            4. Shared Dependencies:
+               - extractor: Shared but rate-limited API calls are thread-safe
+               - repository: Uses thread-local connections for safe concurrent access
+               - progress: Must support thread-safe updates (implementation-dependent)
+
         Args:
             extractor: Content extractor for API calls
             repository: Thread-safe storage repository
@@ -195,6 +218,35 @@ class ParallelOrchestrator:
         Routes content types to appropriate extraction strategy:
         - Paginated types with multiple workers: Parallel fetch (workers fetch directly from API)
         - Non-paginated types or single worker: Sequential extraction
+
+        Thread-Safety:
+            This method orchestrates the entire parallel extraction workflow:
+
+            1. Main Thread Execution:
+               - Runs in main thread, spawns worker threads via ThreadPoolExecutor
+               - Session creation and updates are single-threaded (no races)
+               - Final metrics snapshot happens after all workers complete
+
+            2. Worker Thread Spawning:
+               - ThreadPoolExecutor manages thread lifecycle
+               - Each worker gets its own thread with independent call stack
+               - Workers coordinate via shared thread-safe coordinator
+
+            3. Checkpoint Management:
+               - Checkpoints created/updated sequentially per content type
+               - No concurrent checkpoint updates for same content type
+               - Repository uses BEGIN IMMEDIATE for thread-safe writes
+
+            4. Error Handling:
+               - Worker errors caught and recorded in ThreadSafeMetrics
+               - Session status updated atomically on failure
+               - OrchestrationError raised with full context
+
+        Session Management:
+            - Creates new session or resumes existing session
+            - Session status transitions: RUNNING -> COMPLETED or FAILED
+            - Session metadata cached for folder hierarchy resolution
+            - All session updates use thread-safe repository methods
 
         Returns:
             ExtractionResult with summary statistics
@@ -396,6 +448,35 @@ class ParallelOrchestrator:
 
         Uses dynamic work stealing pattern where workers atomically claim
         offset ranges and fetch directly from the Looker API in parallel.
+
+        Thread-Safety:
+            This method runs in the main thread and spawns N worker threads
+            via ThreadPoolExecutor. Thread-safety is ensured through:
+
+            1. Shared Coordinator:
+               - Single coordinator instance shared by all workers
+               - OffsetCoordinator/MultiFolderOffsetCoordinator use internal locks
+               - Atomic offset range claiming prevents duplicate work
+               - No race conditions between workers
+
+            2. Worker Isolation:
+               - Each worker operates independently on claimed ranges
+               - No shared work queues between workers
+               - Thread-local SQLite connections prevent database corruption
+               - Workers only synchronize via coordinator and metrics
+
+            3. Result Aggregation:
+               - as_completed() yields futures in completion order
+               - Main thread aggregates results sequentially
+               - No concurrent writes to result variables
+               - Thread-safe metrics aggregation via ThreadSafeMetrics
+
+        Multi-Folder Coordination:
+            When multiple folders are specified:
+            - MultiFolderOffsetCoordinator enables parallel SDK calls
+            - Each folder gets independent offset tracking
+            - Round-robin selection ensures even distribution
+            - Workers can fetch from different folders simultaneously
 
         Args:
             content_type: ContentType enum value
@@ -639,6 +720,59 @@ class ParallelOrchestrator:
         - Converting dicts to ContentItems
         - Saving to database (thread-local connection)
         - Updating thread-safe metrics
+
+        Thread-Safety Contract:
+            This method MUST be called from a ThreadPoolExecutor worker thread.
+            It follows the thread-safety patterns documented at module level:
+
+            1. Coordinator Access:
+               - coordinator.claim_range(): Thread-safe (uses internal lock)
+               - coordinator.mark_worker_complete(): Thread-safe (uses internal lock)
+               - coordinator.mark_folder_complete(): Thread-safe (uses internal lock)
+
+            2. Repository Access:
+               - self.repository.save_content(): Thread-safe (uses thread-local connection)
+               - Each worker has its own SQLite connection via threading.local
+               - BEGIN IMMEDIATE transactions prevent write deadlocks
+               - Automatic retry on SQLITE_BUSY with exponential backoff
+
+            3. Metrics Access:
+               - self.metrics.increment_processed(): Thread-safe (uses internal lock)
+               - self.metrics.record_error(): Thread-safe (uses internal lock)
+               - self.metrics.snapshot(): Thread-safe (uses internal lock)
+
+            4. Shared State:
+               - self.config: Read-only after init, safe to read
+               - self.parallel_config: Read-only after init, safe to read
+               - self.extractor: Shared but rate-limited API calls are thread-safe
+
+            5. Rate Limiter:
+               - self.extractor.rate_limiter: Shared across all workers
+               - AdaptiveRateLimiter.acquire() uses internal lock for coordination
+               - Backoff state changes are atomic
+
+            CRITICAL Cleanup Requirements:
+                In finally block, MUST call:
+                - self.repository.close_thread_connection()
+
+                This prevents connection leaks when worker threads exit.
+                Failure to close connections will cause SQLite to keep
+                old connections open, eventually hitting file descriptor limits.
+
+        Worker Lifecycle:
+            1. Thread starts, claims first offset range atomically
+            2. Fetches data from Looker API (with rate limiting)
+            3. Converts to ContentItem and saves to database
+            4. Updates thread-safe metrics
+            5. Repeats steps 1-4 until coordinator returns None
+            6. Closes thread-local database connection
+            7. Returns total items processed
+
+        Error Handling:
+            - Item-level errors: Logged, metrics updated, processing continues
+            - API fetch errors: Logged, metrics updated, skips to next range
+            - Fatal errors: Logged with traceback, exception propagates to main thread
+            - All errors recorded in ThreadSafeMetrics for final reporting
 
         Args:
             worker_id: Worker thread identifier (0-based index)

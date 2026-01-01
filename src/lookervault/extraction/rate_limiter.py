@@ -41,6 +41,14 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from lookervault.constants import (
+    RATE_LIMIT_BACKOFF_INCREASE_MULTIPLIER,
+    RATE_LIMIT_BACKOFF_REDUCTION_FACTOR,
+    RATE_LIMIT_MIN_BACKOFF_MULTIPLIER,
+    RATE_LIMIT_SUCCESS_THRESHOLD,
+    SECONDS_PER_MINUTE,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,7 +137,7 @@ class RateLimiterState:
         with self._lock:
             # Exponential backoff: 1.5x multiplier increase
             # This creates rapid slowdown when limits are hit
-            self.backoff_multiplier *= 1.5
+            self.backoff_multiplier *= RATE_LIMIT_BACKOFF_INCREASE_MULTIPLIER
             self.last_429_timestamp = datetime.now()
 
             # Reset recovery counter - must start fresh after rate limit
@@ -175,12 +183,15 @@ class RateLimiterState:
 
             # Gradual recovery: reduce backoff after 10 successful requests
             # The 10-request threshold ensures stable recovery, not flappy behavior
-            if self.consecutive_successes >= 10:
+            if self.consecutive_successes >= RATE_LIMIT_SUCCESS_THRESHOLD:
                 old_multiplier = self.backoff_multiplier
 
                 # Reduce by 10%, but never below 1.0 (normal speed)
                 # This creates gradual recovery curve: 5.0 -> 4.5 -> 4.05 -> 3.65...
-                self.backoff_multiplier = max(1.0, self.backoff_multiplier * 0.9)
+                self.backoff_multiplier = max(
+                    RATE_LIMIT_MIN_BACKOFF_MULTIPLIER,
+                    self.backoff_multiplier * RATE_LIMIT_BACKOFF_REDUCTION_FACTOR,
+                )
 
                 # Reset counter for next recovery cycle
                 self.consecutive_successes = 0
@@ -358,7 +369,7 @@ class AdaptiveRateLimiter:
                 # Clean old timestamps from windows
                 # Remove timestamps that have aged out of the sliding window
                 # This keeps the deques small and accurate
-                cutoff_minute = now - 60.0
+                cutoff_minute = now - float(SECONDS_PER_MINUTE)
                 while self._minute_window and self._minute_window[0] < cutoff_minute:
                     self._minute_window.popleft()
 
@@ -386,7 +397,7 @@ class AdaptiveRateLimiter:
                     # Oldest request in minute window
                     # We need to wait for it to age out (60 seconds total)
                     oldest = self._minute_window[0]
-                    sleep_time = max(sleep_time, (oldest + 60.0) - now)
+                    sleep_time = max(sleep_time, (oldest + float(SECONDS_PER_MINUTE)) - now)
 
                 if second_count >= self.requests_per_second:
                     # Oldest request in second window

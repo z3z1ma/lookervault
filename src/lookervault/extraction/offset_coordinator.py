@@ -11,13 +11,23 @@ class OffsetCoordinator:
     no duplicate or missing data.
 
     Example:
-        coordinator = OffsetCoordinator(stride=100)
-        coordinator.set_total_workers(8)
+        Basic usage pattern for parallel data fetching:
 
-        # Worker 1 claims: (0, 100)
-        # Worker 2 claims: (100, 100)
-        # Worker 3 claims: (200, 100)
-        # ...
+        >>> from concurrent.futures import ThreadPoolExecutor
+        >>> coordinator = OffsetCoordinator(stride=100)
+        >>> coordinator.set_total_workers(4)
+        >>>
+        >>> def fetch_items():
+        ...     while True:
+        ...         offset, limit = coordinator.claim_range()
+        ...         items = api.fetch(offset=offset, limit=limit)
+        ...         if not items:
+        ...             coordinator.mark_worker_complete()
+        ...             break
+        ...         process(items)
+        >>>
+        >>> with ThreadPoolExecutor(max_workers=4) as executor:
+        ...     executor.map(fetch_items, range(4))
 
     Thread Safety:
         All methods are thread-safe and use a mutex lock for synchronization.
@@ -28,6 +38,11 @@ class OffsetCoordinator:
 
         Args:
             stride: Number of items per offset range (batch size)
+
+        Example:
+            Create a coordinator that fetches 100 items at a time:
+
+            >>> coordinator = OffsetCoordinator(stride=100)
         """
         self._current_offset = 0
         self._stride = stride
@@ -47,9 +62,25 @@ class OffsetCoordinator:
             - limit: Number of items to fetch
 
         Example:
-            First call:  (0, 100)
-            Second call: (100, 100)
-            Third call:  (200, 100)
+            Sequential calls return increasing offset ranges:
+
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.claim_range()
+            (0, 100)
+            >>> coordinator.claim_range()
+            (100, 100)
+            >>> coordinator.claim_range()
+            (200, 100)
+
+            Use in a worker function:
+
+            >>> def worker():
+            ...     while True:
+            ...         offset, limit = coordinator.claim_range()
+            ...         items = fetch(offset=offset, limit=limit)
+            ...         if not items:
+            ...             break
+            ...         process(items)
         """
         with self._lock:
             start = self._current_offset
@@ -61,6 +92,13 @@ class OffsetCoordinator:
 
         Thread-safe method to track how many workers have finished
         fetching all available data.
+
+        Example:
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.set_total_workers(3)
+            >>> coordinator.mark_worker_complete()
+            >>> coordinator.get_workers_done()
+            1
         """
         with self._lock:
             self._workers_done += 1
@@ -70,6 +108,16 @@ class OffsetCoordinator:
 
         Returns:
             True if all workers have called mark_worker_complete()
+
+        Example:
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.set_total_workers(2)
+            >>> coordinator.all_workers_done()
+            False
+            >>> coordinator.mark_worker_complete()
+            >>> coordinator.mark_worker_complete()
+            >>> coordinator.all_workers_done()
+            True
         """
         with self._lock:
             return self._workers_done >= self._total_workers
@@ -79,6 +127,14 @@ class OffsetCoordinator:
 
         Args:
             count: Total number of workers that will be claiming ranges
+
+        Example:
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.set_total_workers(4)
+            >>> coordinator.get_workers_done()
+            0
+            >>> coordinator.all_workers_done()
+            False
         """
         with self._lock:
             self._total_workers = count
@@ -88,6 +144,15 @@ class OffsetCoordinator:
 
         Returns:
             Current offset value
+
+        Example:
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.get_current_offset()
+            0
+            >>> coordinator.claim_range()
+            (0, 100)
+            >>> coordinator.get_current_offset()
+            100
         """
         with self._lock:
             return self._current_offset
@@ -97,6 +162,15 @@ class OffsetCoordinator:
 
         Returns:
             Number of workers marked as done
+
+        Example:
+            >>> coordinator = OffsetCoordinator(stride=100)
+            >>> coordinator.set_total_workers(3)
+            >>> coordinator.get_workers_done()
+            0
+            >>> coordinator.mark_worker_complete()
+            >>> coordinator.get_workers_done()
+            1
         """
         with self._lock:
             return self._workers_done

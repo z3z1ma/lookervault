@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from lookervault.constants import DEFAULT_MAX_RETRIES, SQLITE_BUSY_TIMEOUT_SECONDS
 from lookervault.exceptions import NotFoundError, StorageError
 from lookervault.storage.models import (
     Checkpoint,
@@ -421,7 +422,9 @@ class SQLiteContentRepository:
         """
         conn = sqlite3.connect(
             str(self.db_path),
-            timeout=60.0,  # 60 second busy timeout for lock contention
+            timeout=float(
+                SQLITE_BUSY_TIMEOUT_SECONDS
+            ),  # 60 second busy timeout for lock contention
             isolation_level=None,  # Manual transaction control
             check_same_thread=True,  # Safety check - each thread uses own connection
             cached_statements=0,  # Python 3.13 thread-safety fix
@@ -485,7 +488,7 @@ class SQLiteContentRepository:
     def _retry_on_busy(
         self,
         operation: Callable[[], T],
-        max_retries: int = 5,
+        max_retries: int = DEFAULT_MAX_RETRIES,
         initial_delay: float = 0.1,
     ) -> T:
         """Retry database operation on SQLITE_BUSY error.

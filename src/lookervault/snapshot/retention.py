@@ -17,6 +17,11 @@ from tenacity import (
     wait_exponential,
 )
 
+from lookervault.constants import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_MAX_WAIT_SECONDS,
+    SECONDS_PER_DAY,
+)
 from lookervault.snapshot.models import RetentionPolicy, SnapshotMetadata
 
 if TYPE_CHECKING:
@@ -216,8 +221,8 @@ def protect_minimum_backups(
 
 @retry(
     retry=retry_if_exception_type((GoogleAPICallError,)),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(DEFAULT_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=2, max=DEFAULT_RETRY_MAX_WAIT_SECONDS),
     reraise=True,
 )
 def delete_old_snapshots(
@@ -364,7 +369,7 @@ def configure_gcs_retention_policy(
 
         logger.info(
             f"Configured GCS retention policy: {retention_seconds} seconds "
-            f"({retention_seconds // 86400} days)"
+            f"({retention_seconds // SECONDS_PER_DAY} days)"
         )
 
         # Lock policy if requested (IRREVERSIBLE!)
@@ -479,8 +484,8 @@ def validate_safety_threshold(
 
 @retry(
     retry=retry_if_exception_type((GoogleAPICallError,)),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(DEFAULT_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=2, max=DEFAULT_RETRY_MAX_WAIT_SECONDS),
     reraise=True,
 )
 def delete_snapshot(

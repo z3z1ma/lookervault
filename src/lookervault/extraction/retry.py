@@ -11,15 +11,21 @@ from tenacity import (
     wait_exponential,
 )
 
+from lookervault.constants import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_RETRIES_NETWORK,
+    DEFAULT_MAX_RETRY_WAIT_SECONDS,
+    DEFAULT_RETRY_DELAY_SECONDS,
+)
 from lookervault.exceptions import RateLimitError
 
 T = TypeVar("T")
 
 
 def with_retry(
-    max_attempts: int = 5,
-    min_wait: int = 1,
-    max_wait: int = 120,
+    max_attempts: int = DEFAULT_MAX_RETRIES,
+    min_wait: int = DEFAULT_RETRY_DELAY_SECONDS,
+    max_wait: int = DEFAULT_MAX_RETRY_WAIT_SECONDS,
     multiplier: int = 2,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to add retry logic with exponential back-off.
@@ -50,5 +56,15 @@ def with_retry(
 
 
 # Pre-configured decorators for common scenarios
-retry_on_rate_limit = with_retry(max_attempts=5, min_wait=4, max_wait=120, multiplier=2)
-retry_on_network_error = with_retry(max_attempts=3, min_wait=1, max_wait=10, multiplier=2)
+retry_on_rate_limit = with_retry(
+    max_attempts=DEFAULT_MAX_RETRIES,
+    min_wait=4,
+    max_wait=DEFAULT_MAX_RETRY_WAIT_SECONDS,
+    multiplier=2,
+)
+retry_on_network_error = with_retry(
+    max_attempts=DEFAULT_MAX_RETRIES_NETWORK,
+    min_wait=DEFAULT_RETRY_DELAY_SECONDS,
+    max_wait=10,
+    multiplier=2,
+)

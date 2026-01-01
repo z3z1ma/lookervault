@@ -1272,60 +1272,47 @@ export LOOKERVAULT_TIMEOUT="300"  # 5 minutes for large instances
 
 ## Troubleshooting
 
-### Rate Limit Errors (HTTP 429)
+For comprehensive error documentation, see the [TROUBLESHOOTING.md](TROUBLESHOOTING.md) guide, which covers:
 
-**Symptom**: `WARNING: Rate limit hit, will retry in 30 seconds`
+- Configuration errors (invalid TOML, missing config file)
+- Authentication errors (invalid credentials, 401 Unauthorized)
+- Rate limit errors (HTTP 429, adaptive rate limiting)
+- Network connection errors (timeout, SSL, VPN issues)
+- Database errors (SQLITE_BUSY, corruption)
+- Content extraction errors (API failures, folder not found)
+- Content restoration errors (dependency errors, DLQ management)
+- YAML validation errors (syntax, structure, field validation)
+- Cloud storage errors (GCS authentication, bucket access)
+- Exit codes and their meanings
 
-**Solution**: Adaptive rate limiting handles this automatically. If persistent:
+### Quick Fixes for Common Issues
 
+**Rate Limit Errors (HTTP 429)**:
 ```bash
-# Reduce rate limits
-lookervault extract --workers 8 --rate-limit-per-minute 60 --rate-limit-per-second 5
-
-# Or reduce worker count
+# Adaptive rate limiting handles this automatically
+# If persistent, reduce worker count:
 lookervault extract --workers 4
 ```
 
-### Memory Issues
-
-**Symptom**: `MemoryError` or high memory usage
-
-**Solution**:
-
+**Memory Issues**:
 ```bash
 # Reduce batch size and worker count
 lookervault extract --workers 4 --batch-size 50
-
-# Extract content types individually
-lookervault extract dashboards --workers 8
-lookervault extract looks --workers 8
 ```
 
-### SQLite Write Contention
-
-**Symptom**: `SQLITE_BUSY` errors or warnings about worker count
-
-**Solution**: These are automatically retried with exponential backoff. If persistent:
-
+**SQLite Write Contention**:
 ```bash
 # Reduce worker count (16 is SQLite write limit)
 lookervault extract --workers 8
 lookervault restore bulk dashboards --workers 8
 ```
 
-### Connection Errors
-
-**Symptom**: `ConnectionError: Unable to connect to Looker`
-
-**Solution**:
-
-1. Verify credentials: `lookervault check`
-2. Check network/VPN connection
-3. Verify Looker instance is accessible
-4. Check API credentials haven't expired
-5. Increase timeout for large instances:
-
+**Connection Errors**:
 ```bash
+# Verify credentials and connectivity
+lookervault check
+
+# Increase timeout for large instances
 export LOOKERVAULT_TIMEOUT=300  # 5 minutes
 lookervault extract
 ```
@@ -1347,238 +1334,22 @@ lookervault extract --workers 8
 
 ### YAML Validation Errors
 
-**Symptom**: `lookervault pack` fails with validation errors when importing modified YAML files
+For detailed YAML validation error documentation, including:
+- Invalid YAML syntax (indentation, quotes, special characters)
+- Missing required fields (elements, query, etc.)
+- Query structure errors (model, view, fields)
+- Field-level validation errors (empty titles, data types)
+- Checksum mismatches
 
-#### Invalid YAML Syntax
+See the [YAML Validation Errors](TROUBLESHOOTING.md#yaml-validation-errors) section in TROUBLESHOOTING.md.
 
-**Error Message**:
-```
-ValidationError: Invalid YAML syntax in export/dashboards/abc123.yaml: mapping values are not allowed here
-```
-
-**Causes**:
-- Missing quotes around strings with special characters
-- Incorrect indentation (YAML requires consistent 2-space indentation)
-- Unescaped colons or other special characters
-- Mixed tabs and spaces
-
-**Solution**:
+**Quick validation**:
 ```bash
-# Validate YAML syntax before packing
+# Validate before packing
+lookervault pack --input-dir export/ --dry-run --verbose
+
+# Validate YAML syntax
 python3 -c "import yaml; yaml.safe_load(open('export/dashboards/abc123.yaml'))"
-
-# Common fixes:
-# 1. Add quotes around strings with colons
-title: "Sales: Regional Analysis"  # Correct
-title: Sales: Regional Analysis    # Incorrect
-
-# 2. Fix indentation (use 2 spaces, not tabs)
-elements:
-  - id: "elem1"      # Correct (2-space indent)
-    title: "Revenue"
-
-# 3. Escape special characters
-description: "Q1 results (updated)"  # Use quotes for parentheses
-```
-
-#### Missing Required Fields
-
-**Error Message**:
-```
-[Structure] DASHBOARD missing required 'elements' field
-[Structure] LOOK missing required 'query' field
-```
-
-**Causes**:
-- Accidentally deleted required fields during modification
-- Incorrect YAML structure after bulk edits
-
-**Solution**:
-```bash
-# Check which fields are required for each content type:
-# DASHBOARD: id, title, elements
-# LOOK: id, title, query
-
-# Example: Restore missing 'elements' field
-elements:
-  - id: "elem1"
-    title: "Element Title"
-    query:
-      model: "sales"
-      view: "transactions"
-      fields: ["transactions.total_revenue"]
-
-# Use --dry-run to validate before packing
-lookervault pack --input-dir export/ --dry-run
-```
-
-#### Query Structure Errors
-
-**Error Message**:
-```
-[Query] Missing required query fields: model, view in dashboards/456.yaml:15
-[Query] Query validation failed in looks/789.yaml: 'fields' must be a list
-```
-
-**Causes**:
-- Missing required query fields (`model`, `view`, `fields`)
-- Incorrect data types (e.g., `fields` must be a list, not a string)
-- Invalid Looker SDK query structure
-
-**Solution**:
-```bash
-# Correct query structure (required fields):
-query:
-  model: "sales"              # Required: LookML model name
-  view: "transactions"        # Required: View name
-  fields:                     # Required: List of fields
-    - "transactions.date"
-    - "transactions.total_revenue"
-  filters:                    # Optional: Filter definitions
-    "transactions.date": "30 days"
-  sorts:                      # Optional: Sort order
-    - "transactions.date desc"
-
-# Common mistakes:
-# 1. Missing required fields
-query:
-  model: "sales"
-  # Missing 'view' and 'fields' - will fail
-
-# 2. Wrong data type for fields
-query:
-  fields: "transactions.revenue"  # Incorrect: must be a list
-  fields: ["transactions.revenue"]  # Correct
-
-# Validate with --dry-run
-lookervault pack --input-dir export/ --dry-run
-```
-
-#### Field-Level Validation Errors
-
-**Error Message**:
-```
-[Field] Field 'title' cannot be empty in dashboards/123.yaml:5
-[Field] Field 'title' exceeds 255 characters in dashboards/456.yaml:8
-[Field] Dashboard filters must be a dictionary, got list in dashboards/789.yaml:12
-```
-
-**Causes**:
-- Empty or whitespace-only titles
-- Title exceeds maximum length (255 characters)
-- Incorrect data types for fields
-
-**Solution**:
-```bash
-# 1. Fix empty titles
-title: ""                    # Incorrect: empty string
-title: "Sales Dashboard"     # Correct
-
-# 2. Shorten long titles
-title: "This is a very long dashboard title that exceeds the 255 character limit..."  # Too long
-title: "Sales Dashboard - Q1 2025"  # Under 255 characters
-
-# 3. Fix incorrect data types
-filters:                     # Correct: dictionary
-  "date": "30 days"
-  "region": "US"
-
-filters:                     # Incorrect: list
-  - "date: 30 days"
-
-# Use --verbose for detailed error locations
-lookervault pack --input-dir export/ --dry-run --verbose
-```
-
-#### Checksum Mismatches
-
-**Error Message**:
-```
-WARNING: Export checksum mismatch detected
-Expected: sha256:abc123...
-Computed: sha256:def456...
-```
-
-**Causes**:
-- YAML files were modified after export
-- Files were added/removed from export directory
-- Manual edits to `metadata.json`
-
-**Solution**:
-```bash
-# This is a WARNING, not an error - pack will continue
-# Checksum mismatch indicates modifications were made (expected behavior)
-
-# If you see this unexpectedly:
-# 1. Verify no accidental changes to YAML files
-# 2. Check if files were added/deleted
-# 3. Review metadata.json integrity
-
-# To proceed with intentional modifications:
-lookervault pack --input-dir export/  # Pack will continue despite warning
-
-# To validate all modifications before packing:
-lookervault pack --input-dir export/ --dry-run --verbose
-```
-
-#### Validation Best Practices
-
-1. **Always use `--dry-run` first**:
-```bash
-lookervault pack --input-dir export/ --dry-run
-```
-
-2. **Use `--verbose` for detailed error locations**:
-```bash
-lookervault pack --input-dir export/ --dry-run --verbose
-```
-
-3. **Test modifications on a small subset first**:
-```bash
-# Extract single dashboard
-lookervault extract dashboards --folder-ids "123" --workers 1
-
-# Unpack and modify
-lookervault unpack --output-dir test_export/
-# [Modify YAML files]
-
-# Validate with dry-run
-lookervault pack --input-dir test_export/ --dry-run
-
-# If successful, apply to full dataset
-```
-
-4. **Validate YAML syntax before packing**:
-```bash
-# Python validation script
-python3 << 'EOF'
-import yaml
-from pathlib import Path
-
-for yaml_file in Path("export/dashboards").glob("*.yaml"):
-    try:
-        with open(yaml_file) as f:
-            yaml.safe_load(f)
-        print(f"✓ {yaml_file.name}")
-    except Exception as e:
-        print(f"✗ {yaml_file.name}: {e}")
-EOF
-```
-
-5. **Keep backups before bulk modifications**:
-```bash
-# Create snapshot before modifications
-lookervault snapshot upload --name "pre-modification"
-
-# Make modifications
-# [Edit YAML files]
-
-# Pack and restore
-lookervault pack --input-dir export/
-lookervault restore bulk dashboards --workers 8
-
-# If issues occur, restore from snapshot
-lookervault snapshot download 1
 ```
 
 ## Roadmap

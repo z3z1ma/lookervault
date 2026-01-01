@@ -28,20 +28,28 @@ from tenacity import (
 )
 
 from lookervault.cli.rich_logging import console
+from lookervault.constants import (
+    CHUNK_SIZE_GCS,
+    DEFAULT_COMPRESSION_LEVEL,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_MAX_WAIT_SECONDS,
+    GCS_TOTAL_TIMEOUT_SECONDS,
+    GCS_UPLOAD_TIMEOUT_SECONDS,
+)
 from lookervault.snapshot.client import create_storage_client, validate_bucket_access
 from lookervault.snapshot.models import GCSStorageProvider, SnapshotMetadata
 
 logger = logging.getLogger(__name__)
 
 # Chunk size for compression and upload (8 MB recommended by GCS)
-CHUNK_SIZE = 8 * 1024 * 1024
+CHUNK_SIZE = CHUNK_SIZE_GCS
 
 # Production retry policy for GCS operations
 PRODUCTION_RETRY = retry.Retry(
     initial=1.0,  # 1 second initial delay
-    maximum=60.0,  # Max 60 seconds between retries
+    maximum=float(DEFAULT_RETRY_MAX_WAIT_SECONDS),  # Max 60 seconds between retries
     multiplier=2.0,  # Exponential backoff
-    deadline=600.0,  # 10 minute total timeout
+    deadline=float(GCS_TOTAL_TIMEOUT_SECONDS),  # 10 minute total timeout
     predicate=retry.if_exception_type(
         Exception,  # Retry on any transient error
     ),
@@ -103,7 +111,7 @@ def compute_crc32c(file_path: Path) -> str:
 def compress_file(
     source_path: Path,
     dest_path: Path,
-    compression_level: int = 6,
+    compression_level: int = DEFAULT_COMPRESSION_LEVEL,
     show_progress: bool = True,
 ) -> int:
     """
@@ -182,8 +190,8 @@ def compress_file(
 
 @tenacity_retry(
     retry=retry_if_exception_type((ConnectionError, TimeoutError)),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_attempt(DEFAULT_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=1, max=DEFAULT_RETRY_MAX_WAIT_SECONDS),
     reraise=True,
 )
 def upload_snapshot(
@@ -332,7 +340,7 @@ def upload_snapshot(
                         progress_reader,
                         checksum="crc32c",  # Server-side checksum verification
                         retry=PRODUCTION_RETRY,
-                        timeout=3600,  # 1 hour timeout for large files
+                        timeout=GCS_UPLOAD_TIMEOUT_SECONDS,  # 1 hour timeout for large files
                     )
                     bytes_uploaded = progress_reader.bytes_uploaded
 
@@ -345,7 +353,7 @@ def upload_snapshot(
                         f,
                         checksum="crc32c",  # Server-side checksum verification
                         retry=PRODUCTION_RETRY,
-                        timeout=3600,  # 1 hour timeout for large files
+                        timeout=GCS_UPLOAD_TIMEOUT_SECONDS,  # 1 hour timeout for large files
                     )
 
         except (ConnectionError, TimeoutError, OSError) as e:

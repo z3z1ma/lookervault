@@ -30,19 +30,25 @@ from tenacity import (
 )
 
 from lookervault.cli.rich_logging import console
+from lookervault.constants import (
+    CHUNK_SIZE_GCS,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_MAX_WAIT_SECONDS,
+    GCS_TOTAL_TIMEOUT_SECONDS,
+)
 from lookervault.snapshot.models import SnapshotMetadata
 
 logger = logging.getLogger(__name__)
 
 # Chunk size for download and decompression (8 MB recommended by GCS)
-CHUNK_SIZE = 8 * 1024 * 1024
+CHUNK_SIZE = CHUNK_SIZE_GCS
 
 # Production retry policy for GCS operations
 PRODUCTION_RETRY = retry.Retry(
     initial=1.0,  # 1 second initial delay
-    maximum=60.0,  # Max 60 seconds between retries
+    maximum=float(DEFAULT_RETRY_MAX_WAIT_SECONDS),  # Max 60 seconds between retries
     multiplier=2.0,  # Exponential backoff
-    deadline=600.0,  # 10 minute total timeout
+    deadline=float(GCS_TOTAL_TIMEOUT_SECONDS),  # 10 minute total timeout
     predicate=retry.if_exception_type(
         Exception,  # Retry on any transient error
     ),
@@ -196,8 +202,8 @@ def decompress_file(
 
 @tenacity_retry(
     retry=retry_if_exception_type((ConnectionError, TimeoutError)),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_attempt(DEFAULT_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=1, max=DEFAULT_RETRY_MAX_WAIT_SECONDS),
     reraise=True,
 )
 def download_snapshot(
