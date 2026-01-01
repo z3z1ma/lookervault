@@ -36,11 +36,21 @@ logger = logging.getLogger(__name__)
 class FolderRange:
     """Per-folder offset tracking for multi-folder parallel extraction.
 
+    This class maintains the state for a single folder's offset tracking.
+    Each folder operates independently with its own offset counter, allowing
+    parallel workers to fetch different pages from different folders simultaneously.
+
+    Key Design:
+        - Independent offset counters enable true parallelism
+        - Workers can claim ranges from folder A (offset 0-100) while
+          other workers claim from folder B (offset 200-300)
+        - No contention between folders for offset allocation
+
     Attributes:
         folder_id: Looker folder ID
-        current_offset: Next offset to claim for this folder
+        current_offset: Next offset to claim for this folder (starts at 0, increments by stride)
         workers_done: Number of workers that hit end-of-data for this folder
-        total_claimed: Total number of ranges claimed for this folder (metrics)
+        total_claimed: Total number of ranges claimed for this folder (metrics only)
     """
 
     folder_id: str
@@ -86,7 +96,19 @@ class MultiFolderOffsetCoordinator:
     _total_workers: int = field(default=0, init=False)
 
     def __post_init__(self):
-        """Initialize folder ranges for each folder_id."""
+        """Initialize folder ranges for each folder_id.
+
+        Initialization Strategy:
+            - Create a FolderRange object for each folder_id
+            - Each folder starts with current_offset=0 (first page)
+            - Each folder starts with workers_done=0 (no completions yet)
+            - Each folder maintains independent offset tracking
+
+        Why independent offsets:
+            Different folders may have different amounts of content. By tracking
+            offsets independently, we ensure workers can make progress on all
+            folders simultaneously without waiting for other folders to catch up.
+        """
         for folder_id in self.folder_ids:
             self._folder_ranges[folder_id] = FolderRange(folder_id=folder_id)
 
@@ -100,6 +122,13 @@ class MultiFolderOffsetCoordinator:
 
         Args:
             total_workers: Total number of parallel workers
+
+        Why this is needed:
+            The coordinator needs to know how many workers are running to detect
+            when a folder is fully exhausted. A folder is exhausted when
+            workers_done >= total_workers, meaning all workers have hit end-of-data.
+
+            This is called during worker initialization before any claims are made.
         """
         with self._lock:
             self._total_workers = total_workers
@@ -119,20 +148,46 @@ class MultiFolderOffsetCoordinator:
             max_attempts = len(self.folder_ids)
 
             # Round-robin through folders until we find one with work
+            #
+            # This ensures even distribution of workers across all folders.
+            # If a folder is exhausted, we skip it and try the next one.
+            # We attempt at most len(folder_ids) times before giving up.
             while attempts < max_attempts:
                 # Get next folder in round-robin order
+                #
+                # _next_folder_idx cycles through 0..len(folder_ids)-1, ensuring
+                # each worker gets a fair share of work from all folders.
+                # This prevents starvation where one folder gets all workers.
                 folder_id = self.folder_ids[self._next_folder_idx]
                 folder_range = self._folder_ranges[folder_id]
 
                 # Move to next folder for subsequent calls
+                #
+                # Increment with modulo to wrap around to 0 after reaching the end.
+                # This creates a circular buffer effect for folder selection.
                 self._next_folder_idx = (self._next_folder_idx + 1) % len(self.folder_ids)
 
                 # Check if this folder is exhausted
+                #
+                # A folder is exhausted when all workers have reported completion
+                # for it (workers_done >= total_workers). This happens when:
+                # 1. Worker fetches empty results from SDK
+                # 2. Worker calls mark_folder_complete()
+                # 3. workers_done counter increments
+                # 4. Once workers_done reaches total_workers, folder is done
                 if folder_range.workers_done >= self._total_workers:
                     attempts += 1
                     continue
 
                 # Claim range for this folder
+                #
+                # Each folder maintains its own independent offset counter.
+                # When a worker claims a range:
+                # 1. Capture current offset (e.g., 0)
+                # 2. Increment offset by stride (e.g., 0 -> 100)
+                # 3. Next claim starts at 100, then 200, etc.
+                # This allows parallel workers to fetch different pages
+                # of the same folder simultaneously.
                 offset = folder_range.current_offset
                 folder_range.current_offset += self.stride
                 folder_range.total_claimed += 1
@@ -145,6 +200,9 @@ class MultiFolderOffsetCoordinator:
                 return (folder_id, offset, self.stride)
 
             # All folders exhausted
+            #
+            # This happens when we've cycled through all folders and each one
+            # has workers_done >= total_workers. No more work is available.
             logger.info("All folders exhausted - no more work to claim")
             return None
 
@@ -156,6 +214,24 @@ class MultiFolderOffsetCoordinator:
 
         Thread Safety:
             Protected by self._lock for safe concurrent access
+
+        Completion Detection Algorithm:
+            When a worker fetches empty results from the SDK, it calls this method
+            to signal that it has reached the end of data for this folder. The
+            coordinator tracks how many workers have completed each folder. When
+            workers_done >= total_workers, the folder is considered fully exhausted.
+
+            Why this works:
+            - Multiple workers may fetch from the same folder in parallel
+            - Each worker independently hits end-of-data at different offsets
+            - Once ALL workers have hit end-of-data, no more data can exist
+            - This is a conservative approach that ensures no data is missed
+
+            Edge case handling:
+            - If a worker crashes before calling this method, the folder will
+              never be marked as fully exhausted (workers_done < total_workers)
+            - This is acceptable as the outer extraction loop will eventually
+              timeout when no workers can claim new ranges
         """
         with self._lock:
             folder_range = self._folder_ranges[folder_id]
@@ -167,6 +243,12 @@ class MultiFolderOffsetCoordinator:
             )
 
             # Check if folder is fully exhausted
+            #
+            # When all workers have reported completion for this folder,
+            # we know there's no more data to fetch. This is because:
+            # - If there were more data, at least one worker would have found it
+            # - All workers have exhausted their parallel fetch streams
+            # - The SDK returns empty results when offset >= total_items
             if folder_range.workers_done >= self._total_workers:
                 logger.info(
                     f"Folder {folder_id} fully exhausted "

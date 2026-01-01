@@ -505,8 +505,8 @@ class SQLiteContentRepository:
         Raises:
             StorageError: If operation fails after max_retries
         """
-        last_error = None
-        delay = initial_delay
+        last_error: Exception | None = None
+        delay: float = initial_delay
 
         for attempt in range(max_retries):
             try:
@@ -516,8 +516,10 @@ class SQLiteContentRepository:
                 if "database is locked" in str(e).lower() or "busy" in str(e).lower():
                     if attempt < max_retries - 1:
                         # Exponential backoff with jitter
-                        jitter = delay * 0.1 * (hash(threading.current_thread().name) % 10) / 10
-                        sleep_time = delay + jitter
+                        jitter: float = (
+                            delay * 0.1 * (hash(threading.current_thread().name) % 10) / 10
+                        )
+                        sleep_time: float = delay + jitter
                         logger.debug(
                             f"SQLITE_BUSY detected (attempt {attempt + 1}/{max_retries}), "
                             f"retrying in {sleep_time:.3f}s"
@@ -691,7 +693,7 @@ class SQLiteContentRepository:
 
             cursor.execute(query, params)
 
-            items = []
+            items: list[ContentItem] = []
             for row in cursor.fetchall():
                 items.append(
                     ContentItem(
@@ -840,7 +842,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    checkpoint_id = cursor.lastrowid
+                    checkpoint_id: int = cursor.lastrowid
                     conn.commit()
                     return checkpoint_id
             except sqlite3.Error as e:
@@ -1159,7 +1161,7 @@ class SQLiteContentRepository:
             cursor = conn.cursor()
 
             # Parameterized query to prevent SQL injection
-            placeholders = ",".join(["?" for _ in folder_ids])
+            placeholders: str = ",".join(["?" for _ in folder_ids])
             # ruff: noqa: S608
             query = f"""
                 SELECT id
@@ -1174,7 +1176,7 @@ class SQLiteContentRepository:
 
             cursor.execute(query, params)
 
-            filtered_ids = {row["id"] for row in cursor.fetchall()}
+            filtered_ids: set[str] = {row["id"] for row in cursor.fetchall()}
 
             logger.debug(
                 f"Filtered {len(filtered_ids)} {ContentType(content_type).name} items "
@@ -1223,7 +1225,7 @@ class SQLiteContentRepository:
             cursor = conn.cursor()
 
             # Parameterized query to prevent SQL injection
-            placeholders = ",".join(["?" for _ in folder_ids])
+            placeholders: str = ",".join(["?" for _ in folder_ids])
             # ruff: noqa: S608
             query = f"""
                 SELECT id, content_type, name, owner_id, owner_email,
@@ -1247,7 +1249,7 @@ class SQLiteContentRepository:
 
             cursor.execute(query, params)
 
-            items = []
+            items: list[ContentItem] = []
             for row in cursor.fetchall():
                 items.append(
                     ContentItem(
@@ -1305,7 +1307,7 @@ class SQLiteContentRepository:
                 (cutoff_date.isoformat(),),
             )
 
-            items = []
+            items: list[ContentItem] = []
             for row in cursor.fetchall():
                 items.append(
                     ContentItem(
@@ -1353,7 +1355,7 @@ class SQLiteContentRepository:
                 (cutoff_date.isoformat(),),
             )
 
-            deleted_count = cursor.rowcount
+            deleted_count: int = cursor.rowcount
             conn.commit()
 
             return deleted_count
@@ -1417,7 +1419,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    dlq_id = cursor.lastrowid
+                    dlq_id: int = cursor.lastrowid
                     conn.commit()
                     return dlq_id
             except sqlite3.Error as e:
@@ -1515,7 +1517,7 @@ class SQLiteContentRepository:
 
             cursor.execute(query, params)
 
-            items = []
+            items: list[DeadLetterItem] = []
             for row in cursor.fetchall():
                 items.append(
                     DeadLetterItem(
@@ -1763,14 +1765,14 @@ class SQLiteContentRepository:
 
             # Use parameterized query with IN clause for bulk lookup
             # Safe: placeholders are just "?" repeated, no user input in SQL structure
-            placeholders = ",".join("?" * len(source_ids))
+            placeholders: str = ",".join("?" * len(source_ids))
             query = f"""
                 SELECT source_id, destination_id
                 FROM id_mappings
                 WHERE source_instance = ? AND content_type = ? AND source_id IN ({placeholders})
             """  # noqa: S608
 
-            params = [source_instance, content_type] + list(source_ids)
+            params: list[str | int] = [source_instance, content_type] + list(source_ids)
             cursor.execute(query, params)
 
             return {row["source_id"]: row["destination_id"] for row in cursor.fetchall()}
@@ -1795,7 +1797,7 @@ class SQLiteContentRepository:
 
             query = "DELETE FROM id_mappings"
             params: list[str | int] = []
-            conditions = []
+            conditions: list[str] = []
 
             if source_instance is not None:
                 conditions.append("source_instance = ?")
@@ -1809,7 +1811,7 @@ class SQLiteContentRepository:
                 query += " WHERE " + " AND ".join(conditions)
 
             cursor.execute(query, params)
-            deleted_count = cursor.rowcount
+            deleted_count: int = cursor.rowcount
             conn.commit()
 
             return deleted_count
@@ -1869,7 +1871,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    checkpoint_id = cursor.lastrowid
+                    checkpoint_id: int = cursor.lastrowid
                     conn.commit()
                     return checkpoint_id
             except sqlite3.Error as e:
@@ -2186,7 +2188,7 @@ class SQLiteContentRepository:
 
             cursor.execute(query, params)
 
-            sessions = []
+            sessions: list[RestorationSession] = []
             for row in cursor.fetchall():
                 sessions.append(
                     RestorationSession(

@@ -469,6 +469,29 @@ class DashboardSubResourceRestorer:
         2. Categorization: Determine CREATE/UPDATE/DELETE operations
         3. Execution: Apply operations with best-effort error handling
 
+        Phase Details
+        -------------
+        **Phase 1 - Discovery**: Call ``_fetch_existing_filters()`` to get all
+        existing dashboard filters from the destination instance. Build a mapping
+        by ID for efficient lookup.
+
+        **Phase 2 - Categorization**: Compare backup IDs against destination IDs:
+        - Backup ID in destination → UPDATE operation
+        - Backup ID not in destination → CREATE operation
+        - Destination ID not in backup → DELETE operation (orphan cleanup)
+
+        **Phase 3 - Execution**: Execute operations sequentially with best-effort
+        error handling. Failed items are logged but don't stop the restoration.
+
+        Example
+        -------
+        Given backup filters with IDs ``{1, 2, 3}`` and destination filters
+        with IDs ``{2, 3, 4}``:
+        - Filter 1: CREATE (exists in backup, not destination)
+        - Filter 2: UPDATE (exists in both)
+        - Filter 3: UPDATE (exists in both)
+        - Filter 4: DELETE (exists in destination, not backup)
+
         Args:
             dashboard_id: Dashboard ID in destination instance
             backup_filters: List of dashboard filter dicts from backup
@@ -705,6 +728,30 @@ class DashboardSubResourceRestorer:
         - Text tiles (contain body_text)
         - Merge results (reference merge_result_id)
 
+        Phase Details
+        -------------
+        **Phase 1 - Discovery**: Call ``_fetch_existing_elements()`` to get all
+        existing dashboard elements from the destination instance. Build a mapping
+        by ID for efficient lookup.
+
+        **Phase 2 - Categorization**: Compare backup IDs against destination IDs:
+        - Backup ID in destination → UPDATE operation
+        - Backup ID not in destination → CREATE operation
+        - Destination ID not in backup → DELETE operation (orphan cleanup)
+
+        **Phase 3 - Execution**: Execute operations sequentially with best-effort
+        error handling. Track ID mappings for CREATE operations in case Looker
+        assigns new IDs.
+
+        Example
+        -------
+        Given backup elements with IDs ``{101, 102, 103}`` and destination elements
+        with IDs ``{102, 103, 104}``:
+        - Element 101: CREATE (exists in backup, not destination)
+        - Element 102: UPDATE (exists in both)
+        - Element 103: UPDATE (exists in both)
+        - Element 104: DELETE (exists in destination, not backup)
+
         Args:
             dashboard_id: Dashboard ID in destination instance
             backup_elements: List of dashboard element dicts from backup
@@ -935,6 +982,35 @@ class DashboardSubResourceRestorer:
 
         Dashboard layouts define responsive layout behavior and contain layout_components
         that position elements at specific rows/columns with width/height.
+
+        Phase Details
+        -------------
+        **Phase 1 - Discovery**: Call ``_fetch_existing_layouts()`` to get all
+        existing dashboard layouts from the destination instance. Build a mapping
+        by ID for efficient lookup.
+
+        **Phase 2 - Categorization**: Compare backup IDs against destination IDs:
+        - Backup ID in destination → UPDATE operation (also update components)
+        - Backup ID not in destination → CREATE operation (also create components)
+        - Destination ID not in backup → DELETE operation (orphan cleanup)
+
+        **Phase 3 - Execution**: Execute operations sequentially with best-effort
+        error handling. For each layout, also restore nested layout_components
+        which define element positioning.
+
+        Layout Components
+        ------------------
+        Layout components are nested sub-resources that define row/column positioning
+        for dashboard elements. They are updated (not created/deleted) as part of
+        the parent layout restoration.
+
+        Example
+        -------
+        Given backup layouts with IDs ``{201, 202}`` and destination layouts
+        with IDs ``{202, 203}``:
+        - Layout 201: CREATE (exists in backup, not destination)
+        - Layout 202: UPDATE (exists in both)
+        - Layout 203: DELETE (exists in destination, not backup)
 
         Args:
             dashboard_id: Dashboard ID in destination instance

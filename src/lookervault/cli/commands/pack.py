@@ -38,7 +38,10 @@ def run(
     ] = False,
     force: Annotated[
         bool,
-        typer.Option("--force", help="Override existing database content"),
+        typer.Option(
+            "--force",
+            help="Delete database items for missing YAML files. Use with caution - deleted items cannot be recovered without a backup.",
+        ),
     ] = False,
     json_output: Annotated[
         bool,
@@ -54,6 +57,54 @@ def run(
     ] = False,
 ) -> None:
     """Pack exported YAML files back into a Looker database.
+
+    This command imports YAML files (previously exported with `lookervault unpack`)
+    back into the SQLite database, performing validation, query remapping, and
+    content updates.
+
+    Usage Examples:
+
+        # Normal mode: Validate and import with full validation
+        lookervault pack --input-dir export/
+
+        # Preview changes without modifying the database
+        lookervault pack --input-dir export/ --dry-run
+
+        # Force mode: Delete database items for missing YAML files
+        # Use this when you've deleted YAML files and want the database to match
+        lookervault pack --input-dir export/ --force
+
+    Normal Mode (default):
+        - Validates all YAML files for syntax and schema correctness
+        - Performs Looker SDK validation to ensure content is valid
+        - Creates new database entries for new items
+        - Updates existing entries for modified items
+        - Leaves unmodified items unchanged
+        - Tracks query modifications and creates new query objects as needed
+        - Does NOT delete database items for missing YAML files
+
+    Force Mode (--force):
+        - Performs all normal mode validations
+        - Additionally DELETES database items when corresponding YAML files are missing
+        - Use this to synchronize the database with a manually pruned YAML export
+        - WARNING: Deleted items cannot be recovered unless you have a database backup
+
+    When to use --force:
+        - After manually deleting YAML files from the export directory
+        - When you want to remove content from the database by deleting its YAML file
+        - To keep the database synchronized with a curated subset of exported content
+        - During selective import workflows where you only want specific items
+
+    When NOT to use --force:
+        - For normal import operations where you want to preserve all database content
+        - When the YAML export directory is incomplete or partially corrupted
+        - If you're unsure whether missing YAML files represent intentional deletions
+
+    Workflow Recommendation:
+        1. Always run with --dry-run first to preview changes
+        2. Review the output, especially "Missing files" count
+        3. If missing files are expected, run again with --force
+        4. If missing files are unexpected, investigate before proceeding
 
     Exit Codes:
         0: Successful packing
