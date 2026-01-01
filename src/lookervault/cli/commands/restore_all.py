@@ -40,6 +40,25 @@ EXIT_VALIDATION_ERROR = 3
 EXIT_API_ERROR = 4
 
 
+def should_show_confirmation_prompt(
+    dry_run: bool, force: bool, json_output: bool, quiet: bool
+) -> bool:
+    """Determine if the confirmation prompt should be shown.
+
+    The prompt is shown when none of the flags that suppress it are active.
+
+    Args:
+        dry_run: Dry run mode (no changes, so no confirmation needed)
+        force: Force mode (skip confirmation)
+        json_output: JSON output mode (no interactive prompts)
+        quiet: Quiet mode (minimal output, no prompts)
+
+    Returns:
+        True if the confirmation prompt should be shown, False otherwise
+    """
+    return not any([dry_run, force, json_output, quiet])
+
+
 def restore_all(
     config: Path | None = None,
     db_path: str | None = None,
@@ -380,7 +399,7 @@ def restore_all(
         total_types = len(ordered_types)
 
         # Confirmation prompt for destructive operation (unless dry_run or force or JSON output)
-        if not dry_run and not force and not json_output and not quiet:
+        if should_show_confirmation_prompt(dry_run, force, json_output, quiet):
             console.print(
                 "\n[bold yellow]⚠ WARNING: Bulk restoration of ALL content types[/bold yellow]"
             )

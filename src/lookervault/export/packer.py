@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import msgspec.msgpack
-from rich.progress import Progress, TaskID
+from rich.progress import Progress
 
 from lookervault.export.checksum import compute_export_checksum
 from lookervault.export.metadata import MetadataManager
@@ -88,7 +88,7 @@ class ContentPacker:
             )
 
         # 2. Discover YAML files
-        yaml_files = self._discover_yaml_files(input_dir, metadata.strategy)
+        yaml_files = self._discover_yaml_files(input_dir)
 
         # 3. Validate checksum
         result = PackResult()
@@ -107,7 +107,7 @@ class ContentPacker:
 
             for i, yaml_file in enumerate(yaml_files):
                 if not dry_run:
-                    content_item = self._process_file(yaml_file, result, progress, task)
+                    content_item = self._process_file(yaml_file, result, progress)
                     if content_item:
                         batch_items.append((content_item, yaml_file))
 
@@ -136,13 +136,11 @@ class ContentPacker:
     def _discover_yaml_files(
         self,
         input_dir: Path,
-        strategy: str,
     ) -> list[Path]:
         """Discover YAML files to import.
 
         Args:
             input_dir: Directory with YAML export
-            strategy: Full or folder strategy
 
         Returns:
             Sorted list of YAML file paths
@@ -157,7 +155,6 @@ class ContentPacker:
         yaml_file: Path,
         result: PackResult,
         progress: Progress,
-        task: TaskID,
     ) -> ContentItem | None:
         """Validate and prepare a single YAML file for import.
 
@@ -165,7 +162,6 @@ class ContentPacker:
             yaml_file: Path to YAML file
             result: Pack operation result tracking
             progress: Rich progress bar
-            task: Rich task for status updates
 
         Returns:
             ContentItem ready for import or None if validation fails

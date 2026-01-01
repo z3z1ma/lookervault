@@ -59,13 +59,12 @@ class ContentUnpacker:
         self._metadata_manager = metadata_manager or MetadataManager()
         self._logger = logging.getLogger(__name__)
 
-    def _check_disk_space(self, output_dir: Path, db_path: Path, total_items: int) -> None:
+    def _check_disk_space(self, output_dir: Path, db_path: Path) -> None:
         """Check available disk space before export (T071).
 
         Args:
             output_dir: Target directory for export
             db_path: Source database path (for size estimation)
-            total_items: Total number of items to export
 
         Raises:
             RuntimeError: If insufficient disk space available
@@ -133,10 +132,7 @@ class ContentUnpacker:
             export_types = list(ContentType)
 
         # Check disk space before proceeding (T071)
-        total_count = sum(
-            len(self._repository.list_content(content_type=ct)) for ct in export_types
-        )
-        self._check_disk_space(output_dir, db_path, total_count)
+        self._check_disk_space(output_dir, db_path)
 
         # Create subdirectories for each content type (T072 - error handling)
         for content_type in export_types:
