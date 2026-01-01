@@ -21,6 +21,7 @@ dependencies = [
 ]
 
 urls = {Repository = "https://github.com/z3z1ma/lookervault"}
+license = {text = "MIT"}
 keywords = [
     "looker",
     "backup",
