@@ -321,40 +321,40 @@ class TestParallelOrchestratorErrorHandling:
         mock_repository.get_content_ids.return_value = {"1", "2"}
         mock_repository.get_latest_restoration_checkpoint.return_value = None
 
-        # Mock the repository's save_dead_letter_item method
-        mock_repository.save_dead_letter_item = MagicMock(return_value=1)
+        # Mock the DLQ add method to return a DLQ entry ID
+        mock_dlq.add.return_value = 1
 
         # Mock restore_single: success for item 1, failure for item 2
-        mock_restorer.restore_single.side_effect = [
-            RestorationResult(
-                content_id="1",
-                content_type=ContentType.DASHBOARD.value,
-                status="created",
-                destination_id="101",
-                duration_ms=100.0,
-            ),
-            RestorationResult(
-                content_id="2",
-                content_type=ContentType.DASHBOARD.value,
-                status="failed",
-                error_message="Validation error: Missing required field",
-                retry_count=5,
-                duration_ms=50.0,
-            ),
-        ]
+        # Use a side_effect function that returns results based on content_id
+        def restore_side_effect(content_id, content_type, dry_run=False):
+            if content_id == "1":
+                return RestorationResult(
+                    content_id="1",
+                    content_type=ContentType.DASHBOARD.value,
+                    status="created",
+                    destination_id="101",
+                    duration_ms=100.0,
+                )
+            else:  # content_id == "2"
+                return RestorationResult(
+                    content_id="2",
+                    content_type=ContentType.DASHBOARD.value,
+                    status="failed",
+                    error_message="Validation error: Missing required field",
+                    retry_count=5,
+                    duration_ms=50.0,
+                )
+
+        mock_restorer.restore_single.side_effect = restore_side_effect
 
         # Execute
         orchestrator.restore(ContentType.DASHBOARD, mock_config.session_id)
 
-        # Assert: DLQ repository method was called for failed item
-        # Note: Implementation may add to DLQ through repository, not DLQ.add()
-        # This test is flexible to allow for either implementation
-        if mock_dlq.add.called:
-            call_args = mock_dlq.add.call_args
-            assert call_args[1]["content_id"] == "2"
-        else:
-            # Alternative: check repository was called
-            assert mock_repository.save_dead_letter_item.call_count >= 0
+        # Assert: DLQ add method was called for the failed item
+        mock_dlq.add.assert_called_once()
+        call_args = mock_dlq.add.call_args
+        # Verify the content_id of the failed item
+        assert call_args[1]["content_id"] == "2"
 
     def test_restore_should_continue_after_worker_errors(
         self, orchestrator, mock_repository, mock_restorer, mock_config

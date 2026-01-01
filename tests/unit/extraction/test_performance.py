@@ -20,6 +20,7 @@ Test Strategies:
 import threading
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -118,8 +119,8 @@ def sample_content_items():
             name=f"Dashboard {i}",
             owner_id=1,
             owner_email="test@example.com",
-            created_at=None,
-            updated_at=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
             synced_at=None,
             deleted_at=None,
             content_size=100,
@@ -231,8 +232,8 @@ class TestParallelExtractionThroughput:
                 name=f"Dashboard {i}",
                 owner_id=1,
                 owner_email="test@example.com",
-                created_at=None,
-                updated_at=None,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
                 synced_at=None,
                 deleted_at=None,
                 content_size=100,
@@ -623,7 +624,7 @@ class TestMemoryUsageStability:
         assert peak_mem == 0
 
         # Processing should still work
-        items = range(100)
+        items = iter(range(100))  # Convert to Iterator for type compatibility
         results = list(processor.process_batches(items, lambda x: x * 2, batch_size=10))
         assert len(results) == 100
 
@@ -698,8 +699,11 @@ class TestMemoryUsageStability:
         """Test configuration validation."""
         tuner = PerformanceTuner()
 
-        # Valid configuration
-        warnings = tuner.validate_configuration(workers=8, queue_size=800, batch_size=100)
+        # Valid configuration - use actual CPU count to avoid false warnings in CI
+        valid_workers = min(8, tuner.cpu_count)
+        warnings = tuner.validate_configuration(
+            workers=valid_workers, queue_size=valid_workers * 100, batch_size=100
+        )
         assert len(warnings) == 0, "Valid configuration should have no warnings"
 
         # Too many workers for SQLite
@@ -707,8 +711,10 @@ class TestMemoryUsageStability:
         assert len(warnings) > 0
         assert any("SQLite" in w for w in warnings)
 
-        # Queue too small
-        warnings = tuner.validate_configuration(workers=8, queue_size=10, batch_size=100)
+        # Queue too small - use valid_workers to match CPU count
+        warnings = tuner.validate_configuration(
+            workers=valid_workers, queue_size=10, batch_size=100
+        )
         assert len(warnings) > 0
         assert any("Queue" in w for w in warnings)
 

@@ -79,8 +79,16 @@ def test_load_config_invalid_toml(tmp_path: Path) -> None:
         load_config(config_file)
 
 
-def test_load_config_missing_section(tmp_path: Path) -> None:
-    """Test error when lookervault section is missing."""
+def test_load_config_missing_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test error when looker section is missing."""
+    # Clear environment variables to ensure test isolation
+    monkeypatch.delenv("LOOKERVAULT_API_URL", raising=False)
+    monkeypatch.delenv("LOOKER_BASE_URL", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LOOKERVAULT_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("LOOKER_CLIENT_SECRET", raising=False)
+
     config_file = tmp_path / "config.toml"
     config_file.write_text("[other]\nkey = 'value'")
 

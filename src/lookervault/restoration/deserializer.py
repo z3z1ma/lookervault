@@ -278,7 +278,7 @@ class ContentDeserializer:
 
         # Deserialize binary blob to Python dict using msgspec msgpack format
         try:
-            content_dict = msgspec.msgpack.decode(content_data)  # type: ignore[attr-defined]
+            content_dict = msgspec.msgpack.decode(content_data)
         except Exception as e:
             raise DeserializationError(
                 f"Failed to deserialize {content_type.name} content: {e}"

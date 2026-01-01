@@ -107,9 +107,10 @@ This approach is particularly important for:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from looker_sdk import error as looker_error
+from looker_sdk import models40 as looker_models
 
 from lookervault.exceptions import RateLimitError, RestorationError
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
@@ -627,7 +628,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"CREATE filter payload keys: {list(writable_filter.keys())}")
 
         try:
-            response = self.client.sdk.create_dashboard_filter(body=writable_filter)
+            response = self.client.sdk.create_dashboard_filter(
+                body=cast(looker_models.WriteCreateDashboardFilter, writable_filter)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -667,7 +670,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"UPDATE filter {filter_id} payload keys: {list(writable_filter.keys())}")
 
         try:
-            response = self.client.sdk.update_dashboard_filter(filter_id, body=writable_filter)
+            response = self.client.sdk.update_dashboard_filter(
+                filter_id, body=cast(looker_models.WriteDashboardFilter, writable_filter)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -887,7 +892,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"CREATE element payload keys: {list(writable_element.keys())}")
 
         try:
-            response = self.client.sdk.create_dashboard_element(body=writable_element)
+            response = self.client.sdk.create_dashboard_element(
+                body=cast(looker_models.WriteDashboardElement, writable_element)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -927,7 +934,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"UPDATE element {element_id} payload keys: {list(writable_element.keys())}")
 
         try:
-            response = self.client.sdk.update_dashboard_element(element_id, body=writable_element)
+            response = self.client.sdk.update_dashboard_element(
+                element_id, body=cast(looker_models.WriteDashboardElement, writable_element)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -1232,7 +1241,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"CREATE layout payload keys: {list(writable_layout.keys())}")
 
         try:
-            response = self.client.sdk.create_dashboard_layout(body=writable_layout)
+            response = self.client.sdk.create_dashboard_layout(
+                body=cast(looker_models.WriteDashboardLayout, writable_layout)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -1272,7 +1283,9 @@ class DashboardSubResourceRestorer:
         logger.debug(f"UPDATE layout {layout_id} payload keys: {list(writable_layout.keys())}")
 
         try:
-            response = self.client.sdk.update_dashboard_layout(layout_id, body=writable_layout)
+            response = self.client.sdk.update_dashboard_layout(
+                layout_id, body=cast(looker_models.WriteDashboardLayout, writable_layout)
+            )
 
             if self.rate_limiter:
                 self.rate_limiter.on_success()
@@ -1315,7 +1328,8 @@ class DashboardSubResourceRestorer:
 
         try:
             response = self.client.sdk.update_dashboard_layout_component(
-                component_id, body=writable_component
+                component_id,
+                body=cast(looker_models.WriteDashboardLayoutComponent, writable_component),
             )
 
             if self.rate_limiter:

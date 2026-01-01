@@ -78,6 +78,8 @@ class DeadLetterQueue:
         >>> dlq.clear(session_id="restore-123", force=True)
     """
 
+    repository: ContentRepository
+
     def __init__(self, repository: ContentRepository):
         """Initialize DeadLetterQueue with content repository.
 
@@ -287,8 +289,8 @@ class DeadLetterQueue:
         return self.repository.list_dead_letter_items(
             session_id=session_id,
             content_type=content_type_value,
-            limit=limit,
-            offset=offset,
+            limit=limit or 100,  # Handle None by using default
+            offset=offset or 0,  # Handle None by using default
         )
 
     def retry(self, dlq_id: int, restorer: "LookerContentRestorer") -> "RestorationResult":

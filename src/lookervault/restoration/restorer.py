@@ -136,6 +136,8 @@ class LookerContentRestorer:
         # Future: ContentType.BOARD: BoardSubResourceRestorer,
     }
 
+    repository: ContentRepository
+
     def __init__(
         self,
         client: LookerClient,

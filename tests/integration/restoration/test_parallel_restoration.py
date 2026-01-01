@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
-import msgspec
+import msgspec.msgpack
 import pytest
 
 from lookervault.config.models import RestorationConfig
@@ -130,7 +130,7 @@ class TestParallelRestorationEndToEnd:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),
             )
             repository.save_content(content)
             content_items.append(content)
@@ -160,7 +160,7 @@ class TestParallelRestorationEndToEnd:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),
             )
             repository.save_content(content)
 
@@ -196,7 +196,7 @@ class TestParallelRestorationEndToEnd:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),
             )
             repository.save_content(content)
 
@@ -249,7 +249,7 @@ class TestParallelRestorationEndToEnd:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i), "title": f"Dashboard {i}"}),
             )
             repository.save_content(content)
 
@@ -366,7 +366,7 @@ class TestThreadSafeDatabaseOperations:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i)}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i)}),
             )
             repository.save_content(content)
 
@@ -412,7 +412,7 @@ class TestParallelRestorationPerformance:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i)}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i)}),
             )
             repository.save_content(content)
 
@@ -492,7 +492,7 @@ class TestParallelRestorationPerformance:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i)}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i)}),
             )
             repository.save_content(content)
 
@@ -547,7 +547,7 @@ class TestErrorRecoveryScenarios:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i)}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i)}),
             )
             repository.save_content(content)
 
@@ -583,7 +583,7 @@ class TestErrorRecoveryScenarios:
                 name=f"Dashboard {i}",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
-                content_data=msgspec.msgpack.encode({"id": str(i)}),  # type: ignore[unresolved-attribute]
+                content_data=msgspec.msgpack.encode({"id": str(i)}),
             )
             repository.save_content(content)
 

@@ -47,8 +47,8 @@ def simple_hierarchy(mock_repository: MagicMock, encoder: msgspec.msgpack.Encode
 
     content_items = [
         ContentItem(
-            id=folder["id"],
-            name=folder["name"],
+            id=str(folder["id"]),
+            name=str(folder["name"]),
             content_type=ContentType.FOLDER.value,
             content_data=encoder.encode(folder),
             created_at=datetime.fromisoformat("2025-12-14T00:00:00"),
@@ -90,8 +90,8 @@ def complex_hierarchy(mock_repository: MagicMock, encoder: msgspec.msgpack.Encod
 
     content_items = [
         ContentItem(
-            id=folder["id"],
-            name=folder["name"],
+            id=str(folder["id"]),
+            name=str(folder["name"]),
             content_type=ContentType.FOLDER.value,
             content_data=encoder.encode(folder),
             created_at=datetime.fromisoformat("2025-12-14T00:00:00"),
@@ -127,8 +127,8 @@ def circular_hierarchy(mock_repository: MagicMock, encoder: msgspec.msgpack.Enco
 
     content_items = [
         ContentItem(
-            id=folder["id"],
-            name=folder["name"],
+            id=str(folder["id"]),
+            name=str(folder["name"]),
             content_type=ContentType.FOLDER.value,
             content_data=encoder.encode(folder),
             created_at=datetime.fromisoformat("2025-12-14T00:00:00"),
@@ -277,8 +277,8 @@ class TestFolderHierarchyCycleDetection:
 
         content_items = [
             ContentItem(
-                id=folder["id"],
-                name=folder["name"],
+                id=str(folder["id"]),
+                name=str(folder["name"]),
                 content_type=ContentType.FOLDER.value,
                 content_data=encoder.encode(folder),
                 created_at=datetime.fromisoformat("2025-12-14T00:00:00"),
@@ -313,8 +313,8 @@ class TestFolderHierarchyCycleDetection:
 
         content_items = [
             ContentItem(
-                id=folder["id"],
-                name=folder["name"],
+                id=str(folder["id"]),
+                name=str(folder["name"]),
                 content_type=ContentType.FOLDER.value,
                 content_data=encoder.encode(folder),
                 created_at=datetime.fromisoformat("2025-12-14T00:00:00"),
@@ -588,8 +588,8 @@ class TestRealWorldScenarios:
 
         content_items = [
             ContentItem(
-                id=folder["id"],
-                name=folder["name"],
+                id=str(folder["id"]),
+                name=str(folder["name"]),
                 content_type=ContentType.FOLDER.value,
                 content_data=encoder.encode(folder),
                 created_at=datetime.fromisoformat("2025-12-14T00:00:00"),

@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import shutil
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -164,7 +165,7 @@ class ContentUnpacker:
                 progress.update(export_task, description=f"Exporting {content_type.name}")
 
                 # Fetch content items for this type
-                content_items: list[ContentItem] = self._repository.list_content(
+                content_items: Sequence[ContentItem] = self._repository.list_content(
                     content_type=content_type
                 )
                 content_type_counts[content_type.name] = len(content_items)
@@ -311,8 +312,7 @@ class ContentUnpacker:
 
             # Tracking node for content type - include ALL nodes
             content_nodes: dict[str, dict[str, FolderTreeNode]] = {
-                content_type.name: all_nodes.copy()
-                for content_type in export_types
+                content_type.name: all_nodes.copy() for content_type in export_types
             }
 
             # Export each content type
@@ -320,7 +320,7 @@ class ContentUnpacker:
                 progress.update(export_task, description=f"Exporting {content_type.name}")
 
                 # Fetch content items for this type
-                content_items: list[ContentItem] = self._repository.list_content(
+                content_items: Sequence[ContentItem] = self._repository.list_content(
                     content_type=content_type
                 )
                 content_type_counts[content_type.name] = len(content_items)

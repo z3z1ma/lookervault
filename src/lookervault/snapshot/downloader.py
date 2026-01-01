@@ -183,7 +183,8 @@ def decompress_file(
                         progress.update(task_id, completed=estimated_compressed_bytes)
 
         if progress:
-            progress.update(task_id, completed=source_size)
+            if task_id is not None:
+                progress.update(task_id, completed=source_size)
             progress.stop()
 
         logger.info(

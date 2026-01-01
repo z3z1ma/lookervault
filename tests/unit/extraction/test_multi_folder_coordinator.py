@@ -53,33 +53,45 @@ class TestMultiFolderOffsetCoordinator:
         coordinator.set_total_workers(3)
 
         # First round: should cycle through all folders
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "123"
         assert offset == 0
         assert limit == 100
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "456"
         assert offset == 0
         assert limit == 100
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "789"
         assert offset == 0
         assert limit == 100
 
         # Second round: should cycle through again with incremented offsets
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "123"
         assert offset == 100
         assert limit == 100
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "456"
         assert offset == 100
         assert limit == 100
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "789"
         assert offset == 100
         assert limit == 100
@@ -89,17 +101,23 @@ class TestMultiFolderOffsetCoordinator:
         coordinator = MultiFolderOffsetCoordinator(folder_ids=["123", "456"], stride=50)
         coordinator.set_total_workers(2)
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "123"
         assert offset == 0
         assert limit == 50
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "456"
         assert offset == 0
         assert limit == 50
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "123"
         assert offset == 50
         assert limit == 50
@@ -128,7 +146,9 @@ class TestMultiFolderOffsetCoordinator:
         coordinator.set_total_workers(2)
 
         # Claim from folder 123
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "123"
 
         # Mark folder 123 as exhausted (2 workers done = total workers)
@@ -136,16 +156,24 @@ class TestMultiFolderOffsetCoordinator:
         coordinator.mark_folder_complete("123")
 
         # Next claims should skip folder 123
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "456"
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "789"
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "456"  # Wraps around, skips 123
 
-        folder_id, offset, limit = coordinator.claim_range()
+        result = coordinator.claim_range()
+        assert result is not None
+        folder_id, offset, limit = result
         assert folder_id == "789"
 
     def test_claim_range_returns_none_when_all_exhausted(self):
@@ -176,7 +204,9 @@ class TestMultiFolderOffsetCoordinator:
 
         # Claim 6 ranges (3 per folder due to round-robin)
         for _ in range(6):
-            folder_id, offset, limit = coordinator.claim_range()
+            result = coordinator.claim_range()
+            assert result is not None
+            folder_id, offset, limit = result
             if folder_id == "123":
                 folder_123_claims.append(offset)
             else:
@@ -321,7 +351,9 @@ class TestMultiFolderOffsetCoordinator:
 
         # Should always return same folder
         for i in range(5):
-            folder_id, offset, limit = coordinator.claim_range()
+            result = coordinator.claim_range()
+            assert result is not None
+            folder_id, offset, limit = result
             assert folder_id == "123"
             assert offset == i * 100
             assert limit == 100

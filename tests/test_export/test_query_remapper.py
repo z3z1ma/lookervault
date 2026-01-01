@@ -127,6 +127,7 @@ class TestQueryRemappingTable:
                 query_hash = h
                 break
 
+        assert query_hash is not None, "Query hash should be found"
         table.record_element_reference(query_hash, "element_1")
         table.record_element_reference(query_hash, "element_2")
 
@@ -174,6 +175,7 @@ class TestToDict:
                 query_hash = h
                 break
 
+        assert query_hash is not None, "Query hash should be found"
         table.record_element_reference(query_hash, "element_1")
 
         result = table.to_dict()
@@ -198,6 +200,7 @@ class TestToDict:
                 query_hash = h
                 break
 
+        assert query_hash is not None, "Query hash should be found"
         table.record_element_reference(query_hash, "element_1")
         table.record_element_reference(query_hash, "element_2")
 
@@ -311,6 +314,8 @@ class TestRoundTrip:
             elif entry.new_query_id == id2:
                 hash2 = h
 
+        assert hash1 is not None, "hash1 should be found"
+        assert hash2 is not None, "hash2 should be found"
         original.record_element_reference(hash1, "elem_1")
         original.record_element_reference(hash2, "elem_2")
 

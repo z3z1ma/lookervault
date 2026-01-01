@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -208,21 +207,7 @@ class ContentPacker:
                 content_without_metadata.get("updated_at"), "updated_at", db_id
             )
 
-            # 6. Check if file was modified after export
-            exported_at_str = metadata_section.get("exported_at")
-            is_modified = False
-            if exported_at_str and yaml_file:
-                try:
-                    exported_at_time = datetime.fromisoformat(
-                        exported_at_str.replace("Z", "+00:00")
-                    )
-                    file_mtime = datetime.fromtimestamp(yaml_file.stat().st_mtime)
-                    is_modified = file_mtime > exported_at_time
-                except (ValueError, OSError):
-                    # If we can't determine modification status, assume modified
-                    is_modified = True
-
-            # 7. Get existing item to preserve owner metadata
+            # 6. Get existing item to preserve owner metadata
             content_type = ContentType[content_type_str]
             existing = self._repository.get_content(db_id)
 
@@ -354,9 +339,8 @@ class ContentPacker:
                                 query_validation_errors.extend(query_errors)
 
                     if query_validation_errors:
-                        error_msg = (
-                            f"Query validation failed for {content_item.id}:\n"
-                            + "\n".join(query_validation_errors)
+                        error_msg = f"Query validation failed for {content_item.id}:\n" + "\n".join(
+                            query_validation_errors
                         )
                         raise ValueError(error_msg)
 

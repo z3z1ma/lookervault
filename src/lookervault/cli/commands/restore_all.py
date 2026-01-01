@@ -6,6 +6,7 @@ import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, cast
 
 import typer
 from rich.prompt import Confirm
@@ -25,7 +26,10 @@ from lookervault.extraction.metrics import ThreadSafeMetrics
 from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.looker.client import LookerClient
 from lookervault.restoration.dependency_graph import DependencyGraph
-from lookervault.restoration.parallel_orchestrator import ParallelRestorationOrchestrator
+from lookervault.restoration.parallel_orchestrator import (
+    ParallelRestorationOrchestrator,
+    SupportsDeadLetterQueue,
+)
 from lookervault.restoration.restorer import LookerContentRestorer
 from lookervault.storage.models import ContentType
 from lookervault.storage.repository import SQLiteContentRepository
@@ -580,7 +584,9 @@ def restore_all(
                 config=restoration_config,
                 rate_limiter=rate_limiter,
                 metrics=metrics,
-                dlq=repository,  # Repository implements the DLQ Protocol
+                dlq=cast(
+                    SupportsDeadLetterQueue, repository
+                ),  # Repository implements the DLQ Protocol
             )
 
             # Call orchestrator.restore_all() with the ordered types
@@ -645,7 +651,7 @@ def restore_all(
 
         # Step 4: Sequential restoration (backward compatible, workers == 1)
         # Aggregate results across all types
-        aggregated_results = {
+        aggregated_results: dict[str, Any] = {
             "total_items": 0,
             "success_count": 0,
             "created_count": 0,

@@ -208,16 +208,16 @@ class TestDeadLetterQueueGet:
             error_type="ValidationError",
             retry_count=0,
             failed_at=datetime.now(UTC),
-            id="dlq-123",
+            id=123,  # Use int instead of string
         )
         mock_repository.get_dead_letter_item.return_value = expected_item
 
         # Execute
-        result = dlq.get(dlq_id="dlq-123")
+        result = dlq.get(dlq_id=123)
 
         # Assert
-        assert result == expected_item, f"Expected to retrieve DLQ item dlq-123 but got {result}"
-        mock_repository.get_dead_letter_item.assert_called_once_with("dlq-123")
+        assert result == expected_item, f"Expected to retrieve DLQ item 123 but got {result}"
+        mock_repository.get_dead_letter_item.assert_called_once_with(123)
 
     def test_get_should_return_none_when_not_found(self, dlq, mock_repository):
         """Test get() returns None when DLQ item not found."""
@@ -225,11 +225,11 @@ class TestDeadLetterQueueGet:
         mock_repository.get_dead_letter_item.return_value = None
 
         # Execute
-        result = dlq.get(dlq_id="nonexistent")
+        result = dlq.get(dlq_id=999)  # Use integer ID
 
         # Assert
         assert result is None, "Expected None when DLQ item not found"
-        mock_repository.get_dead_letter_item.assert_called_once_with("nonexistent")
+        mock_repository.get_dead_letter_item.assert_called_once_with(999)
 
 
 class TestDeadLetterQueueList:
@@ -248,7 +248,7 @@ class TestDeadLetterQueueList:
                 error_type="ValidationError",
                 retry_count=0,
                 failed_at=datetime.now(UTC),
-                id="dlq-1",
+                id=1,  # Use int instead of string
             ),
             DeadLetterItem(
                 session_id="session1",
@@ -259,7 +259,7 @@ class TestDeadLetterQueueList:
                 error_type="APIError",
                 retry_count=0,
                 failed_at=datetime.now(UTC),
-                id="dlq-2",
+                id=2,  # Use int instead of string
             ),
         ]
         mock_repository.list_dead_letter_items.return_value = items
@@ -269,8 +269,9 @@ class TestDeadLetterQueueList:
 
         # Assert
         assert result == items
+        # The DLQ.list() implementation converts None to defaults: limit=100, offset=0
         mock_repository.list_dead_letter_items.assert_called_once_with(
-            session_id=None, content_type=None, limit=None, offset=None
+            session_id=None, content_type=None, limit=100, offset=0
         )
 
     def test_list_should_filter_by_session_id(self, dlq, mock_repository):
@@ -283,7 +284,7 @@ class TestDeadLetterQueueList:
 
         # Assert
         mock_repository.list_dead_letter_items.assert_called_once_with(
-            session_id="session_123", content_type=None, limit=None, offset=None
+            session_id="session_123", content_type=None, limit=100, offset=0
         )
 
     def test_list_should_filter_by_content_type(self, dlq, mock_repository):
@@ -296,7 +297,7 @@ class TestDeadLetterQueueList:
 
         # Assert
         mock_repository.list_dead_letter_items.assert_called_once_with(
-            session_id=None, content_type=ContentType.DASHBOARD.value, limit=None, offset=None
+            session_id=None, content_type=ContentType.DASHBOARD.value, limit=100, offset=0
         )
 
     def test_list_should_support_pagination_with_limit(self, dlq, mock_repository):
@@ -309,7 +310,7 @@ class TestDeadLetterQueueList:
 
         # Assert
         mock_repository.list_dead_letter_items.assert_called_once_with(
-            session_id=None, content_type=None, limit=10, offset=None
+            session_id=None, content_type=None, limit=10, offset=0
         )
 
     def test_list_should_support_pagination_with_offset(self, dlq, mock_repository):
@@ -322,7 +323,7 @@ class TestDeadLetterQueueList:
 
         # Assert
         mock_repository.list_dead_letter_items.assert_called_once_with(
-            session_id=None, content_type=None, limit=None, offset=20
+            session_id=None, content_type=None, limit=100, offset=20
         )
 
     def test_list_should_combine_all_filters(self, dlq, mock_repository):
@@ -362,7 +363,7 @@ class TestDeadLetterQueueRetry:
             error_type="ValidationError",
             retry_count=0,
             failed_at=datetime.now(UTC),
-            id="dlq-123",
+            id=123,  # Use int instead of string
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -377,15 +378,15 @@ class TestDeadLetterQueueRetry:
         mock_restorer.restore_single.return_value = success_result
 
         # Execute
-        result = dlq.retry(dlq_id="dlq-123", restorer=mock_restorer)
+        result = dlq.retry(dlq_id=123, restorer=mock_restorer)
 
         # Assert
         assert result == success_result
-        mock_repository.get_dead_letter_item.assert_called_once_with("dlq-123")
+        mock_repository.get_dead_letter_item.assert_called_once_with(123)
         mock_restorer.restore_single.assert_called_once_with(
             content_id="456", content_type=ContentType.DASHBOARD
         )
-        mock_repository.delete_dead_letter_item.assert_called_once_with("dlq-123")
+        mock_repository.delete_dead_letter_item.assert_called_once_with(123)
 
     def test_retry_should_fail_when_dlq_item_not_found(self, dlq, mock_repository, mock_restorer):
         """Test retry() raises NotFoundError when DLQ item doesn't exist."""
@@ -393,8 +394,8 @@ class TestDeadLetterQueueRetry:
         mock_repository.get_dead_letter_item.return_value = None
 
         # Execute & Assert
-        with pytest.raises(NotFoundError, match="DLQ item dlq-nonexistent not found"):
-            dlq.retry(dlq_id="dlq-nonexistent", restorer=mock_restorer)
+        with pytest.raises(NotFoundError, match="DLQ item 999 not found"):
+            dlq.retry(dlq_id=999, restorer=mock_restorer)
 
         # Verify restorer was never called
         mock_restorer.restore_single.assert_not_called()
@@ -414,7 +415,7 @@ class TestDeadLetterQueueRetry:
             error_type="ValidationError",
             retry_count=0,
             failed_at=datetime.now(UTC),
-            id="dlq-123",
+            id=123,  # Use int instead of string
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -429,7 +430,7 @@ class TestDeadLetterQueueRetry:
         mock_restorer.restore_single.return_value = failure_result
 
         # Execute
-        result = dlq.retry(dlq_id="dlq-123", restorer=mock_restorer)
+        result = dlq.retry(dlq_id=123, restorer=mock_restorer)
 
         # Assert
         assert result == failure_result
@@ -451,7 +452,7 @@ class TestDeadLetterQueueRetry:
             error_type="ValidationError",
             retry_count=0,
             failed_at=datetime.now(UTC),
-            id="dlq-123",
+            id=123,  # Use int instead of string
         )
         mock_repository.get_dead_letter_item.return_value = dlq_item
 
@@ -460,7 +461,7 @@ class TestDeadLetterQueueRetry:
 
         # Execute & Assert
         with pytest.raises(RestorationError, match="Unexpected error"):
-            dlq.retry(dlq_id="dlq-123", restorer=mock_restorer)
+            dlq.retry(dlq_id=123, restorer=mock_restorer)
 
         # Item should NOT be deleted from DLQ
         mock_repository.delete_dead_letter_item.assert_not_called()

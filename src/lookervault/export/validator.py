@@ -410,7 +410,7 @@ class YamlValidator:
                 # Note: We've already verified model and view fields exist above
                 # Filter out fields not accepted by WriteQuery (e.g., 'id')
                 write_query_fields = {k: v for k, v in query.items() if k != "id"}
-                looker_models.WriteQuery(**write_query_fields)  # type: ignore[misc]
+                looker_models.WriteQuery(**write_query_fields)
             except Exception as e:
                 validation_errors.append(f"Query validation failed{file_info}: {str(e)}")
 

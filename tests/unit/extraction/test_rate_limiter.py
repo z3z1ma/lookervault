@@ -301,6 +301,9 @@ class TestRateLimiterState:
         assert stats["total_429_count"] == num_rate_limit_threads, (
             f"Expected {num_rate_limit_threads} rate limits but got {stats['total_429_count']}"
         )
+        assert isinstance(stats["backoff_multiplier"], (int, float)), (
+            f"backoff_multiplier should be numeric but got {type(stats['backoff_multiplier'])}"
+        )
         assert stats["backoff_multiplier"] >= 1.0, (
             f"Expected backoff_multiplier >= 1.0 but got {stats['backoff_multiplier']}"
         )  # Should have increased from rate limits
@@ -542,6 +545,9 @@ class TestAdaptiveRateLimiter:
         stats = rate_limiter.get_stats()
         assert stats["consecutive_successes"] == 0  # Reset after recovery cycles
         # Verify backoff reduced (approximately)
+        assert isinstance(stats["backoff_multiplier"], (int, float)), (
+            f"backoff_multiplier should be numeric but got {type(stats['backoff_multiplier'])}"
+        )
         assert stats["backoff_multiplier"] < 2.0
 
     def test_thread_safety_mixed_operations(self):
@@ -583,6 +589,9 @@ class TestAdaptiveRateLimiter:
         # Verify final state is consistent
         stats = rate_limiter.get_stats()
         assert stats["total_429_count"] == num_429_threads
+        assert isinstance(stats["backoff_multiplier"], (int, float)), (
+            f"backoff_multiplier should be numeric but got {type(stats['backoff_multiplier'])}"
+        )
         assert stats["backoff_multiplier"] >= 1.0
 
     def test_rate_limiting_accuracy_fast(self):

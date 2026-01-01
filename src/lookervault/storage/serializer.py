@@ -66,7 +66,7 @@ class MsgpackSerializer:
             SerializationError: If serialization fails
         """
         try:
-            return msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+            return msgspec.msgpack.encode(data)
         except Exception as e:
             raise SerializationError(f"Failed to serialize content: {e}") from e
 
@@ -83,7 +83,7 @@ class MsgpackSerializer:
             SerializationError: If deserialization fails
         """
         try:
-            return msgspec.msgpack.decode(blob)  # type: ignore[attr-defined]
+            return msgspec.msgpack.decode(blob)
         except Exception as e:
             raise SerializationError(f"Failed to deserialize content: {e}") from e
 
@@ -97,7 +97,7 @@ class MsgpackSerializer:
             True if valid, False otherwise
         """
         try:
-            msgspec.msgpack.decode(blob)  # type: ignore[attr-defined]
+            msgspec.msgpack.decode(blob)
             return True
         except Exception:
             return False

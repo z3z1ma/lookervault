@@ -75,7 +75,7 @@ class TestDeserializeAsDict:
     def test_deserialize_dashboard_success(self, deserializer, sample_dashboard_data):
         """Deserialize valid dashboard binary blob to dict."""
         # Serialize to binary blob
-        binary_data = msgspec.msgpack.encode(sample_dashboard_data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(sample_dashboard_data)
 
         # Deserialize
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
@@ -95,7 +95,7 @@ class TestDeserializeAsDict:
 
     def test_deserialize_look_success(self, deserializer, sample_look_data):
         """Deserialize valid look binary blob to dict."""
-        binary_data = msgspec.msgpack.encode(sample_look_data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(sample_look_data)
 
         result = deserializer.deserialize(binary_data, ContentType.LOOK, as_dict=True)
 
@@ -116,7 +116,7 @@ class TestDeserializeAsDict:
 
     def test_deserialize_user_success(self, deserializer, sample_user_data):
         """Deserialize valid user binary blob to dict."""
-        binary_data = msgspec.msgpack.encode(sample_user_data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(sample_user_data)
 
         result = deserializer.deserialize(binary_data, ContentType.USER, as_dict=True)
 
@@ -150,14 +150,14 @@ class TestDeserializeAsDict:
     def test_deserialize_non_dict_data_raises_error(self, deserializer):
         """Binary data that deserializes to non-dict raises error."""
         # Serialize a list instead of dict
-        binary_data = msgspec.msgpack.encode([1, 2, 3])  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode([1, 2, 3])
 
         with pytest.raises(DeserializationError, match="not a dictionary"):
             deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
     def test_deserialize_unsupported_content_type_raises_error(self, deserializer):
         """Unsupported content type raises ValueError."""
-        binary_data = msgspec.msgpack.encode({"id": "123"})  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode({"id": "123"})
 
         # Create a mock ContentType that's not in the map
         with pytest.raises(ValueError, match="Unsupported content type"):
@@ -175,7 +175,7 @@ class TestDeserializeAsDict:
             },
             "list_field": [{"id": "1"}, {"id": "2"}],
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -190,7 +190,7 @@ class TestDeserializeAsDict:
             "title": "Café Dashboard ☕ 日本語",
             "description": "Test with émojis 🚀",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -211,7 +211,7 @@ class TestDeserializeAsDict:
                 for i in range(100)
             ],
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -232,7 +232,7 @@ class TestDeserializeAsSdkModel:
             "can": {"view": True},
             "created_at": "2025-01-01",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=False)
 
@@ -251,7 +251,7 @@ class TestDeserializeAsSdkModel:
             "can": {"view": True},
             "model": "sales",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.LOOK, as_dict=False)
 
@@ -269,7 +269,7 @@ class TestDeserializeAsSdkModel:
             "email": "test@example.com",
             "display_name": "Test User",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.USER, as_dict=False)
 
@@ -287,7 +287,7 @@ class TestDeserializeAsSdkModel:
             "child_count": 5,
             "dashboards": [],
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.FOLDER, as_dict=False)
 
@@ -302,7 +302,7 @@ class TestDeserializeAsSdkModel:
             "title": 12345,  # Should be string, not int
             "hidden": "not_a_bool",  # Should be bool
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         # The SDK model may or may not raise depending on its validation
         # Just ensure we don't crash
@@ -321,7 +321,7 @@ class TestDeserializeAsSdkModel:
         data = {
             "title": "Test Dashboard",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         # Should succeed - ID is not passed to SDK model constructor
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=False)
@@ -552,7 +552,7 @@ class TestEdgeCases:
             "description": None,
             "folder_id": None,
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -567,7 +567,7 @@ class TestEdgeCases:
             "hidden": True,
             "deleted": False,
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -582,7 +582,7 @@ class TestEdgeCases:
             "refresh_interval": 3600,
             "some_float": 123.456,
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -597,7 +597,7 @@ class TestEdgeCases:
             "elements": [],
             "tags": [],
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -619,7 +619,7 @@ class TestEdgeCases:
                 },
             },
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -648,7 +648,7 @@ class TestEdgeCases:
             "description": "Line1\nLine2\tTabbed",
             "special": "Special: @#$%^&*()[]{}",
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
@@ -664,7 +664,7 @@ class TestEdgeCases:
             "title": "Test",
             "description": long_string,
         }
-        binary_data = msgspec.msgpack.encode(data)  # type: ignore[attr-defined]
+        binary_data = msgspec.msgpack.encode(data)
 
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 

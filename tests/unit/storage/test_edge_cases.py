@@ -281,7 +281,9 @@ class TestSerializationEdgeCases:
         serialized = serializer.serialize(nested)
         deserialized = serializer.deserialize(serialized)
 
+        assert isinstance(deserialized, dict)
         assert deserialized["level"] == 0
+        assert isinstance(deserialized["next"], dict)
         assert deserialized["next"]["level"] == 1
 
     def test_validate_invalid_blob(self):
@@ -305,6 +307,7 @@ class TestSerializationEdgeCases:
         serialized = serializer.serialize(data)
         deserialized = serializer.deserialize(serialized)
 
+        assert isinstance(deserialized, dict)
         assert deserialized["id"] == "test"
         assert deserialized["binary"] == data["binary"]
         assert deserialized["mixed"] == data["mixed"]
@@ -526,6 +529,7 @@ class TestEmptyAndNoneValues:
 
         # Retrieve and verify
         retrieved = repo.get_content("update_test")
+        assert retrieved is not None
         assert retrieved.name == ""
         assert retrieved.owner_email is None
         assert retrieved.folder_id is None

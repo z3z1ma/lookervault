@@ -14,6 +14,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol
 
@@ -24,7 +25,6 @@ from lookervault.restoration.dependency_graph import DependencyGraph
 from lookervault.restoration.restorer import IDMapper, LookerContentRestorer
 from lookervault.storage.models import (
     ContentType,
-    DeadLetterItem,
     RestorationCheckpoint,
     RestorationResult,
     RestorationSummary,
@@ -34,11 +34,19 @@ from lookervault.storage.repository import ContentRepository
 logger = logging.getLogger(__name__)
 
 
-class DeadLetterQueue(Protocol):
+class SupportsDeadLetterQueue(Protocol):
     """Protocol for Dead Letter Queue operations."""
 
-    def save_dead_letter_item(self, item: DeadLetterItem) -> int:
-        """Save failed item to DLQ after exhausting retries."""
+    def add(
+        self,
+        content_id: str,
+        content_type: ContentType,
+        error_message: str,
+        session_id: str,
+        stack_trace: str | None = None,
+        retry_count: int = 0,
+    ) -> int:
+        """Add failed item to DLQ after exhausting retries."""
         ...
 
 
@@ -106,6 +114,8 @@ class ParallelRestorationOrchestrator:
         ... )
     """
 
+    repository: ContentRepository
+
     def __init__(
         self,
         restorer: LookerContentRestorer,
@@ -113,7 +123,7 @@ class ParallelRestorationOrchestrator:
         config: RestorationConfig,
         rate_limiter: AdaptiveRateLimiter,
         metrics: ThreadSafeMetrics,
-        dlq: DeadLetterQueue,
+        dlq: SupportsDeadLetterQueue,
         id_mapper: IDMapper | None = None,
     ):
         """Initialize ParallelRestorationOrchestrator.
@@ -171,7 +181,7 @@ class ParallelRestorationOrchestrator:
         )
 
     def restore(
-        self, content_type: ContentType, session_id: str, content_ids: list[str] | None = None
+        self, content_type: ContentType, session_id: str, content_ids: Sequence[str] | None = None
     ) -> RestorationSummary:
         """Restore all content of a given type using parallel worker threads.
 
@@ -187,7 +197,7 @@ class ParallelRestorationOrchestrator:
         Args:
             content_type: ContentType enum value to restore
             session_id: Unique session identifier for tracking
-            content_ids: Optional list of content IDs to restore. If None, queries
+            content_ids: Optional sequence of content IDs to restore. If None, queries
                         the repository for all IDs of this content type.
 
         Returns:
@@ -236,38 +246,39 @@ class ParallelRestorationOrchestrator:
         # Step 1: Query SQLite for all content IDs of this content_type
         # Apply folder filtering if configured
         # If content_ids is provided, use it directly (e.g., for resume)
+        content_ids_to_restore: set[str] | None
         if content_ids is not None:
-            content_ids = set(content_ids)
-            logger.info(f"Using provided content IDs: {len(content_ids)} items")
+            content_ids_to_restore = set(content_ids)
+            logger.info(f"Using provided content IDs: {len(content_ids_to_restore)} items")
         elif self.config.folder_ids and content_type in [
             ContentType.DASHBOARD,
             ContentType.LOOK,
             ContentType.BOARD,
         ]:
             # Folder-filtered query for folder-aware content types
-            content_ids = self.repository.get_content_ids_in_folders(
+            content_ids_to_restore = self.repository.get_content_ids_in_folders(
                 content_type.value, set(self.config.folder_ids), include_deleted=False
             )
             logger.info(
-                f"Found {len(content_ids)} {content_type.name} items "
+                f"Found {len(content_ids_to_restore)} {content_type.name} items "
                 f"in {len(self.config.folder_ids)} folder(s)"
             )
         elif content_type == ContentType.FOLDER:
             # Restoring folders: use folder_ids directly if specified
             if self.config.folder_ids:
-                content_ids = set(self.config.folder_ids)
-                logger.info(f"Restoring {len(content_ids)} folder(s) by ID")
+                content_ids_to_restore = set(self.config.folder_ids)
+                logger.info(f"Restoring {len(content_ids_to_restore)} folder(s) by ID")
             else:
-                content_ids = self.repository.get_content_ids(content_type.value)
+                content_ids_to_restore = self.repository.get_content_ids(content_type.value)
         else:
             # No folder filter for this type (or no folder_ids configured)
-            content_ids = self.repository.get_content_ids(content_type.value)
+            content_ids_to_restore = self.repository.get_content_ids(content_type.value)
 
-        if not content_ids:
+        if not content_ids_to_restore:
             logger.info(f"No {content_type.name} content found in repository")
             return self._create_empty_summary(session_id, content_type)
 
-        total_items = len(content_ids)
+        total_items = len(content_ids_to_restore)
         logger.info(f"Found {total_items} {content_type.name} items to restore")
 
         # Set expected total in metrics for progress tracking
@@ -286,7 +297,7 @@ class ParallelRestorationOrchestrator:
         # Step 2: Create ThreadPoolExecutor with config.workers threads
         # Step 3: Distribute work via queue
         work_queue: queue.Queue[str] = queue.Queue()
-        for content_id in content_ids:
+        for content_id in content_ids_to_restore:
             work_queue.put(content_id)
 
         def worker() -> None:
@@ -761,21 +772,14 @@ class ParallelRestorationOrchestrator:
             ... )
         """
         try:
-            # Fetch content_data from repository for DLQ
-            content_item = self.repository.get_content(content_id)
-            content_data = content_item.content_data if content_item else b""
-
-            dlq_item = DeadLetterItem(
-                session_id=session_id,
+            # Add to DLQ using the add() method
+            dlq_id = self.dlq.add(
                 content_id=content_id,
-                content_type=content_type.value,
-                content_data=content_data,
+                content_type=content_type,
                 error_message=result.error_message or "Unknown error",
-                error_type=self._extract_error_type(result.error_message or ""),
+                session_id=session_id,
                 retry_count=result.retry_count,
             )
-
-            dlq_id = self.dlq.save_dead_letter_item(dlq_item)
 
             logger.warning(
                 f"Added to DLQ: {content_type.name} {content_id} "

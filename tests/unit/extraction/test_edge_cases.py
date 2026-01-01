@@ -400,10 +400,12 @@ class TestSerializationFailures:
         serializer = MsgpackSerializer()
 
         # Should handle None values
-        data = {"id": "123", "title": None, "folder_id": None}
+        data: dict[str, str | None] = {"id": "123", "title": None, "folder_id": None}
         serialized = serializer.serialize(data)
         deserialized = serializer.deserialize(serialized)
 
+        # Type assertion: we know we serialized a dict, so we get a dict back
+        assert isinstance(deserialized, dict)
         assert deserialized["id"] == "123"
         assert deserialized["title"] is None
         assert deserialized["folder_id"] is None
@@ -423,6 +425,8 @@ class TestSerializationFailures:
         serialized = serializer.serialize(data)
         deserialized = serializer.deserialize(serialized)
 
+        # Type assertion: we know we serialized a dict, so we get a dict back
+        assert isinstance(deserialized, dict)
         assert deserialized["title"] == data["title"]
         assert deserialized["description"] == data["description"]
 
@@ -441,6 +445,8 @@ class TestSerializationFailures:
         serialized = serializer.serialize(data)
         deserialized = serializer.deserialize(serialized)
 
+        # Type assertion: we know we serialized a dict, so we get a dict back
+        assert isinstance(deserialized, dict)
         assert deserialized == data
 
 

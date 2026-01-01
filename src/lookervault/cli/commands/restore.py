@@ -6,6 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.progress import (
@@ -37,7 +38,10 @@ from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 from lookervault.looker.client import LookerClient
 from lookervault.restoration.dead_letter_queue import DeadLetterQueue
 from lookervault.restoration.deserializer import ContentDeserializer
-from lookervault.restoration.parallel_orchestrator import ParallelRestorationOrchestrator
+from lookervault.restoration.parallel_orchestrator import (
+    ParallelRestorationOrchestrator,
+    SupportsDeadLetterQueue,
+)
 from lookervault.restoration.restorer import LookerContentRestorer
 from lookervault.restoration.validation import RestorationValidator
 from lookervault.storage.models import ContentType
@@ -873,6 +877,7 @@ def restore_bulk(
         # Create RestorationConfig
         session_id = str(uuid.uuid4())
         restoration_config = RestorationConfig(
+            destination_instance=str(cfg.looker.api_url),
             workers=final_workers,
             rate_limit_per_minute=final_rate_limit_per_minute,
             rate_limit_per_second=final_rate_limit_per_second,
@@ -906,7 +911,9 @@ def restore_bulk(
                 config=restoration_config,
                 rate_limiter=rate_limiter,
                 metrics=metrics,
-                dlq=repository,  # Repository implements the DLQ Protocol
+                dlq=cast(
+                    SupportsDeadLetterQueue, repository
+                ),  # Repository implements the DLQ Protocol
             )
 
             # Call parallel restore with progress tracking
@@ -1186,6 +1193,7 @@ def restore_resume(
 
         # Create RestorationConfig
         restoration_config = RestorationConfig(
+            destination_instance=str(cfg.looker.api_url),
             workers=workers,
             rate_limit_per_minute=rate_limit_per_minute,
             rate_limit_per_second=rate_limit_per_second,
@@ -1208,7 +1216,9 @@ def restore_resume(
                 config=restoration_config,
                 rate_limiter=rate_limiter,
                 metrics=metrics,
-                dlq=repository,  # Repository implements the DLQ Protocol
+                dlq=cast(
+                    SupportsDeadLetterQueue, repository
+                ),  # Repository implements the DLQ Protocol
             )
 
             # Call orchestrator.resume()

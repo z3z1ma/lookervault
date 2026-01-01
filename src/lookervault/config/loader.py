@@ -120,23 +120,24 @@ def load_config(config_path: Path | None = None) -> Configuration:
     # Build or merge environment variables
     if data:
         # Config file exists, merge env vars
-        if "looker" in data:
-            looker_config = data["looker"]
+        if "looker" not in data:
+            data["looker"] = {}
+        looker_config = data["looker"]
 
-            # Override with env vars if present (support both LOOKERVAULT_ and LOOKER_ prefixes)
-            if client_id := (os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID")):
-                looker_config["client_id"] = client_id
-            if client_secret := (
-                os.getenv("LOOKERVAULT_CLIENT_SECRET") or os.getenv("LOOKER_CLIENT_SECRET")
-            ):
-                looker_config["client_secret"] = client_secret
-            if api_url := (os.getenv("LOOKERVAULT_API_URL") or os.getenv("LOOKER_BASE_URL")):
-                looker_config["api_url"] = api_url
-            if timeout_str := os.getenv("LOOKERVAULT_TIMEOUT"):
-                try:
-                    looker_config["timeout"] = int(timeout_str)
-                except ValueError:
-                    raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
+        # Override with env vars if present (support both LOOKERVAULT_ and LOOKER_ prefixes)
+        if client_id := (os.getenv("LOOKERVAULT_CLIENT_ID") or os.getenv("LOOKER_CLIENT_ID")):
+            looker_config["client_id"] = client_id
+        if client_secret := (
+            os.getenv("LOOKERVAULT_CLIENT_SECRET") or os.getenv("LOOKER_CLIENT_SECRET")
+        ):
+            looker_config["client_secret"] = client_secret
+        if api_url := (os.getenv("LOOKERVAULT_API_URL") or os.getenv("LOOKER_BASE_URL")):
+            looker_config["api_url"] = api_url
+        if timeout_str := os.getenv("LOOKERVAULT_TIMEOUT"):
+            try:
+                looker_config["timeout"] = int(timeout_str)
+            except ValueError:
+                raise ConfigError(f"Invalid LOOKERVAULT_TIMEOUT value: {timeout_str}") from None
     else:
         # No config file, build entirely from env vars
         api_url = os.getenv("LOOKERVAULT_API_URL") or os.getenv("LOOKER_BASE_URL")
@@ -224,7 +225,15 @@ def load_config(config_path: Path | None = None) -> Configuration:
             audit_gcs_bucket=snapshot_data.get("audit_gcs_bucket"),
         )
 
+    # Ensure looker config exists (required field)
+    if "looker" not in data:
+        raise ConfigError("Missing required 'looker' configuration section")
+
+    # Type-safe construction: verify all required fields exist
+    looker_cfg = data["looker"]
+    snapshot_cfg = data.get("snapshot")
+
     try:
-        return Configuration(**data)  # type: ignore[missing-argument]
+        return Configuration(looker=looker_cfg, snapshot=snapshot_cfg)
     except Exception as e:
         raise ConfigError(f"Invalid configuration: {e}") from e

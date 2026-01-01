@@ -104,7 +104,7 @@ from lookervault.storage.models import (
     ExtractionSession,
     SessionStatus,
 )
-from lookervault.storage.repository import ContentRepository
+from lookervault.storage.repository import ContentRepository, SQLiteContentRepository
 from lookervault.storage.serializer import ContentSerializer
 from lookervault.utils.datetime_parsing import parse_timestamp
 
@@ -172,6 +172,9 @@ class ParallelOrchestrator:
             config: Extraction configuration
             parallel_config: Parallel execution configuration
         """
+        repository: ContentRepository
+        extractor: ContentExtractor
+
         self.extractor = extractor
         self.repository = repository
         self.serializer = serializer
@@ -198,7 +201,9 @@ class ParallelOrchestrator:
             )
             # Inject rate limiter into extractor (all workers share same instance)
             # Thread-safe: AdaptiveRateLimiter.acquire() uses internal lock for coordination
-            self.extractor.rate_limiter = self.rate_limiter
+            # Only LookerContentExtractor supports rate_limiter attribute
+            if hasattr(extractor, "rate_limiter"):
+                extractor.rate_limiter = self.rate_limiter  # type: ignore[attr-defined]
             logger.info(
                 f"Adaptive rate limiting enabled: {parallel_config.rate_limit_per_minute} req/min, "
                 f"{parallel_config.rate_limit_per_second} req/sec (burst)"
@@ -296,7 +301,11 @@ class ParallelOrchestrator:
         for content_type in self.config.content_types:
             checkpoint = self.repository.get_latest_checkpoint(content_type, session_id=None)
             if checkpoint and checkpoint.session_id:
-                session = self.repository.get_extraction_session(checkpoint.session_id)
+                # get_extraction_session is only available on SQLiteContentRepository
+                if isinstance(self.repository, SQLiteContentRepository):
+                    session = self.repository.get_extraction_session(checkpoint.session_id)
+                else:
+                    session = None
                 if session:
                     logger.info(
                         f"Resume: Found existing session {session.id} "
@@ -662,7 +671,7 @@ class ParallelOrchestrator:
         Returns:
             True if multi-folder coordinator should be used
         """
-        return (
+        return bool(
             self.config.folder_ids
             and len(self.config.folder_ids) > 1
             and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
@@ -719,6 +728,8 @@ class ParallelOrchestrator:
         """
         if is_multi_folder:
             # Multi-folder: Use MultiFolderOffsetCoordinator for parallel SDK calls
+            if self.config.folder_ids is None:
+                raise ValueError("folder_ids must be set for multi-folder coordination")
             coordinator = MultiFolderOffsetCoordinator(
                 folder_ids=list(self.config.folder_ids),
                 stride=self.config.batch_size,
@@ -863,8 +874,11 @@ class ParallelOrchestrator:
         checkpoint_id = self.repository.save_checkpoint(checkpoint)
 
         # Update progress tracker
+        # Note: ProgressTracker protocol doesn't define update_status, but some implementations may have it
         try:
-            self.progress.update_status(f"Extracting {content_type_name}...")
+            update_status = getattr(self.progress, "update_status", None)
+            if callable(update_status):
+                update_status(f"Extracting {content_type_name}...")
         except AttributeError:
             pass  # Progress tracker may not have update_status method
 
@@ -953,7 +967,9 @@ class ParallelOrchestrator:
                 f"Worker {worker_id} hit end-of-data ({reason}) at offset {offset}, "
                 f"marking complete"
             )
-            coordinator.mark_worker_complete()
+            # At this point, coordinator must be OffsetCoordinator (not MultiFolderOffsetCoordinator)
+            if isinstance(coordinator, OffsetCoordinator):
+                coordinator.mark_worker_complete()
             return True, False  # Break from main loop
 
     def _parallel_fetch_worker(
@@ -1147,7 +1163,7 @@ class ParallelOrchestrator:
         """
         # Handle multi-folder coordinator (returns tuple of 3)
         if isinstance(coordinator, MultiFolderOffsetCoordinator):
-            folder_id, offset, limit = claimed_range  # type: ignore[misc]
+            folder_id, offset, limit = claimed_range
             logger.info(
                 f"Worker {worker_id} claimed range: folder_id={folder_id}, "
                 f"offset={offset}, limit={limit}"
@@ -1155,7 +1171,7 @@ class ParallelOrchestrator:
             return folder_id, offset, limit
 
         # Single-folder or no-folder coordinator (returns tuple of 2)
-        offset, limit = claimed_range  # type: ignore[misc]
+        offset, limit = claimed_range
         folder_id = (
             list(self.config.folder_ids)[0]
             if self.config.folder_ids and len(self.config.folder_ids) == 1
@@ -1194,7 +1210,7 @@ class ParallelOrchestrator:
             List of item dictionaries, or None if fetch failed
         """
         try:
-            items = self.extractor.extract_range(
+            items = self.extractor.extract_range(  # type: ignore[attr-defined]
                 ContentType(content_type),
                 offset=offset,
                 limit=limit,
@@ -1504,6 +1520,8 @@ class ParallelOrchestrator:
         """
         from lookervault.folder.hierarchy import FolderHierarchyResolver
 
+        if self.config.folder_ids is None:
+            raise ValueError("folder_ids must be set for hierarchical expansion")
         root_folder_ids = list(self.config.folder_ids)
 
         # Try to load folders from repository

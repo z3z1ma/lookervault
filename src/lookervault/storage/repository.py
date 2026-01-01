@@ -7,10 +7,11 @@ import logging
 import sqlite3
 import threading
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import TypeVar
 
 from lookervault.constants import DEFAULT_MAX_RETRIES, SQLITE_BUSY_TIMEOUT_SECONDS
 from lookervault.exceptions import NotFoundError, StorageError
@@ -32,9 +33,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class ContentRepository(Protocol):
-    """Protocol for content storage operations."""
+class ContentRepository(ABC):
+    """Abstract base class for content storage operations."""
 
+    @abstractmethod
     def save_content(self, item: ContentItem) -> None:
         """Save or update a content item in the storage repository.
 
@@ -67,6 +69,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def get_content(self, content_id: str) -> ContentItem | None:
         """Retrieve a specific content item from the storage repository by its unique identifier.
 
@@ -98,6 +101,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def list_content(
         self,
         content_type: int,
@@ -147,6 +151,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def count_content(
         self,
         content_type: int,
@@ -186,6 +191,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def delete_content(self, content_id: str, soft: bool = True) -> None:
         """Delete a content item from the storage repository.
 
@@ -225,6 +231,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def save_checkpoint(self, checkpoint: Checkpoint) -> int:
         """Save an extraction checkpoint to enable resumable content synchronization.
 
@@ -280,6 +287,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def get_latest_checkpoint(
         self, content_type: int, session_id: str | None = None
     ) -> Checkpoint | None:
@@ -294,6 +302,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def update_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Update existing checkpoint.
 
@@ -305,14 +314,17 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def create_session(self, session: ExtractionSession) -> None:
         """Create new extraction session."""
         ...
 
+    @abstractmethod
     def update_session(self, session: ExtractionSession) -> None:
         """Update existing extraction session."""
         ...
 
+    @abstractmethod
     def get_last_sync_timestamp(self, content_type: int) -> datetime | None:
         """Get the timestamp of the last successful extraction for a content type.
 
@@ -324,6 +336,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def get_content_ids(self, content_type: int) -> set[str]:
         """Get all content IDs for a content type (excluding deleted).
 
@@ -335,6 +348,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def get_content_ids_in_folders(
         self, content_type: int, folder_ids: set[str], include_deleted: bool = False
     ) -> set[str]:
@@ -353,6 +367,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def list_content_in_folders(
         self,
         content_type: int,
@@ -378,6 +393,7 @@ class ContentRepository(Protocol):
         """
         ...
 
+    @abstractmethod
     def get_schema_version(self) -> int:
         """Get current database schema version.
 
@@ -389,8 +405,63 @@ class ContentRepository(Protocol):
         """
         ...
 
+    # Dead letter queue methods
+    @abstractmethod
+    def save_dead_letter_item(self, item: DeadLetterItem) -> int:
+        """Save or update failed restoration item to DLQ."""
+        ...
 
-class SQLiteContentRepository:
+    @abstractmethod
+    def get_dead_letter_item(self, dlq_id: int) -> DeadLetterItem | None:
+        """Retrieve DLQ entry by ID."""
+        ...
+
+    @abstractmethod
+    def list_dead_letter_items(
+        self,
+        session_id: str | None = None,
+        content_type: int | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> Sequence[DeadLetterItem]:
+        """List DLQ entries with optional filters."""
+        ...
+
+    @abstractmethod
+    def delete_dead_letter_item(self, dlq_id: int) -> None:
+        """Permanently delete DLQ entry."""
+        ...
+
+    @abstractmethod
+    def count_dead_letter_items(
+        self,
+        session_id: str | None = None,
+        content_type: int | None = None,
+    ) -> int:
+        """Count DLQ entries matching filters."""
+        ...
+
+    # Restoration checkpoint methods
+    @abstractmethod
+    def save_restoration_checkpoint(self, checkpoint: RestorationCheckpoint) -> int:
+        """Save or update restoration checkpoint."""
+        ...
+
+    @abstractmethod
+    def get_latest_restoration_checkpoint(
+        self, content_type: int, session_id: str | None = None
+    ) -> RestorationCheckpoint | None:
+        """Get most recent incomplete checkpoint for content type."""
+        ...
+
+    # Thread-local connection management
+    @abstractmethod
+    def close_thread_connection(self) -> None:
+        """Close database connection for current thread."""
+        ...
+
+
+class SQLiteContentRepository(ContentRepository):
     """Thread-safe SQLite-based content repository implementation.
 
     Uses thread-local connections to enable parallel access from multiple worker threads.
@@ -844,7 +915,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    checkpoint_id: int = cursor.lastrowid
+                    checkpoint_id: int = cursor.lastrowid or 0
                     conn.commit()
                     return checkpoint_id
             except sqlite3.Error as e:
@@ -1421,7 +1492,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    dlq_id: int = cursor.lastrowid
+                    dlq_id: int = cursor.lastrowid or 0
                     conn.commit()
                     return dlq_id
             except sqlite3.Error as e:
@@ -1478,7 +1549,7 @@ class SQLiteContentRepository:
         self,
         session_id: str | None = None,
         content_type: int | None = None,
-        limit: int = 100,
+        limit: int | None = None,
         offset: int = 0,
     ) -> Sequence[DeadLetterItem]:
         """List DLQ entries with optional filters.
@@ -1515,7 +1586,7 @@ class SQLiteContentRepository:
                 params.append(content_type)
 
             query += " ORDER BY failed_at DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
+            params.extend([limit if limit is not None else 100, offset])
 
             cursor.execute(query, params)
 
@@ -1873,7 +1944,7 @@ class SQLiteContentRepository:
                         ),
                     )
 
-                    checkpoint_id: int = cursor.lastrowid
+                    checkpoint_id: int = cursor.lastrowid or 0
                     conn.commit()
                     return checkpoint_id
             except sqlite3.Error as e:

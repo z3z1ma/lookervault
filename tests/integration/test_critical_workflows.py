@@ -12,9 +12,11 @@ These tests use real SQLite databases and verify data integrity across workflow 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import msgspec
+import msgspec.msgpack
 import pytest
 
 from lookervault.config.models import RestorationConfig
@@ -24,11 +26,14 @@ from lookervault.export.unpacker import ContentUnpacker
 from lookervault.export.validator import YamlValidator
 from lookervault.export.yaml_serializer import YamlSerializer
 from lookervault.extraction.metrics import ThreadSafeMetrics
-from lookervault.restoration.parallel_orchestrator import ParallelRestorationOrchestrator
+from lookervault.restoration.parallel_orchestrator import (
+    ParallelRestorationOrchestrator,
+    SupportsDeadLetterQueue,
+)
 from lookervault.restoration.restorer import LookerContentRestorer
 from lookervault.storage.models import ContentItem, ContentType
 from lookervault.storage.repository import SQLiteContentRepository
-from tests.conftest import (  # type: ignore[unresolved-import]
+from tests.conftest import (
     create_test_dashboard,
     create_test_look,
 )
@@ -164,11 +169,11 @@ class TestExtractUnpackWorkflow:
         ]
 
         for folder in folders:
-            content_data = msgspec.msgpack.encode(folder)  # type: ignore[unresolved-attribute]
+            content_data = msgspec.msgpack.encode(folder)
             folder_item = ContentItem(
-                id=folder["id"],
+                id=str(folder["id"]),
                 content_type=ContentType.FOLDER.value,
-                name=folder["name"],
+                name=str(folder["name"]),
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
                 content_data=content_data,
@@ -292,7 +297,7 @@ class TestUnpackModifyPackWorkflow:
         # Verify database has updated content
         updated_item = repository.get_content("1")
         assert updated_item is not None
-        updated_data = msgspec.msgpack.decode(updated_item.content_data)  # type: ignore[unresolved-attribute]
+        updated_data = msgspec.msgpack.decode(updated_item.content_data)
         assert updated_data["title"] == "Modified Title"
 
     def test_pack_creates_new_query_for_modified_dashboard(
@@ -338,7 +343,7 @@ class TestUnpackModifyPackWorkflow:
             ],
         }
 
-        content_data = msgspec.msgpack.encode(dashboard_data)  # type: ignore[unresolved-attribute]
+        content_data = msgspec.msgpack.encode(dashboard_data)
         dashboard = ContentItem(
             id="1",
             content_type=ContentType.DASHBOARD.value,
@@ -499,7 +504,7 @@ class TestExtractRestoreWorkflow:
             config=config,
             rate_limiter=rate_limiter,
             metrics=metrics,
-            dlq=repository,  # Repository implements DLQ protocol
+            dlq=cast(SupportsDeadLetterQueue, repository),  # Repository implements DLQ protocol
         )
 
         # Restore dashboards
@@ -552,7 +557,7 @@ class TestExtractRestoreWorkflow:
             config=config,
             rate_limiter=rate_limiter,
             metrics=metrics,
-            dlq=repository,
+            dlq=cast(SupportsDeadLetterQueue, repository),
         )
 
         # Restore in dry-run mode
@@ -658,7 +663,8 @@ class TestFullRoundTripWorkflow:
 
         # Verify database has modified content
         modified_item = repository.get_content("1")
-        modified_data = msgspec.msgpack.decode(modified_item.content_data)  # type: ignore[unresolved-attribute]
+        assert modified_item is not None
+        modified_data = msgspec.msgpack.decode(modified_item.content_data)
         assert modified_data["title"] == "Modified Sales Dashboard"
         assert modified_data["title"] != original_title
 
@@ -697,7 +703,7 @@ class TestFullRoundTripWorkflow:
             config=config,
             rate_limiter=rate_limiter,
             metrics=metrics,
-            dlq=repository,
+            dlq=cast(SupportsDeadLetterQueue, repository),
         )
 
         restore_result = orchestrator.restore(
@@ -752,7 +758,7 @@ class TestFullRoundTripWorkflow:
             "updated_at": "2024-01-15T00:00:00Z",
         }
 
-        folder_content = msgspec.msgpack.encode(folder_data)  # type: ignore[unresolved-attribute]
+        folder_content = msgspec.msgpack.encode(folder_data)
         folder = ContentItem(
             id="1",
             content_type=ContentType.FOLDER.value,
@@ -1011,7 +1017,7 @@ class TestDataIntegrityAcrossWorkflows:
             "updated_at": "2024-01-15T00:00:00Z",
         }
 
-        content_data = msgspec.msgpack.encode(original_data)  # type: ignore[unresolved-attribute]
+        content_data = msgspec.msgpack.encode(original_data)
         dashboard = ContentItem(
             id="1",
             content_type=ContentType.DASHBOARD.value,

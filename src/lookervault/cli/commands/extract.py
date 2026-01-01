@@ -214,20 +214,53 @@ def run(
         else:
             # Parallel extraction (new!)
             # Build parallel config with optional rate limit overrides
-            parallel_config_kwargs = {
-                "workers": workers,
-                "queue_size": workers * 100,  # Auto-calculated
-                "batch_size": batch_size,
-                "adaptive_rate_limiting": True,
-            }
+            # Note: Only pass rate limits if provided (ParallelConfig has defaults)
+            # Using helper function to work around ty's lack of type narrowing
+            def make_parallel_config(
+                w: int,
+                q: int,
+                b: int,
+                rpm: int | None,
+                rps: int | None,
+            ) -> ParallelConfig:
+                # Helper to create ParallelConfig with optional rate limits
+                # Only pass non-None values; ParallelConfig uses its defaults otherwise
+                if rpm is not None and rps is not None:
+                    return ParallelConfig(
+                        workers=w,
+                        queue_size=q,
+                        batch_size=b,
+                        rate_limit_per_minute=rpm,
+                        rate_limit_per_second=rps,
+                    )
+                elif rpm is not None:
+                    return ParallelConfig(
+                        workers=w,
+                        queue_size=q,
+                        batch_size=b,
+                        rate_limit_per_minute=rpm,
+                    )
+                elif rps is not None:
+                    return ParallelConfig(
+                        workers=w,
+                        queue_size=q,
+                        batch_size=b,
+                        rate_limit_per_second=rps,
+                    )
+                else:
+                    return ParallelConfig(
+                        workers=w,
+                        queue_size=q,
+                        batch_size=b,
+                    )
 
-            # Apply rate limit overrides if provided
-            if rate_limit_per_minute is not None:
-                parallel_config_kwargs["rate_limit_per_minute"] = rate_limit_per_minute
-            if rate_limit_per_second is not None:
-                parallel_config_kwargs["rate_limit_per_second"] = rate_limit_per_second
-
-            parallel_config = ParallelConfig(**parallel_config_kwargs)
+            parallel_config = make_parallel_config(
+                w=workers,
+                q=workers * 100,
+                b=batch_size,
+                rpm=rate_limit_per_minute,
+                rps=rate_limit_per_second,
+            )
             orchestrator = ParallelOrchestrator(
                 extractor=extractor,
                 repository=repository,

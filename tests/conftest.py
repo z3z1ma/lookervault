@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, Mock
 
 import msgspec.msgpack
 import pytest
+from pydantic import HttpUrl
 
 #
 # Test Mode Setup
@@ -158,7 +159,7 @@ def sample_looker_config() -> LookerConfig:
         LookerConfig: Sample Looker API configuration.
     """
     return LookerConfig(
-        api_url="https://looker.example.com:19999",
+        api_url=HttpUrl("https://looker.example.com:19999"),
         client_id="test_client_id",
         client_secret="test_client_secret",
         timeout=120,
@@ -426,7 +427,7 @@ def create_test_dashboard(
             "folder_id": folder_id,
             "elements": [],  # Required field for DASHBOARD validation
         }
-        content_data = msgspec.msgpack.encode(dashboard_dict)  # type: ignore[unresolved-attribute]
+        content_data = msgspec.msgpack.encode(dashboard_dict)
 
     return create_test_content_item(
         content_id=dashboard_id,
@@ -470,7 +471,7 @@ def create_test_look(
                 "view": "test_view",
             },
         }
-        content_data = msgspec.msgpack.encode(look_dict)  # type: ignore[unresolved-attribute]
+        content_data = msgspec.msgpack.encode(look_dict)
 
     return create_test_content_item(
         content_id=look_id,
@@ -1035,8 +1036,8 @@ def cached_sample_content_items() -> list[ContentItem]:
             name=f"Cached Dashboard {i}",
             owner_id=1,
             owner_email="test@example.com",
-            created_at=None,
-            updated_at=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
             synced_at=None,
             deleted_at=None,
             content_size=100,

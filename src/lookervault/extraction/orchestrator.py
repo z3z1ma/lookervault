@@ -320,6 +320,12 @@ class ExtractionOrchestrator:
         content_type_name = ContentType(content_type).name.lower()
         logger.info(f"Resuming extraction for {content_type_name}")
 
+        # Validate checkpoint has a session_id (required for resume)
+        if checkpoint.session_id is None:
+            raise OrchestrationError(
+                f"Cannot resume {content_type_name}: checkpoint has no session_id"
+            )
+
         # Validate checkpoint data
         try:
             checkpoint_data = checkpoint.checkpoint_data
@@ -478,6 +484,9 @@ class ExtractionOrchestrator:
         """
         from lookervault.folder.hierarchy import FolderHierarchyResolver
 
+        # This method is only called when folder_ids is set (see extract() method)
+        if self.config.folder_ids is None:
+            raise ValueError("folder_ids must be set for hierarchical expansion")
         root_folder_ids = list(self.config.folder_ids)
 
         # Try to load folders from repository

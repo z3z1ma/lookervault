@@ -102,10 +102,11 @@ docstring-code-format = true
 skip-magic-trailing-comma = false
 
 [tool.ty]
+
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.13"
 python = ".venv"
-root = ["./src"]
+root = ["./src", "./tests"]
 
 [tool.ty.rules]
 # Core type safety - strict enforcement

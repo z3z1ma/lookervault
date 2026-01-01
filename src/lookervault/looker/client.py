@@ -1,6 +1,7 @@
 """Wrapper for Looker SDK with custom configuration."""
 
 import os
+from typing import cast
 
 import looker_sdk
 from looker_sdk import error as looker_error
@@ -58,7 +59,7 @@ class LookerClient:
         """
         if self._sdk is None:
             self._init_sdk()
-        return self._sdk
+        return cast(Looker40SDK, self._sdk)
 
     def test_connection(self) -> ConnectionStatus:
         """
@@ -80,7 +81,9 @@ class LookerClient:
                 authenticated=True,
                 instance_url=self.api_url,
                 looker_version=versions.looker_release_version,
-                api_version=versions.current_version.version,
+                api_version=versions.current_version.version
+                if versions.current_version
+                else "unknown",
                 user_id=int(user.id) if user.id else None,
                 user_email=user.email,
             )

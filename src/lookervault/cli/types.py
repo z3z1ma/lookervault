@@ -1,6 +1,5 @@
 """Shared type definitions and parsing utilities for CLI."""
 
-# type: ignore[unreachable-undefined]
 from enum import StrEnum
 
 import typer
