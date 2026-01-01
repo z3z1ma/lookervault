@@ -439,8 +439,6 @@ lookervault verify --full
 lookervault list dashboards
 
 # With filters
-lookervault list dashboards --owner john@example.com
-lookervault list dashboards --folder "Sales Reports"
 lookervault list dashboards --created-after 2025-01-01
 ```
 
@@ -746,7 +744,6 @@ Arguments:
 
 Options:
   --db PATH            Database path (default: looker.db)
-  --owner TEXT         Filter by owner email
   --created-after TEXT Filter by creation date (ISO format)
   --limit INT          Limit results
   --offset INT         Pagination offset

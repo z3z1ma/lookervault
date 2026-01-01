@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 def run(
     content_type: str,
     db: str = "looker.db",
-    owner: str | None = None,
-    folder: str | None = None,
     created_after: str | None = None,
     limit: int | None = None,
     offset: int = 0,
@@ -33,8 +31,6 @@ def run(
     Args:
         content_type: Content type to list (e.g., "dashboards", "looks")
         db: Database path to query
-        owner: Filter by owner email
-        folder: Filter by folder name
         created_after: Filter by creation date (ISO format)
         limit: Maximum items to return (default: 50 for table, unlimited for JSON)
         offset: Pagination offset
@@ -84,20 +80,6 @@ def run(
         )
 
         # Apply additional filters
-        if owner:
-            items = [
-                item
-                for item in items
-                if item.owner_email and owner.lower() in item.owner_email.lower()
-            ]
-
-        if folder:
-            # Note: folder filtering would require deserializing content_data
-            # For now, we skip this filter as it requires full content access
-            logger.warning(
-                "Folder filtering not yet implemented (requires content deserialization)"
-            )
-
         if created_after:
             cutoff = datetime.fromisoformat(created_after)
             items = [item for item in items if item.created_at >= cutoff]

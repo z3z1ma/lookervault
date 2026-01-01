@@ -19,13 +19,6 @@ class LookerConfig(BaseModel):
     verify_ssl: bool = True
 
 
-class OutputConfig(BaseModel):
-    """Output formatting preferences for CLI commands."""
-
-    default_format: Literal["table", "json"] = "table"
-    color_enabled: bool = True
-
-
 class RestoreDefaults(BaseModel):
     """Default values for restore operations from config file."""
 
@@ -44,7 +37,6 @@ class Configuration(BaseModel):
     """Complete LookerVault configuration."""
 
     looker: LookerConfig
-    output: OutputConfig = OutputConfig()
     restore: RestoreDefaults = RestoreDefaults()
     snapshot: SnapshotConfig | None = None  # Optional snapshot configuration
 
@@ -205,12 +197,6 @@ class RestorationConfig(BaseModel):
         >>> # Default configuration (8 workers, standard rate limits)
         >>> config = RestorationConfig(destination_instance="https://looker.example.com")
 
-        >>> # Cross-instance migration
-        >>> config = RestorationConfig(
-        ...     source_instance="https://looker-old.example.com",
-        ...     destination_instance="https://looker-new.example.com",
-        ... )
-
         >>> # Dry run mode (no actual API calls)
         >>> config = RestorationConfig(
         ...     destination_instance="https://looker.example.com", dry_run=True
@@ -234,28 +220,16 @@ class RestorationConfig(BaseModel):
     checkpoint_interval: int = Field(default=100, ge=1, description="Save checkpoint every N items")
     max_retries: int = Field(default=5, ge=0, le=10, description="Maximum retry attempts per item")
     dry_run: bool = Field(default=False, description="Preview mode - no actual API calls")
-    skip_if_modified: bool = Field(
-        default=False, description="Skip items if modified in destination"
-    )
 
     # Filtering
     content_types: list[int] | None = Field(
         default=None, description="Content types to restore (None = all)"
     )
-    content_ids: list[str] | None = Field(
-        default=None, description="Specific content IDs to restore (None = all)"
-    )
     folder_ids: list[str] | None = Field(
         default=None, description="Folder IDs to restore (None = all folders)"
     )
-    date_range: tuple[datetime, datetime] | None = Field(
-        default=None, description="Restore only items within date range"
-    )
 
     # Instance configuration
-    source_instance: str | None = Field(
-        default=None, description="Source Looker instance URL (for cross-instance)"
-    )
     destination_instance: str = Field(description="Destination Looker instance URL")
 
     @model_validator(mode="after")

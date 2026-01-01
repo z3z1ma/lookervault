@@ -13,11 +13,6 @@ client_secret = ""  # Set via LOOKERVAULT_CLIENT_SECRET
 timeout = 30  # seconds
 verify_ssl = true
 
-[output]
-# Output formatting preferences
-default_format = "table"  # "table" or "json"
-color_enabled = true
-
 # Cloud Snapshot Management (optional)
 # Uncomment and configure to enable cloud snapshot storage
 # [snapshot]

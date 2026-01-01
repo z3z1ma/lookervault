@@ -216,14 +216,6 @@ def list_content(
         str,
         typer.Option("--db", help="Database path to query"),
     ] = "looker.db",
-    owner: Annotated[
-        str | None,
-        typer.Option("--owner", help="Filter by owner email"),
-    ] = None,
-    folder: Annotated[
-        str | None,
-        typer.Option("--folder", help="Filter by folder name"),
-    ] = None,
     created_after: Annotated[
         str | None,
         typer.Option("--created-after", help="Filter by creation date (ISO format)"),
@@ -252,9 +244,7 @@ def list_content(
     """List extracted content items with optional filters."""
     from .commands import list as list_module
 
-    list_module.run(
-        content_type, db, owner, folder, created_after, limit, offset, output, verbose, debug
-    )
+    list_module.run(content_type, db, created_after, limit, offset, output, verbose, debug)
 
 
 @app.command()
@@ -441,10 +431,6 @@ def restore_all_cmd(
             help="Maximum retry attempts for transient errors (default: config file or 5)",
         ),
     ] = None,
-    skip_if_modified: Annotated[
-        bool,
-        typer.Option("--skip-if-modified", help="Skip items modified in destination since backup"),
-    ] = False,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Validate without making changes"),
@@ -505,7 +491,6 @@ def restore_all_cmd(
         rate_limit_per_second,
         checkpoint_interval,
         max_retries,
-        skip_if_modified,
         dry_run,
         force,
         json_output,

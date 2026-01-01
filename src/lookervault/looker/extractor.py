@@ -14,6 +14,48 @@ from lookervault.storage.models import ContentType
 if TYPE_CHECKING:
     from lookervault.extraction.rate_limiter import AdaptiveRateLimiter
 
+# Content types that support SDK-level folder filtering
+FOLDER_FILTERABLE_TYPES = {ContentType.DASHBOARD, ContentType.LOOK}
+
+
+def is_rate_limit_error(error_str: str) -> bool:
+    """Check if an error string indicates a rate limit issue.
+
+    Args:
+        error_str: Error message string to check
+
+    Returns:
+        True if the error indicates rate limiting, False otherwise
+    """
+    error_str_lower = error_str.lower()
+    return "429" in error_str or "rate limit" in error_str_lower
+
+
+def is_empty_result(results: list[Any] | None) -> bool:
+    """Check if API results are empty.
+
+    This is a null-safe check that handles both None and empty lists.
+
+    Args:
+        results: API results list or None
+
+    Returns:
+        True if results are None or empty, False otherwise
+    """
+    return not results
+
+
+def supports_folder_filtering(content_type: ContentType) -> bool:
+    """Check if a content type supports SDK-level folder filtering.
+
+    Args:
+        content_type: The content type to check
+
+    Returns:
+        True if the content type supports folder filtering, False otherwise
+    """
+    return content_type in FOLDER_FILTERABLE_TYPES
+
 
 class ContentExtractor(Protocol):
     """Protocol for extracting content from Looker API."""
@@ -123,7 +165,7 @@ class LookerContentExtractor:
 
         except looker_error.SDKError as e:
             error_str = str(e)
-            if "429" in error_str or "rate limit" in error_str.lower():
+            if is_rate_limit_error(error_str):
                 # Layer 2: Adaptive backoff on 429 detection
                 if self.rate_limiter:
                     self.rate_limiter.on_429_detected()
@@ -285,7 +327,7 @@ class LookerContentExtractor:
             }
 
             # Add folder_id for SDK-level filtering (dashboards and looks support this)
-            if folder_id and content_type in [ContentType.DASHBOARD, ContentType.LOOK]:
+            if folder_id and supports_folder_filtering(content_type):
                 api_kwargs["folder_id"] = folder_id
 
             # Fetch data from API
@@ -334,7 +376,7 @@ class LookerContentExtractor:
                 api_kwargs["folder_id"] = folder_id
 
             dashboards = self._call_api("search_dashboards", **api_kwargs)
-            if not dashboards or len(dashboards) == 0:
+            if is_empty_result(dashboards):
                 break
 
             for dashboard in dashboards:
@@ -372,7 +414,7 @@ class LookerContentExtractor:
                 api_kwargs["folder_id"] = folder_id
 
             looks = self._call_api("search_looks", **api_kwargs)
-            if not looks or len(looks) == 0:
+            if is_empty_result(looks):
                 break
 
             for look in looks:
@@ -402,7 +444,7 @@ class LookerContentExtractor:
         while True:
             # Use all_users to get both regular and embed users
             users = self._call_api("all_users", fields=fields, limit=batch_size, offset=offset)
-            if not users or len(users) == 0:
+            if is_empty_result(users):
                 break
 
             for user in users:
@@ -432,7 +474,7 @@ class LookerContentExtractor:
         while True:
             # Use all_groups to get all groups without requiring search filters
             groups = self._call_api("all_groups", fields=fields, limit=batch_size, offset=offset)
-            if not groups or len(groups) == 0:
+            if is_empty_result(groups):
                 break
 
             for group in groups:
@@ -461,7 +503,7 @@ class LookerContentExtractor:
         offset = 0
         while True:
             roles = self._call_api("search_roles", fields=fields, limit=batch_size, offset=offset)
-            if not roles or len(roles) == 0:
+            if is_empty_result(roles):
                 break
 
             for role in roles:

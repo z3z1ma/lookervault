@@ -20,11 +20,6 @@ client_secret = ""
 timeout = 120  # seconds (increased for large instances)
 verify_ssl = true
 
-# Output Preferences
-[output]
-default_format = "table"  # "table" or "json"
-color_enabled = true
-
 # Restore Operation Defaults
 # These values can be overridden by CLI flags
 [restore]

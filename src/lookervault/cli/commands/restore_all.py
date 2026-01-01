@@ -59,6 +59,150 @@ def should_show_confirmation_prompt(
     return not any([dry_run, force, json_output, quiet])
 
 
+def should_use_console_output(json_output: bool, quiet: bool) -> bool:
+    """Determine if human-readable console output should be displayed.
+
+    Console output is used when neither JSON output nor quiet mode is active.
+
+    Args:
+        json_output: JSON output mode (suppresses console output)
+        quiet: Quiet mode (suppresses most output)
+
+    Returns:
+        True if console output should be displayed, False otherwise
+    """
+    return not json_output and not quiet
+
+
+def should_show_progress(json_output: bool, quiet: bool) -> bool:
+    """Determine if progress indicators should be shown.
+
+    Progress is shown when in console mode (not JSON, not quiet).
+
+    Args:
+        json_output: JSON output mode (no progress bars)
+        quiet: Quiet mode (no progress indicators)
+
+    Returns:
+        True if progress should be shown, False otherwise
+    """
+    return should_use_console_output(json_output, quiet)
+
+
+def output_error_message(
+    message: str,
+    json_output: bool,
+    error_type: str = "Error",
+    troubleshooting: str | None = None,
+) -> None:
+    """Output an error message in the appropriate format.
+
+    Args:
+        message: The error message to display
+        json_output: Whether to output in JSON format
+        error_type: Type of error (for JSON output)
+        troubleshooting: Optional troubleshooting tips (for console output)
+    """
+    if json_output:
+        error_output = {
+            "status": "error",
+            "error_type": error_type,
+            "error_message": message,
+        }
+        console.print(json.dumps(error_output, indent=2))
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        if troubleshooting:
+            console.print(f"\nTroubleshooting:\n  {troubleshooting}")
+
+
+def calculate_success_rate(success_count: int, total_count: int) -> float:
+    """Calculate success rate as a percentage.
+
+    Args:
+        success_count: Number of successful items
+        total_count: Total number of items
+
+    Returns:
+        Success rate as a percentage (0.0 to 100.0)
+    """
+    if total_count > 0:
+        return success_count / total_count * 100
+    return 0.0
+
+
+def format_duration(seconds: float) -> str:
+    """Format duration in a human-readable way.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Formatted duration string (e.g., "5m 30s" or "45.2s")
+    """
+    if seconds >= 60:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs}s"
+    return f"{seconds:.1f}s"
+
+
+def display_restoration_summary(
+    total_items: int,
+    success_count: int,
+    created_count: int,
+    updated_count: int,
+    error_count: int,
+    duration_seconds: float,
+    json_output: bool,
+) -> None:
+    """Display restoration summary in the appropriate format.
+
+    Args:
+        total_items: Total number of items processed
+        success_count: Number of successfully restored items
+        created_count: Number of newly created items
+        updated_count: Number of updated items
+        error_count: Number of failed items
+        duration_seconds: Total duration in seconds
+        json_output: Whether to output in JSON format
+    """
+    success_rate = calculate_success_rate(success_count, total_items)
+
+    if json_output:
+        # JSON output would be handled by the caller with more context
+        return
+
+    console.print("\n[bold green]✓ Full restoration complete![/bold green]")
+    console.print(f"  Total: {total_items} items")
+
+    if error_count > 0:
+        console.print(
+            f"  Success: {success_count} ({success_rate:.1f}%) - "
+            f"[yellow]{created_count} created, {updated_count} updated[/yellow]"
+        )
+        console.print(f"  [red]Failed: {error_count}[/red]")
+    else:
+        console.print(
+            f"  Success: {success_count} ({success_rate:.1f}%) - "
+            f"{created_count} created, {updated_count} updated"
+        )
+
+    console.print(f"  Total Duration: [cyan]{format_duration(duration_seconds)}[/cyan]")
+
+
+def cleanup_snapshot_if_needed(snapshot_path: Path | None) -> None:
+    """Clean up temporary snapshot file if it exists.
+
+    Args:
+        snapshot_path: Path to temporary snapshot file, or None
+    """
+    if snapshot_path:
+        from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
+
+        cleanup_temp_snapshot(snapshot_path)
+
+
 def restore_all(
     config: Path | None = None,
     db_path: str | None = None,
@@ -70,7 +214,6 @@ def restore_all(
     rate_limit_per_second: int | None = None,
     checkpoint_interval: int | None = None,
     max_retries: int | None = None,
-    skip_if_modified: bool = False,
     dry_run: bool = False,
     force: bool = False,
     json_output: bool = False,
@@ -93,7 +236,6 @@ def restore_all(
         rate_limit_per_second: Burst rate limit per second (default: config file or 10)
         checkpoint_interval: Save checkpoint every N items (default: config file or 100)
         max_retries: Maximum retry attempts for transient errors (default: config file or 5)
-        skip_if_modified: Skip items modified in destination since backup
         dry_run: Validate and show what would be restored without making changes
         force: Skip confirmation prompt
         json_output: Output results in JSON format
@@ -128,17 +270,17 @@ def restore_all(
             )
 
             # Download snapshot to temp location
-            if not json_output and not quiet:
+            if should_show_progress(json_output, quiet):
                 console.print(f"\nDownloading snapshot: [cyan]{from_snapshot}[/cyan]")
 
             temp_snapshot_path, snapshot_metadata = download_snapshot_to_temp(
                 snapshot_ref=from_snapshot,
                 verify_checksum=True,
-                show_progress=not quiet and not json_output,
+                show_progress=should_show_progress(json_output, quiet),
             )
 
             # Display snapshot metadata
-            if not json_output and not quiet:
+            if should_show_progress(json_output, quiet):
                 from datetime import UTC, datetime
 
                 console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
@@ -154,33 +296,24 @@ def restore_all(
             db_path = str(temp_snapshot_path)
 
         except ValueError as e:
-            if not json_output:
-                console.print(f"[red]✗ Invalid snapshot reference: {e}[/red]")
-                console.print("\nRun 'lookervault snapshot list' to see available snapshots.")
-            else:
-                error_output = {
-                    "status": "error",
-                    "error_type": "ValueError",
-                    "error_message": str(e),
-                }
-                console.print(json.dumps(error_output, indent=2))
+            output_error_message(
+                f"Invalid snapshot reference: {e}",
+                json_output,
+                error_type="ValueError",
+                troubleshooting="Run 'lookervault snapshot list' to see available snapshots.",
+            )
             raise typer.Exit(EXIT_VALIDATION_ERROR) from e
         except Exception as e:
-            if not json_output:
-                console.print(f"[red]✗ Snapshot download failed: {e}[/red]")
-                console.print(
-                    "\nTroubleshooting:\n"
-                    "  1. Check network connectivity\n"
+            output_error_message(
+                f"Snapshot download failed: {e}",
+                json_output,
+                error_type="SnapshotDownloadError",
+                troubleshooting=(
+                    "1. Check network connectivity\n"
                     "  2. Verify GCS credentials (gcloud auth application-default login)\n"
                     "  3. Ensure snapshot exists (lookervault snapshot list)"
-                )
-            else:
-                error_output = {
-                    "status": "error",
-                    "error_type": "SnapshotDownloadError",
-                    "error_message": str(e),
-                }
-                console.print(json.dumps(error_output, indent=2))
+                ),
+            )
             raise typer.Exit(EXIT_GENERAL_ERROR) from e
 
     # Resolve database path from CLI arg > env var > default
@@ -221,15 +354,11 @@ def restore_all(
             parsed_folder_ids = [fid.strip() for fid in folder_ids.split(",") if fid.strip()]
 
             if not parsed_folder_ids:
-                if not json_output:
-                    console.print("[red]✗ No valid folder IDs provided[/red]")
-                else:
-                    error_output = {
-                        "status": "error",
-                        "error_type": "ValidationError",
-                        "error_message": "No valid folder IDs provided",
-                    }
-                    console.print(json.dumps(error_output, indent=2))
+                output_error_message(
+                    "No valid folder IDs provided",
+                    json_output,
+                    error_type="ValidationError",
+                )
                 raise typer.Exit(EXIT_VALIDATION_ERROR)
 
         # Load configuration
@@ -293,22 +422,18 @@ def restore_all(
                 )
                 parsed_folder_ids = list(all_folder_ids)
 
-                if not json_output and verbose:
+                if should_show_progress(json_output, quiet) and verbose:
                     console.print(
                         f"[dim]Expanded {original_folder_count} folder(s) to "
                         f"{len(parsed_folder_ids)} total folder(s) (recursive)[/dim]"
                     )
 
             except NotFoundError as e:
-                if not json_output:
-                    console.print(f"[red]✗ Folder validation failed: {e}[/red]")
-                else:
-                    error_output = {
-                        "status": "error",
-                        "error_type": "NotFoundError",
-                        "error_message": str(e),
-                    }
-                    console.print(json.dumps(error_output, indent=2))
+                output_error_message(
+                    f"Folder validation failed: {e}",
+                    json_output,
+                    error_type="NotFoundError",
+                )
                 raise typer.Exit(EXIT_NOT_FOUND) from e
         elif parsed_folder_ids:
             # Non-recursive mode: just validate folders exist
@@ -319,15 +444,11 @@ def restore_all(
                 resolver.validate_folders_exist(parsed_folder_ids)
 
             except NotFoundError as e:
-                if not json_output:
-                    console.print(f"[red]✗ Folder validation failed: {e}[/red]")
-                else:
-                    error_output = {
-                        "status": "error",
-                        "error_type": "NotFoundError",
-                        "error_message": str(e),
-                    }
-                    console.print(json.dumps(error_output, indent=2))
+                output_error_message(
+                    f"Folder validation failed: {e}",
+                    json_output,
+                    error_type="NotFoundError",
+                )
                 raise typer.Exit(EXIT_NOT_FOUND) from e
 
         # Validate folder filtering only applies to supported content types
@@ -347,7 +468,7 @@ def restore_all(
                     ct for ct in only_type_enums if ct not in folder_filterable_types
                 ]
 
-                if unsupported_types and not json_output:
+                if unsupported_types and should_use_console_output(json_output, quiet):
                     console.print(
                         f"[yellow]⚠ Warning: Folder filtering will be ignored for: "
                         f"{', '.join(t.name.lower() for t in unsupported_types)}[/yellow]"
@@ -392,7 +513,7 @@ def restore_all(
             ordered_types = [ct for ct in ordered_types if ct not in exclude_type_enums]
 
         if not ordered_types:
-            if not json_output:
+            if should_use_console_output(json_output, quiet):
                 console.print("[yellow]⚠ No content types to restore[/yellow]")
             raise typer.Exit(EXIT_SUCCESS)
 
@@ -420,7 +541,7 @@ def restore_all(
                 raise typer.Exit(EXIT_SUCCESS)
 
         # Display start message
-        if not json_output and not quiet:
+        if should_show_progress(json_output, quiet):
             console.print("\n[bold]Restoring all content types in dependency order...[/bold]")
             if dry_run:
                 console.print("[dim](Dry run mode - no changes will be made)[/dim]\n")
@@ -438,7 +559,6 @@ def restore_all(
             checkpoint_interval=final_checkpoint_interval,
             max_retries=final_max_retries,
             dry_run=dry_run,
-            skip_if_modified=skip_if_modified,
             folder_ids=parsed_folder_ids,
             destination_instance=str(cfg.looker.api_url),
         )
@@ -493,50 +613,21 @@ def restore_all(
                     }
                     console.print(json.dumps(output, indent=2))
                 else:
-                    # Human-readable output
-                    console.print("\n[bold green]✓ Full restoration complete![/bold green]")
-                    console.print(f"  Total: {summary.total_items} items")
-
-                    success_rate = (
-                        (summary.success_count / summary.total_items * 100)
-                        if summary.total_items > 0
-                        else 0.0
+                    display_restoration_summary(
+                        total_items=summary.total_items,
+                        success_count=summary.success_count,
+                        created_count=summary.created_count,
+                        updated_count=summary.updated_count,
+                        error_count=summary.error_count,
+                        duration_seconds=total_duration,
+                        json_output=json_output,
                     )
-
-                    if summary.error_count > 0:
-                        console.print(
-                            f"  Success: {summary.success_count} ({success_rate:.1f}%) - "
-                            f"[yellow]{summary.created_count} created, "
-                            f"{summary.updated_count} updated[/yellow]"
-                        )
-                        console.print(f"  [red]Failed: {summary.error_count}[/red]")
-                    else:
-                        console.print(
-                            f"  Success: {summary.success_count} ({success_rate:.1f}%) - "
-                            f"{summary.created_count} created, "
-                            f"{summary.updated_count} updated"
-                        )
-
-                    # Format duration nicely
-                    if summary.duration_seconds >= 60:
-                        minutes = int(summary.duration_seconds // 60)
-                        seconds = int(summary.duration_seconds % 60)
-                        duration_str = f"{minutes}m {seconds}s"
-                    else:
-                        duration_str = f"{summary.duration_seconds:.1f}s"
-
-                    console.print(f"  Total Duration: [cyan]{duration_str}[/cyan]")
 
                 # Clean exit
                 repository.close()
 
                 # Cleanup temporary snapshot if used
-                if temp_snapshot_path:
-                    from lookervault.restoration.snapshot_integration import (
-                        cleanup_temp_snapshot,
-                    )
-
-                    cleanup_temp_snapshot(temp_snapshot_path)
+                cleanup_snapshot_if_needed(temp_snapshot_path)
 
                 # Exit with appropriate code
                 if summary.error_count > 0:
@@ -549,12 +640,7 @@ def restore_all(
                     print_error(f"Parallel restoration error: {e}")
                 logger.exception("Error during parallel restoration")
                 # Cleanup temporary snapshot on error
-                if temp_snapshot_path:
-                    from lookervault.restoration.snapshot_integration import (
-                        cleanup_temp_snapshot,
-                    )
-
-                    cleanup_temp_snapshot(temp_snapshot_path)
+                cleanup_snapshot_if_needed(temp_snapshot_path)
                 raise typer.Exit(EXIT_GENERAL_ERROR) from None
 
         # Step 4: Sequential restoration (backward compatible, workers == 1)
@@ -575,7 +661,7 @@ def restore_all(
         for idx, content_type in enumerate(ordered_types, 1):
             content_type_name = content_type.name.lower()
 
-            if not json_output:
+            if should_show_progress(json_output, quiet):
                 console.print(
                     f"\n[{idx}/{total_types}] [cyan]{content_type_name.title()}[/cyan]..."
                 )
@@ -613,7 +699,7 @@ def restore_all(
                 )
 
                 # Display per-type result
-                if not json_output:
+                if should_show_progress(json_output, quiet):
                     if summary.error_count > 0:
                         console.print(
                             f"  [yellow]✓[/yellow] {summary.success_count}/{summary.total_items} {content_type_name} restored "
@@ -629,7 +715,7 @@ def restore_all(
             except Exception as e:
                 # Log error but continue with next type
                 logger.exception(f"Error restoring {content_type_name}: {e}")
-                if not json_output:
+                if should_show_progress(json_output, quiet):
                     console.print(f"  [red]✗ Failed to restore {content_type_name}: {e}[/red]")
 
         # Step 5: Display final summary
@@ -659,48 +745,21 @@ def restore_all(
             }
             console.print(json.dumps(output, indent=2))
         else:
-            # Human-readable output
-            console.print("\n[bold green]✓ Full restoration complete![/bold green]")
-            console.print(f"  Total: {aggregated_results['total_items']} items")
-
-            success_rate = (
-                (aggregated_results["success_count"] / aggregated_results["total_items"] * 100)
-                if aggregated_results["total_items"] > 0
-                else 0.0
+            display_restoration_summary(
+                total_items=aggregated_results["total_items"],
+                success_count=aggregated_results["success_count"],
+                created_count=aggregated_results["created_count"],
+                updated_count=aggregated_results["updated_count"],
+                error_count=aggregated_results["error_count"],
+                duration_seconds=total_duration,
+                json_output=json_output,
             )
-
-            if aggregated_results["error_count"] > 0:
-                console.print(
-                    f"  Success: {aggregated_results['success_count']} ({success_rate:.1f}%) - "
-                    f"[yellow]{aggregated_results['created_count']} created, "
-                    f"{aggregated_results['updated_count']} updated[/yellow]"
-                )
-                console.print(f"  [red]Failed: {aggregated_results['error_count']}[/red]")
-            else:
-                console.print(
-                    f"  Success: {aggregated_results['success_count']} ({success_rate:.1f}%) - "
-                    f"{aggregated_results['created_count']} created, "
-                    f"{aggregated_results['updated_count']} updated"
-                )
-
-            # Format duration nicely
-            if total_duration >= 60:
-                minutes = int(total_duration // 60)
-                seconds = int(total_duration % 60)
-                duration_str = f"{minutes}m {seconds}s"
-            else:
-                duration_str = f"{total_duration:.1f}s"
-
-            console.print(f"  Total Duration: [cyan]{duration_str}[/cyan]")
 
         # Clean exit
         repository.close()
 
         # Cleanup temporary snapshot if used
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
 
         # Exit with appropriate code
         if aggregated_results["error_count"] > 0:
@@ -710,72 +769,51 @@ def restore_all(
 
     except typer.Exit:
         # Cleanup temporary snapshot on early exit
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise
     except ConfigError as e:
         if not json_output:
             print_error(f"Configuration error: {e}")
         logger.error(f"Configuration error: {e}")
         # Cleanup temporary snapshot on error
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except ValidationError as e:
         if not json_output:
             print_error(f"Validation error: {e}")
         logger.error(f"Validation error: {e}")
         # Cleanup temporary snapshot on error
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except DeserializationError as e:
         if not json_output:
             print_error(f"Deserialization error: {e}")
         logger.error(f"Deserialization error: {e}")
         # Cleanup temporary snapshot on error
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(EXIT_VALIDATION_ERROR) from None
     except RestorationError as e:
         if not json_output:
             print_error(f"Restoration error: {e}")
         logger.error(f"Restoration error: {e}")
         # Cleanup temporary snapshot on error
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(EXIT_GENERAL_ERROR) from None
     except KeyboardInterrupt:
         # Graceful Ctrl+C handling - checkpoint already saved by orchestrator/restorer
-        if not json_output and not quiet:
+        if should_show_progress(json_output, quiet):
             console.print("\n[yellow]⚠ Interrupted by user (Ctrl+C)[/yellow]")
             console.print(
                 "[dim]Progress has been saved. Use 'restore all' with the same options to resume.[/dim]"
             )
         logger.info("Restoration interrupted by user (KeyboardInterrupt)")
         # Cleanup temporary snapshot on interrupt
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(130) from None
     except Exception as e:
         if not json_output:
             print_error(f"Unexpected error: {e}")
         logger.exception("Unexpected error during restoration")
         # Cleanup temporary snapshot on unexpected error
-        if temp_snapshot_path:
-            from lookervault.restoration.snapshot_integration import cleanup_temp_snapshot
-
-            cleanup_temp_snapshot(temp_snapshot_path)
+        cleanup_snapshot_if_needed(temp_snapshot_path)
         raise typer.Exit(EXIT_GENERAL_ERROR) from None

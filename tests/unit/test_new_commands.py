@@ -40,35 +40,6 @@ class TestListCommand:
         assert len(items) == 1
         assert items[0].name == "Sales Dashboard"
 
-    def test_list_with_owner_filter(self):
-        """Test listing with owner email filter."""
-        mock_items = [
-            ContentItem(
-                id="dashboard::123",
-                content_type=ContentType.DASHBOARD.value,
-                name="Dashboard 1",
-                owner_email="john@example.com",
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-                content_data=b"test",
-            ),
-            ContentItem(
-                id="dashboard::456",
-                content_type=ContentType.DASHBOARD.value,
-                name="Dashboard 2",
-                owner_email="jane@example.com",
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-                content_data=b"test",
-            ),
-        ]
-
-        # Filter by owner
-        filtered = [item for item in mock_items if "john" in item.owner_email.lower()]
-
-        assert len(filtered) == 1
-        assert filtered[0].owner_email == "john@example.com"
-
     def test_list_with_created_after_filter(self):
         """Test listing with created_after date filter."""
         cutoff = datetime(2025, 12, 1, tzinfo=UTC)

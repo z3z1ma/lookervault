@@ -424,15 +424,12 @@ class RestorationConfig(BaseModel):
     checkpoint_interval: int = Field(default=100, ge=1)
     max_retries: int = Field(default=5, ge=0, le=10)
     dry_run: bool = False
-    skip_if_modified: bool = False
 
     # Filtering
     content_types: list[int] | None = None   # None = all types
-    content_ids: list[str] | None = None     # None = all IDs
-    date_range: tuple[datetime, datetime] | None = None
+    folder_ids: list[str] | None = None      # None = all folders
 
     # Instance configuration
-    source_instance: str | None = None       # For cross-instance migration
     destination_instance: str = ""
 
     @field_validator('workers')
@@ -561,10 +558,8 @@ content_items (1) ──→ (0..1) dead_letter_queue  [via content_id]
   "checkpoint_interval": 100,
   "max_retries": 5,
   "dry_run": false,
-  "skip_if_modified": false,
   "content_types": [1, 2, 9],
-  "content_ids": null,
-  "date_range": null
+  "folder_ids": null
 }
 ```
 

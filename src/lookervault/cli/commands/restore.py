@@ -683,7 +683,6 @@ def restore_bulk(
     rate_limit_per_second: int | None = None,
     checkpoint_interval: int | None = None,
     max_retries: int | None = None,
-    skip_if_modified: bool = False,
     dry_run: bool = False,
     json_output: bool = False,
     verbose: bool = False,
@@ -702,7 +701,6 @@ def restore_bulk(
         rate_limit_per_second: Burst rate limit per second (default: config file or 10)
         checkpoint_interval: Save checkpoint every N items (default: config file or 100)
         max_retries: Maximum retry attempts for transient errors (default: config file or 5)
-        skip_if_modified: Skip items modified in destination since backup
         dry_run: Validate and show what would be restored without making changes
         json_output: Output results in JSON format
         verbose: Enable verbose logging
@@ -881,7 +879,6 @@ def restore_bulk(
             checkpoint_interval=final_checkpoint_interval,
             max_retries=final_max_retries,
             dry_run=dry_run,
-            skip_if_modified=skip_if_modified,
         )
         restoration_config.session_id = session_id  # type: ignore
 
@@ -1070,7 +1067,6 @@ def restore_resume(
     rate_limit_per_second: int = 10,
     checkpoint_interval: int = 100,
     max_retries: int = 5,
-    skip_if_modified: bool = False,
     dry_run: bool = False,
     json_output: bool = False,
     verbose: bool = False,
@@ -1088,7 +1084,6 @@ def restore_resume(
         rate_limit_per_second: Burst rate limit per second
         checkpoint_interval: Save checkpoint every N items
         max_retries: Maximum retry attempts for transient errors
-        skip_if_modified: Skip items modified in destination since backup
         dry_run: Validate and show what would be restored without making changes
         json_output: Output results in JSON format
         verbose: Enable verbose logging
@@ -1197,7 +1192,6 @@ def restore_resume(
             checkpoint_interval=checkpoint_interval,
             max_retries=max_retries,
             dry_run=dry_run,
-            skip_if_modified=skip_if_modified,
         )
         restoration_config.session_id = checkpoint.session_id  # type: ignore
 
