@@ -4,7 +4,7 @@ import json as json_module
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -121,10 +121,10 @@ def restore_single(
             if not json_output and not quiet:
                 console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
                 console.print(
-                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S timezone.utc')}"
+                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 )
                 console.print(f"  Size: {snapshot_metadata.size_bytes:,} bytes")
-                age_days = (datetime.now(timezone.utc) - snapshot_metadata.created).days
+                age_days = (datetime.now(UTC) - snapshot_metadata.created).days
                 console.print(f"  Age: {age_days} days")
                 console.print()
 
@@ -745,10 +745,10 @@ def restore_bulk(
             if not json_output and not quiet:
                 console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
                 console.print(
-                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S timezone.utc')}"
+                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 )
                 console.print(f"  Size: {snapshot_metadata.size_bytes:,} bytes")
-                age_days = (datetime.now(timezone.utc) - snapshot_metadata.created).days
+                age_days = (datetime.now(UTC) - snapshot_metadata.created).days
                 console.print(f"  Age: {age_days} days")
                 console.print()
 

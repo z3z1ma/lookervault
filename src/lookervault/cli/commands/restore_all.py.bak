@@ -281,14 +281,14 @@ def restore_all(
 
             # Display snapshot metadata
             if should_show_progress(json_output, quiet):
-                from datetime import datetime, timezone
+                from datetime import UTC, datetime
 
                 console.print(f"  Snapshot: [cyan]{snapshot_metadata.filename}[/cyan]")
                 console.print(
-                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S timezone.utc')}"
+                    f"  Created: {snapshot_metadata.created.strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 )
                 console.print(f"  Size: {snapshot_metadata.size_bytes:,} bytes")
-                age_days = (datetime.now(timezone.utc) - snapshot_metadata.created).days
+                age_days = (datetime.now(UTC) - snapshot_metadata.created).days
                 console.print(f"  Age: {age_days} days")
                 console.print()
 

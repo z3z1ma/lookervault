@@ -13,7 +13,7 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
-class BatchProcessor[T, R](Protocol):
+class BatchProcessor(Protocol[T, R]):
     """Protocol for processing items in memory-safe batches."""
 
     def process_batches(

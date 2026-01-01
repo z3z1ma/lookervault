@@ -220,7 +220,7 @@ class ContentUnpacker:
         # Write metadata
         metadata_file = output_dir / "metadata.json"
         with metadata_file.open("w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata.to_dict(), f, indent=2)
 
         return {
             "total_items": total_items,
@@ -399,7 +399,7 @@ class ContentUnpacker:
         # Write metadata
         metadata_file = output_dir / "metadata.json"
         with metadata_file.open("w") as f:
-            json.dump(metadata, f, indent=2, default=str)
+            json.dump(metadata.to_dict(), f, indent=2)
 
         return {
             "total_items": total_items,

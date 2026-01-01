@@ -865,7 +865,6 @@ def delete(
             # Initialize audit logger
             audit_logger = AuditLogger(
                 log_path=snapshot_config.audit_log_path,
-                gcs_bucket=snapshot_config.audit_gcs_bucket,
             )
 
             # Execute deletion
@@ -1164,7 +1163,6 @@ def cleanup(
             # Initialize audit logger
             audit_logger = AuditLogger(
                 log_path=snapshot_config.audit_log_path,
-                gcs_bucket=snapshot_config.audit_gcs_bucket,
             )
 
             # Delete old snapshots
