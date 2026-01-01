@@ -227,6 +227,131 @@ if is_multi_folder:
 - **Parallel orchestrator**: `/Users/alexanderbutler/code_projects/work_ccm/lookervault/src/lookervault/extraction/parallel_orchestrator.py` (lines 406-452)
 - **Sequential orchestrator**: `/Users/alexanderbutler/code_projects/work_ccm/lookervault/src/lookervault/extraction/orchestrator.py` (lines 196-250)
 
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph Main["Main Thread"]
+        CLI[CLI Command<br/>lookervault extract]
+        PO[ParallelOrchestrator]
+        Session[ExtractionSession<br/>Creation/Updates]
+        Checkpoints[Checkpoint<br/>Management]
+    end
+
+    subgraph Workers["ThreadPoolExecutor (N Workers)"]
+        direction LR
+        W1[Worker 1]
+        W2[Worker 2]
+        WN[Worker N]
+    end
+
+    subgraph Coordination["Thread-Safe Coordination"]
+        OC[OffsetCoordinator<br/>or<br/>MultiFolderOffsetCoordinator]
+        Metrics[ThreadSafeMetrics]
+        RL[AdaptiveRateLimiter]
+    end
+
+    subgraph Storage["Thread-Safe Storage"]
+        Repo[ContentRepository<br/>Thread-Local Connections]
+        DB[(SQLite Database<br/>WAL Mode)]
+    end
+
+    subgraph API["Looker API"]
+        SDK[Looker SDK Client<br/>Rate-Limited Calls]
+    end
+
+    %% Main thread flow
+    CLI --> PO
+    PO --> Session
+    PO --> Checkpoints
+
+    %% Worker spawning
+    PO -->|Spawn N workers| W1
+    PO -->|Spawn N workers| W2
+    PO -->|Spawn N workers| WN
+
+    %% Worker coordination
+    W1 -->|claim_range| OC
+    W2 -->|claim_range| OC
+    WN -->|claim_range| OC
+
+    W1 -->|increment_processed| Metrics
+    W2 -->|increment_processed| Metrics
+    WN -->|increment_processed| Metrics
+
+    W1 -->|acquire/release| RL
+    W2 -->|acquire/release| RL
+    WN -->|acquire/release| RL
+
+    %% API calls (rate-limited)
+    W1 -->|extract_range| RL
+    W2 -->|extract_range| RL
+    WN -->|extract_range| RL
+    RL -->|Throttled| SDK
+
+    %% Storage (thread-local)
+    W1 -->|save_content| Repo
+    W2 -->|save_content| Repo
+    WN -->|save_content| Repo
+    Repo -->|BEGIN IMMEDIATE| DB
+
+    %% Data flow
+    SDK -->|API Response<br/>Filtered by folder_id| W1
+    SDK -->|API Response<br/>Filtered by folder_id| W2
+    SDK -->|API Response<br/>Filtered by folder_id| WN
+
+    %% Styling
+    classDef mainThread fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef workers fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef coordination fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef storage fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef api fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
+    class CLI,PO,Session,Checkpoints mainThread
+    class W1,W2,WN workers
+    class OC,Metrics,RL coordination
+    class Repo,DB storage
+    class SDK api
+```
+
+### Component Descriptions
+
+| Component | Responsibility | Thread-Safety Mechanism |
+|-----------|----------------|------------------------|
+| **ParallelOrchestrator** | Main controller, spawns workers, aggregates results | Single-threaded (main only) |
+| **ThreadPoolExecutor** | Manages worker thread lifecycle | Python built-in thread pool |
+| **OffsetCoordinator** | Single-folder offset range allocation | threading.Lock |
+| **MultiFolderOffsetCoordinator** | Multi-folder round-robin offset allocation | threading.Lock |
+| **AdaptiveRateLimiter** | Sliding window rate limiting + adaptive backoff | threading.Lock |
+| **ThreadSafeMetrics** | Atomic counter updates and snapshots | threading.Lock |
+| **ContentRepository** | Database operations with thread-local connections | threading.local + BEGIN IMMEDIATE |
+| **ContentExtractor** | Looker SDK API calls | Shared, but rate-limited |
+
+### Data Flow
+
+1. **Main Thread**: Creates session, spawns N workers via ThreadPoolExecutor
+2. **Worker Loop**:
+   - `coordinator.claim_range()` - Atomically claim (offset, limit) or (folder_id, offset, limit)
+   - `rate_limiter.acquire()` - Block if rate limit would be exceeded
+   - `extractor.extract_range()` - Fetch from Looker API (SDK-level folder filtering)
+   - `repository.save_content()` - Save to SQLite (thread-local connection)
+   - `metrics.increment_processed()` - Update counters
+   - Repeat until `claim_range()` returns `None`
+3. **Completion**: Workers close thread-local DB connections, return item counts
+4. **Aggregation**: Main thread updates checkpoint and session status
+
+### Multi-Folder Optimization
+
+When `--folder-id` is specified multiple times with `--recursive-folders`:
+
+```
+Single-Folder:        Multi-Folder:
+[offset, limit]   →   [folder_id, offset, limit]
+     ↓                    ↓
+sequential           round-robin across
+offsets               folders (10x faster)
+```
+
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes

@@ -48,14 +48,16 @@ class TestDeadLetterQueueInit:
         """Test __init__ stores repository reference."""
         dlq = DeadLetterQueue(repository=mock_repository)
 
-        assert dlq.repository is mock_repository
+        assert dlq.repository is mock_repository, (
+            "Expected DLQ to store the provided repository reference"
+        )
 
     def test_init_should_accept_repository_only(self, mock_repository):
         """Test __init__ requires only repository parameter."""
         dlq = DeadLetterQueue(repository=mock_repository)
 
-        assert dlq is not None
-        assert hasattr(dlq, "repository")
+        assert dlq is not None, "Expected DLQ instance to be created"
+        assert hasattr(dlq, "repository"), "Expected DLQ instance to have 'repository' attribute"
 
 
 class TestDeadLetterQueueAdd:
@@ -214,7 +216,7 @@ class TestDeadLetterQueueGet:
         result = dlq.get(dlq_id="dlq-123")
 
         # Assert
-        assert result == expected_item
+        assert result == expected_item, f"Expected to retrieve DLQ item dlq-123 but got {result}"
         mock_repository.get_dead_letter_item.assert_called_once_with("dlq-123")
 
     def test_get_should_return_none_when_not_found(self, dlq, mock_repository):
@@ -226,7 +228,7 @@ class TestDeadLetterQueueGet:
         result = dlq.get(dlq_id="nonexistent")
 
         # Assert
-        assert result is None
+        assert result is None, "Expected None when DLQ item not found"
         mock_repository.get_dead_letter_item.assert_called_once_with("nonexistent")
 
 
@@ -476,7 +478,7 @@ class TestDeadLetterQueueClear:
         count = dlq.clear(force=True)
 
         # Assert
-        assert count == 5
+        assert count == 5, f"Expected to clear 5 items but got {count}"
         mock_repository.count_dead_letter_items.assert_called_once_with(
             session_id=None, content_type=None
         )
@@ -492,7 +494,7 @@ class TestDeadLetterQueueClear:
         count = dlq.clear(session_id="session_123", force=True)
 
         # Assert
-        assert count == 3
+        assert count == 3, f"Expected to clear 3 items for session_123 but got {count}"
         mock_repository.count_dead_letter_items.assert_called_once_with(
             session_id="session_123", content_type=None
         )
@@ -506,7 +508,7 @@ class TestDeadLetterQueueClear:
         count = dlq.clear(content_type=ContentType.DASHBOARD, force=True)
 
         # Assert
-        assert count == 2
+        assert count == 2, f"Expected to clear 2 DASHBOARD items but got {count}"
         mock_repository.count_dead_letter_items.assert_called_once_with(
             session_id=None, content_type=ContentType.DASHBOARD.value
         )
@@ -526,7 +528,7 @@ class TestDeadLetterQueueClear:
         count = dlq.clear(force=True)
 
         # Assert
-        assert count == 10
+        assert count == 10, f"Expected to clear 10 items with force=True but got {count}"
         mock_repository.count_dead_letter_items.assert_called_once()
 
 

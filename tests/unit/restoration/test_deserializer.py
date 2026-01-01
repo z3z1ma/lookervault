@@ -76,53 +76,65 @@ class TestFilterReadOnlyFields:
         """Filter common metadata fields like can, created_at, updated_at."""
         filtered = deserializer._filter_read_only_fields(sample_dashboard_data)
 
-        assert "can" not in filtered
-        assert "created_at" not in filtered
-        assert "updated_at" not in filtered
-        assert "url" not in filtered
+        assert "can" not in filtered, "Expected 'can' field to be filtered as read-only"
+        assert "created_at" not in filtered, (
+            "Expected 'created_at' field to be filtered as read-only"
+        )
+        assert "updated_at" not in filtered, (
+            "Expected 'updated_at' field to be filtered as read-only"
+        )
+        assert "url" not in filtered, "Expected 'url' field to be filtered as read-only"
         # Writable fields should remain
-        assert "id" in filtered
-        assert "title" in filtered
-        assert "description" in filtered
+        assert "id" in filtered, "Expected 'id' field to be preserved"
+        assert "title" in filtered, "Expected 'title' field to be preserved"
+        assert "description" in filtered, "Expected 'description' field to be preserved"
 
     def test_filter_look_specific_fields(self, deserializer, sample_look_data):
         """Filter look-specific read-only fields."""
         filtered = deserializer._filter_read_only_fields(sample_look_data)
 
-        assert "model" not in filtered
-        assert "explore" not in filtered
-        assert "url" not in filtered
+        assert "model" not in filtered, (
+            "Expected 'model' field to be filtered for Look content type"
+        )
+        assert "explore" not in filtered, (
+            "Expected 'explore' field to be filtered for Look content type"
+        )
+        assert "url" not in filtered, "Expected 'url' field to be filtered as read-only"
         # Writable fields should remain
-        assert "id" in filtered
-        assert "title" in filtered
-        assert "query_id" in filtered
+        assert "id" in filtered, "Expected 'id' field to be preserved"
+        assert "title" in filtered, "Expected 'title' field to be preserved"
+        assert "query_id" in filtered, "Expected 'query_id' field to be preserved"
 
     def test_filter_user_credential_fields(self, deserializer, sample_user_data):
         """Filter user credential fields."""
         filtered = deserializer._filter_read_only_fields(sample_user_data)
 
-        assert "credentials_api3" not in filtered
-        assert "credentials_email" not in filtered
-        assert "display_name" not in filtered
-        assert "avatar_url" not in filtered
+        assert "credentials_api3" not in filtered, (
+            "Expected 'credentials_api3' field to be filtered"
+        )
+        assert "credentials_email" not in filtered, (
+            "Expected 'credentials_email' field to be filtered"
+        )
+        assert "display_name" not in filtered, "Expected 'display_name' field to be filtered"
+        assert "avatar_url" not in filtered, "Expected 'avatar_url' field to be filtered"
         # Writable fields should remain
-        assert "id" in filtered
-        assert "first_name" in filtered
-        assert "last_name" in filtered
+        assert "id" in filtered, "Expected 'id' field to be preserved"
+        assert "first_name" in filtered, "Expected 'first_name' field to be preserved"
+        assert "last_name" in filtered, "Expected 'last_name' field to be preserved"
 
     def test_filter_preserves_id_field(self, deserializer, sample_dashboard_data):
         """ID field is preserved (not in READ_ONLY_FIELDS)."""
         filtered = deserializer._filter_read_only_fields(sample_dashboard_data)
 
         # ID should NOT be filtered (needed for updates)
-        assert "id" in filtered
-        assert filtered["id"] == "123"
+        assert "id" in filtered, "Expected 'id' field to be preserved (needed for updates)"
+        assert filtered["id"] == "123", f"Expected id '123' but got '{filtered['id']}'"
 
     def test_filter_empty_dict(self, deserializer):
         """Filtering empty dict returns empty dict."""
         filtered = deserializer._filter_read_only_fields({})
 
-        assert filtered == {}
+        assert filtered == {}, "Expected filtering empty dict to return empty dict"
 
     def test_filter_only_readonly_fields(self, deserializer):
         """Dict with only read-only fields returns empty dict."""
@@ -134,7 +146,9 @@ class TestFilterReadOnlyFields:
 
         filtered = deserializer._filter_read_only_fields(readonly_only)
 
-        assert filtered == {}
+        assert filtered == {}, (
+            "Expected filtering dict with only read-only fields to return empty dict"
+        )
 
     def test_filter_preserves_custom_fields(self, deserializer):
         """Custom fields not in READ_ONLY_FIELDS are preserved."""
@@ -148,9 +162,9 @@ class TestFilterReadOnlyFields:
 
         filtered = deserializer._filter_read_only_fields(data)
 
-        assert "custom_field" in filtered
-        assert "another_custom" in filtered
-        assert "can" not in filtered
+        assert "custom_field" in filtered, "Expected 'custom_field' to be preserved"
+        assert "another_custom" in filtered, "Expected 'another_custom' to be preserved"
+        assert "can" not in filtered, "Expected 'can' (read-only) to be filtered"
 
 
 class TestDeserializeAsDict:
@@ -164,12 +178,18 @@ class TestDeserializeAsDict:
         # Deserialize
         result = deserializer.deserialize(binary_data, ContentType.DASHBOARD, as_dict=True)
 
-        assert isinstance(result, dict)
-        assert result["id"] == "123"
-        assert result["title"] == "Test Dashboard"
+        assert isinstance(result, dict), (
+            f"Expected result to be dict but got {type(result).__name__}"
+        )
+        assert result["id"] == "123", f"Expected id '123' but got '{result['id']}'"
+        assert result["title"] == "Test Dashboard", (
+            f"Expected title 'Test Dashboard' but got '{result['title']}'"
+        )
         # Read-only fields should be filtered
-        assert "can" not in result
-        assert "created_at" not in result
+        assert "can" not in result, "Expected 'can' field to be filtered from deserialized dict"
+        assert "created_at" not in result, (
+            "Expected 'created_at' field to be filtered from deserialized dict"
+        )
 
     def test_deserialize_look_success(self, deserializer, sample_look_data):
         """Deserialize valid look binary blob to dict."""
@@ -177,12 +197,20 @@ class TestDeserializeAsDict:
 
         result = deserializer.deserialize(binary_data, ContentType.LOOK, as_dict=True)
 
-        assert isinstance(result, dict)
-        assert result["id"] == "789"
-        assert result["title"] == "Test Look"
+        assert isinstance(result, dict), (
+            f"Expected result to be dict but got {type(result).__name__}"
+        )
+        assert result["id"] == "789", f"Expected id '789' but got '{result['id']}'"
+        assert result["title"] == "Test Look", (
+            f"Expected title 'Test Look' but got '{result['title']}'"
+        )
         # Look-specific read-only fields should be filtered
-        assert "model" not in result
-        assert "explore" not in result
+        assert "model" not in result, (
+            "Expected 'model' field to be filtered from Look deserialization"
+        )
+        assert "explore" not in result, (
+            "Expected 'explore' field to be filtered from Look deserialization"
+        )
 
     def test_deserialize_user_success(self, deserializer, sample_user_data):
         """Deserialize valid user binary blob to dict."""
@@ -190,12 +218,20 @@ class TestDeserializeAsDict:
 
         result = deserializer.deserialize(binary_data, ContentType.USER, as_dict=True)
 
-        assert isinstance(result, dict)
-        assert result["id"] == "42"
-        assert result["first_name"] == "Test"
+        assert isinstance(result, dict), (
+            f"Expected result to be dict but got {type(result).__name__}"
+        )
+        assert result["id"] == "42", f"Expected id '42' but got '{result['id']}'"
+        assert result["first_name"] == "Test", (
+            f"Expected first_name 'Test' but got '{result['first_name']}'"
+        )
         # User credential fields should be filtered
-        assert "credentials_api3" not in result
-        assert "display_name" not in result
+        assert "credentials_api3" not in result, (
+            "Expected 'credentials_api3' to be filtered from User deserialization"
+        )
+        assert "display_name" not in result, (
+            "Expected 'display_name' to be filtered from User deserialization"
+        )
 
     def test_deserialize_corrupted_binary_raises_error(self, deserializer):
         """Corrupted binary data raises DeserializationError."""

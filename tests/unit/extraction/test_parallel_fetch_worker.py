@@ -88,12 +88,18 @@ class TestParallelFetchWorker:
         )
 
         # Verify results
-        assert items_processed == 103
-        assert mock_extractor.extract_range.call_count == 2
-        assert mock_repository.save_content.call_count == 103
-        assert mock_repository.close_thread_connection.call_count == 1
-        assert coordinator.get_workers_done() == 1
-        assert coordinator.all_workers_done()
+        assert items_processed == 103, f"Expected 103 items processed but got {items_processed}"
+        assert mock_extractor.extract_range.call_count == 2, (
+            f"Expected 2 API calls but got {mock_extractor.extract_range.call_count}"
+        )
+        assert mock_repository.save_content.call_count == 103, (
+            f"Expected 103 items saved but got {mock_repository.save_content.call_count}"
+        )
+        assert mock_repository.close_thread_connection.call_count == 1, (
+            "Expected connection to be closed once"
+        )
+        assert coordinator.get_workers_done() == 1, "Expected 1 worker marked as done"
+        assert coordinator.all_workers_done(), "Expected all workers to be marked done"
 
     def test_parallel_fetch_worker_multiple_batches(self):
         """Test worker fetching multiple batches until end of data."""
@@ -119,10 +125,16 @@ class TestParallelFetchWorker:
         )
 
         # Verify
-        assert items_processed == 350
-        assert mock_extractor.extract_range.call_count == 4
-        assert mock_repository.save_content.call_count == 350
-        assert coordinator.get_workers_done() == 1
+        assert items_processed == 350, (
+            f"Expected 350 items from 4 batches but got {items_processed}"
+        )
+        assert mock_extractor.extract_range.call_count == 4, (
+            f"Expected 4 API calls for 4 batches but got {mock_extractor.extract_range.call_count}"
+        )
+        assert mock_repository.save_content.call_count == 350, (
+            f"Expected 350 saves but got {mock_repository.save_content.call_count}"
+        )
+        assert coordinator.get_workers_done() == 1, "Expected worker to be marked done"
 
     def test_parallel_fetch_worker_empty_results_immediately(self):
         """Test worker hitting end-of-data on first fetch."""
@@ -142,10 +154,14 @@ class TestParallelFetchWorker:
             updated_after=None,
         )
 
-        assert items_processed == 0
-        assert mock_extractor.extract_range.call_count == 1
-        assert mock_repository.save_content.call_count == 0
-        assert coordinator.get_workers_done() == 1
+        assert items_processed == 0, f"Expected 0 items but got {items_processed}"
+        assert mock_extractor.extract_range.call_count == 1, "Expected 1 initial API call"
+        assert mock_repository.save_content.call_count == 0, (
+            "Expected no items saved when API returns empty"
+        )
+        assert coordinator.get_workers_done() == 1, (
+            "Expected worker to be marked done after empty result"
+        )
 
     def test_parallel_fetch_worker_claims_correct_offset_ranges(self):
         """Test worker claims sequential offset ranges."""
@@ -259,9 +275,13 @@ class TestParallelFetchWorker:
         )
 
         # Should skip failed fetch and continue
-        assert items_processed == 1
-        assert mock_extractor.extract_range.call_count == 2
-        assert mock_repository.save_content.call_count == 1
+        assert items_processed == 1, (
+            f"Expected 1 item processed after error recovery but got {items_processed}"
+        )
+        assert mock_extractor.extract_range.call_count == 2, (
+            "Expected 2 API calls (first failed, retry succeeded)"
+        )
+        assert mock_repository.save_content.call_count == 1, "Expected 1 item saved"
 
     def test_parallel_fetch_worker_handles_item_save_errors_gracefully(self):
         """Test worker continues after individual item save errors."""
@@ -295,8 +315,12 @@ class TestParallelFetchWorker:
         )
 
         # Should have processed 2 items successfully (1 failed)
-        assert items_processed == 2
-        assert mock_repository.save_content.call_count == 3
+        assert items_processed == 2, (
+            f"Expected 2 successful saves after 1 failure but got {items_processed}"
+        )
+        assert mock_repository.save_content.call_count == 3, (
+            "Expected 3 save attempts (2 successful, 1 failed)"
+        )
 
     def test_parallel_fetch_worker_always_closes_connection(self):
         """Test worker always closes thread-local connection in finally block."""
@@ -362,8 +386,10 @@ class TestParallelFetchWorker:
 
         # Verify metrics were updated
         snapshot = orchestrator.metrics.snapshot()
-        assert snapshot["total"] == 5
-        assert snapshot["by_type"][ContentType.DASHBOARD.value] == 5
+        assert snapshot["total"] == 5, f"Expected metrics total to be 5 but got {snapshot['total']}"
+        assert snapshot["by_type"][ContentType.DASHBOARD.value] == 5, (
+            f"Expected 5 DASHBOARD items in metrics but got {snapshot['by_type'][ContentType.DASHBOARD.value]}"
+        )
 
     def test_parallel_fetch_worker_with_different_content_types(self):
         """Test worker handles different content types correctly."""
@@ -384,7 +410,9 @@ class TestParallelFetchWorker:
         )
 
         # Verify extract_range called with LOOK
-        assert mock_extractor.extract_range.call_args_list[0][0][0] == ContentType.LOOK
+        assert mock_extractor.extract_range.call_args_list[0][0][0] == ContentType.LOOK, (
+            "Expected first call to use ContentType.LOOK"
+        )
 
         # Reset and test with USER
         mock_extractor.reset_mock()
@@ -400,7 +428,9 @@ class TestParallelFetchWorker:
             updated_after=None,
         )
 
-        assert mock_extractor.extract_range.call_args_list[0][0][0] == ContentType.USER
+        assert mock_extractor.extract_range.call_args_list[0][0][0] == ContentType.USER, (
+            "Expected call to use ContentType.USER"
+        )
 
     def test_parallel_fetch_worker_stops_on_partial_batch(self):
         """Test worker stops when receiving fewer items than limit."""
@@ -421,6 +451,12 @@ class TestParallelFetchWorker:
         )
 
         # Should process items and stop (not fetch again)
-        assert items_processed == 75
-        assert mock_extractor.extract_range.call_count == 1
-        assert coordinator.get_workers_done() == 1
+        assert items_processed == 75, (
+            f"Expected 75 items from partial batch but got {items_processed}"
+        )
+        assert mock_extractor.extract_range.call_count == 1, (
+            "Expected only 1 API call for partial batch (should stop)"
+        )
+        assert coordinator.get_workers_done() == 1, (
+            "Expected worker to be marked done after partial batch"
+        )

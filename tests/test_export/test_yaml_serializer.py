@@ -19,8 +19,12 @@ class TestSerialize:
         data = {"title": "Test Dashboard", "id": "123"}
         result = serializer.serialize(data)
 
-        assert "title: Test Dashboard" in result
-        assert "id: '123'" in result or 'id: "123"' in result
+        assert "title: Test Dashboard" in result, (
+            "Expected 'title: Test Dashboard' in serialized YAML"
+        )
+        assert "id: '123'" in result or 'id: "123"' in result, (
+            "Expected quoted id '123' in serialized YAML"
+        )
 
     def test_serialize_nested_dict(self, serializer):
         """Serialize nested dictionary."""
@@ -31,9 +35,9 @@ class TestSerialize:
         }
         result = serializer.serialize(data)
 
-        assert "title: Dashboard" in result
-        assert "filters:" in result
-        assert "elements:" in result
+        assert "title: Dashboard" in result, "Expected 'title: Dashboard' in serialized YAML"
+        assert "filters:" in result, "Expected 'filters:' key in serialized YAML"
+        assert "elements:" in result, "Expected 'elements:' key in serialized YAML"
 
     def test_serialize_preserves_quotes(self, serializer):
         """Verify quote preservation."""
@@ -41,8 +45,8 @@ class TestSerialize:
         result = serializer.serialize(data)
 
         # Should preserve quote style
-        assert "title:" in result
-        assert "description:" in result
+        assert "title:" in result, "Expected 'title:' key in serialized YAML"
+        assert "description:" in result, "Expected 'description:' key in serialized YAML"
 
     def test_serialize_non_dict_raises_error(self, serializer):
         """Serializing non-dict raises ValueError."""
@@ -57,8 +61,8 @@ class TestSerialize:
         data = {"title": "Café ☕", "description": "Résumé"}
         result = serializer.serialize(data)
 
-        assert "Café" in result
-        assert "Résumé" in result
+        assert "Café" in result, "Expected unicode character 'é' to be preserved"
+        assert "Résumé" in result, "Expected unicode characters in 'Résumé' to be preserved"
 
     def test_serialize_with_special_chars(self, serializer):
         """Serialize dictionary with special YAML characters."""
@@ -66,8 +70,8 @@ class TestSerialize:
         result = serializer.serialize(data)
 
         # Should handle colons and arrays properly
-        assert "title:" in result
-        assert "tags:" in result
+        assert "title:" in result, "Expected 'title:' key in serialized YAML"
+        assert "tags:" in result, "Expected 'tags:' key in serialized YAML"
 
 
 class TestDeserialize:
@@ -81,8 +85,10 @@ id: '123'
 """
         result = serializer.deserialize(yaml_str)
 
-        assert result["title"] == "Test Dashboard"
-        assert result["id"] == "123"
+        assert result["title"] == "Test Dashboard", (
+            f"Expected title 'Test Dashboard' but got '{result['title']}'"
+        )
+        assert result["id"] == "123", f"Expected id '123' but got '{result['id']}'"
 
     def test_deserialize_nested_yaml(self, serializer):
         """Deserialize nested YAML structure."""
@@ -97,10 +103,16 @@ elements:
 """
         result = serializer.deserialize(yaml_str)
 
-        assert result["title"] == "Dashboard"
-        assert result["filters"]["date"] == "2025-01-01"
-        assert len(result["elements"]) == 1
-        assert result["elements"][0]["id"] == "1"
+        assert result["title"] == "Dashboard", (
+            f"Expected title 'Dashboard' but got '{result['title']}'"
+        )
+        assert result["filters"]["date"] == "2025-01-01", (
+            f"Expected filters.date '2025-01-01' but got '{result['filters']['date']}'"
+        )
+        assert len(result["elements"]) == 1, f"Expected 1 element but got {len(result['elements'])}"
+        assert result["elements"][0]["id"] == "1", (
+            f"Expected element id '1' but got '{result['elements'][0]['id']}'"
+        )
 
     def test_deserialize_non_string_raises_error(self, serializer):
         """Deserializing non-string raises ValueError."""
@@ -132,12 +144,12 @@ class TestValidate:
     def test_validate_valid_yaml(self, serializer):
         """Validate correct YAML syntax."""
         valid_yaml = "title: Test\nid: '123'"
-        assert serializer.validate(valid_yaml) is True
+        assert serializer.validate(valid_yaml) is True, "Expected valid YAML to return True"
 
     def test_validate_invalid_yaml(self, serializer):
         """Validate incorrect YAML syntax."""
         invalid_yaml = "title: test: [unclosed"
-        assert serializer.validate(invalid_yaml) is False
+        assert serializer.validate(invalid_yaml) is False, "Expected invalid YAML to return False"
 
 
 class TestRoundTrip:
@@ -157,10 +169,18 @@ class TestRoundTrip:
         result = serializer.deserialize(yaml_str)
 
         # Compare the data
-        assert result["title"] == original["title"]
-        assert result["id"] == original["id"]
-        assert result["count"] == original["count"]
-        assert result["enabled"] == original["enabled"]
+        assert result["title"] == original["title"], (
+            f"Expected title '{original['title']}' but got '{result['title']}'"
+        )
+        assert result["id"] == original["id"], (
+            f"Expected id '{original['id']}' but got '{result['id']}'"
+        )
+        assert result["count"] == original["count"], (
+            f"Expected count {original['count']} but got {result['count']}"
+        )
+        assert result["enabled"] == original["enabled"], (
+            f"Expected enabled {original['enabled']} but got {result['enabled']}"
+        )
 
     def test_round_trip_with_metadata(self, serializer):
         """Round-trip with _metadata section."""
@@ -178,8 +198,10 @@ class TestRoundTrip:
         yaml_str = serializer.serialize(original)
         result = serializer.deserialize(yaml_str)
 
-        assert result == original
-        assert result["_metadata"]["db_id"] == "abc123"
+        assert result == original, f"Expected round-trip to preserve data but got {result}"
+        assert result["_metadata"]["db_id"] == "abc123", (
+            f"Expected metadata db_id 'abc123' but got '{result['_metadata']['db_id']}'"
+        )
 
 
 class TestStreamingIO:
@@ -193,9 +215,11 @@ class TestStreamingIO:
         serializer.serialize_to_file(data, output_file)
 
         # Verify file was created and contains expected content
-        assert output_file.exists()
+        assert output_file.exists(), f"Expected file to exist at {output_file}"
         content = output_file.read_text()
-        assert "title: Test Dashboard" in content
+        assert "title: Test Dashboard" in content, (
+            "Expected 'title: Test Dashboard' in file content"
+        )
 
     def test_serialize_to_file_non_dict_raises_error(self, serializer, tmp_path):
         """Serializing non-dict to file raises ValueError."""
@@ -220,8 +244,10 @@ class TestStreamingIO:
 
         result = serializer.deserialize_from_file(input_file)
 
-        assert result["title"] == "Test Dashboard"
-        assert result["id"] == "123"
+        assert result["title"] == "Test Dashboard", (
+            f"Expected title 'Test Dashboard' but got '{result['title']}'"
+        )
+        assert result["id"] == "123", f"Expected id '123' but got '{result['id']}'"
 
     def test_deserialize_from_file_not_found_raises_error(self, serializer):
         """Deserializing from missing file raises ValueError."""
@@ -248,7 +274,7 @@ class TestStreamingIO:
         serializer.serialize_to_file(original, file_path)
         result = serializer.deserialize_from_file(file_path)
 
-        assert result == original
+        assert result == original, f"Expected round-trip file I/O to preserve data but got {result}"
 
 
 class TestEdgeCases:
@@ -259,17 +285,17 @@ class TestEdgeCases:
         large_dict = {f"field_{i}": f"value_{i}" for i in range(1000)}
         result = serializer.serialize(large_dict)
 
-        assert len(result) > 0
-        assert "field_0" in result
-        assert "field_999" in result
+        assert len(result) > 0, "Expected non-empty result for large dict"
+        assert "field_0" in result, "Expected 'field_0' in serialized YAML"
+        assert "field_999" in result, "Expected 'field_999' in serialized YAML"
 
     def test_serialize_deeply_nested(self, serializer):
         """Serialize deeply nested structure."""
         nested = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
         result = serializer.serialize(nested)
 
-        assert "level1:" in result
-        assert "value: deep" in result
+        assert "level1:" in result, "Expected 'level1:' in serialized YAML"
+        assert "value: deep" in result, "Expected 'value: deep' in serialized YAML"
 
     def test_deserialize_with_comments(self, serializer):
         """Deserialize YAML with comments."""
@@ -280,29 +306,33 @@ id: '123'
 """
         result = serializer.deserialize(yaml_with_comments)
 
-        assert result["title"] == "Test Dashboard"
-        assert result["id"] == "123"
+        assert result["title"] == "Test Dashboard", (
+            f"Expected title 'Test Dashboard' but got '{result['title']}'"
+        )
+        assert result["id"] == "123", f"Expected id '123' but got '{result['id']}'"
 
     def test_serialize_with_null_values(self, serializer):
         """Serialize dictionary with null values."""
         data = {"title": "Test", "description": None}
         result = serializer.serialize(data)
 
-        assert "title: Test" in result
-        assert "description:" in result
+        assert "title: Test" in result, "Expected 'title: Test' in serialized YAML"
+        assert "description:" in result, (
+            "Expected 'description:' key for null value in serialized YAML"
+        )
 
     def test_serialize_with_boolean_values(self, serializer):
         """Serialize dictionary with boolean values."""
         data = {"enabled": True, "disabled": False}
         result = serializer.serialize(data)
 
-        assert "enabled: true" in result
-        assert "disabled: false" in result
+        assert "enabled: true" in result, "Expected 'enabled: true' in serialized YAML"
+        assert "disabled: false" in result, "Expected 'disabled: false' in serialized YAML"
 
     def test_serialize_with_numeric_values(self, serializer):
         """Serialize dictionary with numeric values."""
         data = {"count": 42, "percentage": 95.5}
         result = serializer.serialize(data)
 
-        assert "count: 42" in result
-        assert "percentage: 95.5" in result
+        assert "count: 42" in result, "Expected 'count: 42' in serialized YAML"
+        assert "percentage: 95.5" in result, "Expected 'percentage: 95.5' in serialized YAML"

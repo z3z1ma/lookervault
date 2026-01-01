@@ -14,10 +14,16 @@ class TestRateLimiterState:
     def test_initial_state(self):
         """Test state initializes with correct default values."""
         state = RateLimiterState()
-        assert state.backoff_multiplier == 1.0
-        assert state.last_429_timestamp is None
-        assert state.consecutive_successes == 0
-        assert state.total_429_count == 0
+        assert state.backoff_multiplier == 1.0, (
+            f"Expected initial backoff_multiplier to be 1.0 but got {state.backoff_multiplier}"
+        )
+        assert state.last_429_timestamp is None, "Expected initial last_429_timestamp to be None"
+        assert state.consecutive_successes == 0, (
+            f"Expected initial consecutive_successes to be 0 but got {state.consecutive_successes}"
+        )
+        assert state.total_429_count == 0, (
+            f"Expected initial total_429_count to be 0 but got {state.total_429_count}"
+        )
 
     def test_on_rate_limit_detected_increases_backoff(self):
         """Test that rate limit detection increases backoff multiplier."""
@@ -25,21 +31,37 @@ class TestRateLimiterState:
 
         # First rate limit
         state.on_rate_limit_detected()
-        assert state.backoff_multiplier == 1.5
-        assert state.total_429_count == 1
-        assert state.consecutive_successes == 0
-        assert state.last_429_timestamp is not None
+        assert state.backoff_multiplier == 1.5, (
+            f"Expected backoff_multiplier to be 1.5 after first 429 but got {state.backoff_multiplier}"
+        )
+        assert state.total_429_count == 1, (
+            f"Expected total_429_count to be 1 but got {state.total_429_count}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 but got {state.consecutive_successes}"
+        )
+        assert state.last_429_timestamp is not None, "Expected last_429_timestamp to be set"
 
         # Second rate limit
         state.on_rate_limit_detected()
-        assert state.backoff_multiplier == 2.25  # 1.5 * 1.5
-        assert state.total_429_count == 2
-        assert state.consecutive_successes == 0
+        assert state.backoff_multiplier == 2.25, (
+            f"Expected backoff_multiplier to be 2.25 (1.5*1.5) but got {state.backoff_multiplier}"
+        )  # 1.5 * 1.5
+        assert state.total_429_count == 2, (
+            f"Expected total_429_count to be 2 but got {state.total_429_count}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to remain 0 but got {state.consecutive_successes}"
+        )
 
         # Third rate limit
         state.on_rate_limit_detected()
-        assert state.backoff_multiplier == pytest.approx(3.375)  # 2.25 * 1.5
-        assert state.total_429_count == 3
+        assert state.backoff_multiplier == pytest.approx(3.375), (
+            f"Expected backoff_multiplier to be ~3.375 (2.25*1.5) but got {state.backoff_multiplier}"
+        )  # 2.25 * 1.5
+        assert state.total_429_count == 3, (
+            f"Expected total_429_count to be 3 but got {state.total_429_count}"
+        )
 
     def test_on_rate_limit_resets_consecutive_successes(self):
         """Test that rate limit detection resets success counter."""
@@ -49,11 +71,15 @@ class TestRateLimiterState:
         for _ in range(5):
             state.on_success()
 
-        assert state.consecutive_successes == 5
+        assert state.consecutive_successes == 5, (
+            f"Expected 5 consecutive_successes but got {state.consecutive_successes}"
+        )
 
         # Rate limit should reset counter
         state.on_rate_limit_detected()
-        assert state.consecutive_successes == 0
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after rate limit but got {state.consecutive_successes}"
+        )
 
     def test_on_success_increments_counter(self):
         """Test that on_success increments consecutive_successes."""
@@ -61,7 +87,9 @@ class TestRateLimiterState:
 
         for i in range(1, 6):
             state.on_success()
-            assert state.consecutive_successes == i
+            assert state.consecutive_successes == i, (
+                f"Expected consecutive_successes to be {i} but got {state.consecutive_successes}"
+            )
 
     def test_gradual_recovery_after_10_successes(self):
         """Test that backoff reduces after 10 consecutive successes."""
@@ -74,13 +102,21 @@ class TestRateLimiterState:
         for _ in range(9):
             state.on_success()
 
-        assert state.backoff_multiplier == 3.0
-        assert state.consecutive_successes == 9
+        assert state.backoff_multiplier == 3.0, (
+            f"Expected backoff_multiplier to remain 3.0 before recovery threshold but got {state.backoff_multiplier}"
+        )
+        assert state.consecutive_successes == 9, (
+            f"Expected 9 consecutive_successes but got {state.consecutive_successes}"
+        )
 
         # 10th success should reduce backoff
         state.on_success()
-        assert state.backoff_multiplier == pytest.approx(2.7)  # 3.0 * 0.9
-        assert state.consecutive_successes == 0  # Reset after recovery
+        assert state.backoff_multiplier == pytest.approx(2.7), (
+            f"Expected backoff_multiplier to be ~2.7 (3.0*0.9) after recovery but got {state.backoff_multiplier}"
+        )  # 3.0 * 0.9
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after recovery but got {state.consecutive_successes}"
+        )  # Reset after recovery
 
     def test_gradual_recovery_multiple_cycles(self):
         """Test multiple recovery cycles gradually reduce backoff."""
@@ -91,22 +127,34 @@ class TestRateLimiterState:
         for _ in range(10):
             state.on_success()
 
-        assert state.backoff_multiplier == pytest.approx(4.5)
-        assert state.consecutive_successes == 0
+        assert state.backoff_multiplier == pytest.approx(4.5), (
+            f"Expected backoff_multiplier to be ~4.5 after first recovery cycle but got {state.backoff_multiplier}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after first recovery cycle but got {state.consecutive_successes}"
+        )
 
         # Second recovery cycle (4.5 -> 4.05)
         for _ in range(10):
             state.on_success()
 
-        assert state.backoff_multiplier == pytest.approx(4.05)
-        assert state.consecutive_successes == 0
+        assert state.backoff_multiplier == pytest.approx(4.05), (
+            f"Expected backoff_multiplier to be ~4.05 after second recovery cycle but got {state.backoff_multiplier}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after second recovery cycle but got {state.consecutive_successes}"
+        )
 
         # Third recovery cycle (4.05 -> 3.645)
         for _ in range(10):
             state.on_success()
 
-        assert state.backoff_multiplier == pytest.approx(3.645)
-        assert state.consecutive_successes == 0
+        assert state.backoff_multiplier == pytest.approx(3.645), (
+            f"Expected backoff_multiplier to be ~3.645 after third recovery cycle but got {state.backoff_multiplier}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after third recovery cycle but got {state.consecutive_successes}"
+        )
 
     def test_recovery_stops_at_1_0(self):
         """Test that backoff multiplier doesn't go below 1.0."""
@@ -117,8 +165,12 @@ class TestRateLimiterState:
         for _ in range(10):
             state.on_success()
 
-        assert state.backoff_multiplier == 1.0
-        assert state.consecutive_successes == 0
+        assert state.backoff_multiplier == 1.0, (
+            f"Expected backoff_multiplier to be capped at 1.0 but got {state.backoff_multiplier}"
+        )
+        assert state.consecutive_successes == 0, (
+            f"Expected consecutive_successes to reset to 0 after recovery at cap but got {state.consecutive_successes}"
+        )
 
     def test_get_backoff_multiplier_thread_safe(self):
         """Test that get_backoff_multiplier is thread-safe."""
@@ -126,7 +178,9 @@ class TestRateLimiterState:
         state.backoff_multiplier = 2.5
 
         multiplier = state.get_backoff_multiplier()
-        assert multiplier == 2.5
+        assert multiplier == 2.5, (
+            f"Expected get_backoff_multiplier to return 2.5 but got {multiplier}"
+        )
 
     def test_get_stats_returns_correct_data(self):
         """Test that get_stats returns correct statistics."""
@@ -134,25 +188,39 @@ class TestRateLimiterState:
 
         # Initial state
         stats = state.get_stats()
-        assert stats["backoff_multiplier"] == 1.0
-        assert stats["total_429_count"] == 0
-        assert stats["consecutive_successes"] == 0
-        assert stats["last_429"] is None
+        assert stats["backoff_multiplier"] == 1.0, (
+            f"Expected initial stats backoff_multiplier to be 1.0 but got {stats['backoff_multiplier']}"
+        )
+        assert stats["total_429_count"] == 0, (
+            f"Expected initial stats total_429_count to be 0 but got {stats['total_429_count']}"
+        )
+        assert stats["consecutive_successes"] == 0, (
+            f"Expected initial stats consecutive_successes to be 0 but got {stats['consecutive_successes']}"
+        )
+        assert stats["last_429"] is None, "Expected initial stats last_429 to be None"
 
         # After rate limit
         state.on_rate_limit_detected()
         stats = state.get_stats()
-        assert stats["backoff_multiplier"] == 1.5
-        assert stats["total_429_count"] == 1
-        assert stats["consecutive_successes"] == 0
-        assert stats["last_429"] is not None
+        assert stats["backoff_multiplier"] == 1.5, (
+            f"Expected stats backoff_multiplier to be 1.5 after 429 but got {stats['backoff_multiplier']}"
+        )
+        assert stats["total_429_count"] == 1, (
+            f"Expected stats total_429_count to be 1 but got {stats['total_429_count']}"
+        )
+        assert stats["consecutive_successes"] == 0, (
+            f"Expected stats consecutive_successes to be 0 but got {stats['consecutive_successes']}"
+        )
+        assert stats["last_429"] is not None, "Expected stats last_429 to be set after rate limit"
 
         # After successes
         for _ in range(5):
             state.on_success()
 
         stats = state.get_stats()
-        assert stats["consecutive_successes"] == 5
+        assert stats["consecutive_successes"] == 5, (
+            f"Expected stats consecutive_successes to be 5 but got {stats['consecutive_successes']}"
+        )
 
     def test_thread_safety_concurrent_rate_limits(self):
         """Test thread safety with concurrent rate limit detections."""
@@ -169,7 +237,9 @@ class TestRateLimiterState:
             t.join()
 
         # Should have exactly 10 rate limits detected
-        assert state.total_429_count == num_threads
+        assert state.total_429_count == num_threads, (
+            f"Expected {num_threads} rate limits from concurrent threads but got {state.total_429_count}"
+        )
 
     def test_thread_safety_concurrent_successes(self):
         """Test thread safety with concurrent success calls."""
@@ -190,9 +260,13 @@ class TestRateLimiterState:
         # Due to threading timing, we might have 1 or 2 recovery cycles
         # So we just verify state is consistent (0, 10, or 20 are all valid)
         stats = state.get_stats()
-        assert stats["consecutive_successes"] in [0, 10, 20]
+        assert stats["consecutive_successes"] in [0, 10, 20], (
+            f"Expected consecutive_successes to be 0, 10, or 20 after threading but got {stats['consecutive_successes']}"
+        )
         # Backoff should still be 1.0 (no rate limits detected)
-        assert stats["backoff_multiplier"] == 1.0
+        assert stats["backoff_multiplier"] == 1.0, (
+            f"Expected backoff_multiplier to remain 1.0 with no rate limits but got {stats['backoff_multiplier']}"
+        )
 
     def test_thread_safety_mixed_operations(self):
         """Test thread safety with mixed rate limits and successes."""
@@ -224,8 +298,12 @@ class TestRateLimiterState:
 
         # Verify final state is consistent
         stats = state.get_stats()
-        assert stats["total_429_count"] == num_rate_limit_threads
-        assert stats["backoff_multiplier"] >= 1.0  # Should have increased from rate limits
+        assert stats["total_429_count"] == num_rate_limit_threads, (
+            f"Expected {num_rate_limit_threads} rate limits but got {stats['total_429_count']}"
+        )
+        assert stats["backoff_multiplier"] >= 1.0, (
+            f"Expected backoff_multiplier >= 1.0 but got {stats['backoff_multiplier']}"
+        )  # Should have increased from rate limits
 
 
 class TestAdaptiveRateLimiter:
