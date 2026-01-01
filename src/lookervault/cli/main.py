@@ -330,10 +330,6 @@ def restore_single_cmd(
         bool,
         typer.Option("--dry-run", help="Validate without making changes"),
     ] = False,
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Skip confirmation prompts"),
-    ] = False,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output results in JSON format"),
@@ -378,7 +374,6 @@ def restore_single_cmd(
         db_path,
         from_snapshot,
         dry_run,
-        force,
         json_output,
         verbose,
         quiet,
@@ -768,14 +763,6 @@ def dlq_retry_cmd(
         str,
         typer.Option("--db-path", help="Path to SQLite backup database"),
     ] = "looker.db",
-    fix_dependencies: Annotated[
-        bool,
-        typer.Option("--fix-dependencies", help="Attempt to fix dependency issues"),
-    ] = False,
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Force retry even if likely to fail"),
-    ] = False,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output results in JSON format"),
@@ -796,8 +783,6 @@ def dlq_retry_cmd(
         dlq_id,
         config,
         db_path,
-        fix_dependencies,
-        force,
         json_output,
         verbose,
         debug,

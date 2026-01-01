@@ -60,7 +60,6 @@ def restore_single(
     db_path: str | None = None,
     from_snapshot: str | None = None,
     dry_run: bool = False,
-    force: bool = False,
     json_output: bool = False,
     verbose: bool = False,
     quiet: bool = False,
@@ -77,7 +76,6 @@ def restore_single(
         db_path: Path to SQLite backup database (default: LOOKERVAULT_DB_PATH or "looker.db")
         from_snapshot: Restore from cloud snapshot (index like "1" or timestamp like "2025-12-14T10:30:00")
         dry_run: Validate and show what would be restored without making changes
-        force: Skip confirmation prompts
         json_output: Output results in JSON format
         verbose: Enable verbose logging
         quiet: Suppress all non-error output
@@ -1502,8 +1500,6 @@ def restore_dlq_retry(
     dlq_id: int,
     config: Path | None = None,
     db_path: str = "looker.db",
-    fix_dependencies: bool = False,
-    force: bool = False,
     json_output: bool = False,
     verbose: bool = False,
     debug: bool = False,
@@ -1514,8 +1510,6 @@ def restore_dlq_retry(
         dlq_id: DLQ entry ID to retry
         config: Optional path to config file
         db_path: Path to SQLite backup database
-        fix_dependencies: Attempt to fix dependency issues (not implemented)
-        force: Force retry even if likely to fail
         json_output: Output results in JSON format
         verbose: Enable verbose logging
         debug: Enable debug logging
@@ -1676,11 +1670,15 @@ def restore_dlq_clear(
     )
 
     try:
-        # Parse content type if provided
+        # Parse content type if provided (ignored when all_entries is True)
         content_type_enum = None
-        if content_type:
+        if content_type and not all_entries:
             content_type_int = parse_content_type(content_type)
             content_type_enum = ContentType(content_type_int)
+
+        # When all_entries is True, ignore filters
+        session_id_to_use = None if all_entries else session_id
+        content_type_to_use = None if all_entries else content_type_enum
 
         # If not forced, require user confirmation (unless JSON output)
         if not force and not json_output:
@@ -1688,8 +1686,8 @@ def restore_dlq_clear(
             repository = SQLiteContentRepository(db_path=db_path)
             dlq = DeadLetterQueue(repository)
             preview_items = dlq.list(
-                session_id=session_id,
-                content_type=content_type_enum,
+                session_id=session_id_to_use,
+                content_type=content_type_to_use,
                 limit=10,
                 offset=0,
             )
@@ -1701,10 +1699,13 @@ def restore_dlq_clear(
 
             # Show preview
             console.print(f"[yellow]⚠ About to clear {len(preview_items)}+ DLQ entries[/yellow]")
-            if session_id:
-                console.print(f"  Session ID: {session_id}")
-            if content_type:
-                console.print(f"  Content Type: {content_type}")
+            if all_entries:
+                console.print("  [bold]All entries[/bold]")
+            else:
+                if session_id:
+                    console.print(f"  Session ID: {session_id}")
+                if content_type:
+                    console.print(f"  Content Type: {content_type}")
 
             # Ask for confirmation
             if not Confirm.ask("\nPermanently clear these DLQ entries?", default=False):
@@ -1729,8 +1730,8 @@ def restore_dlq_clear(
 
         # Clear DLQ entries
         count = dlq.clear(
-            session_id=session_id,
-            content_type=content_type_enum,
+            session_id=session_id_to_use,
+            content_type=content_type_to_use,
         )
 
         if json_output:
