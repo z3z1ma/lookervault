@@ -255,187 +255,331 @@ class ParallelOrchestrator:
             OrchestrationError: If extraction fails
         """
         start_time = datetime.now()
-
-        # Try to find existing session for resume
-        session: ExtractionSession | None = None
-        if self.config.resume:
-            # Check if we have any incomplete checkpoints to determine session_id
-            for content_type in self.config.content_types:
-                checkpoint = self.repository.get_latest_checkpoint(content_type, session_id=None)
-                if checkpoint and checkpoint.session_id:
-                    # Found checkpoint with session - try to load session
-                    session = self.repository.get_extraction_session(checkpoint.session_id)
-                    if session:
-                        logger.info(
-                            f"Resume: Found existing session {session.id} "
-                            f"from checkpoint (started {session.started_at.isoformat()})"
-                        )
-                        break
-
-        # Create new session if not resuming or no existing session found
-        if session is None:
-            session = ExtractionSession(
-                status=SessionStatus.RUNNING,
-                config={
-                    "content_types": self.config.content_types,
-                    "batch_size": self.config.batch_size,
-                    "fields": self.config.fields,
-                    "workers": self.parallel_config.workers,
-                    "queue_size": self.parallel_config.queue_size,
-                },
-                metadata={},
-            )
-            self.repository.create_session(session)
-            logger.info(
-                f"Starting new extraction session {session.id} with {self.parallel_config.workers} workers"
-            )
-        else:
-            # Resuming existing session - update status
-            session.status = SessionStatus.RUNNING
-            self.repository.update_session(session)
-            logger.info(
-                f"Resuming extraction session {session.id} with {self.parallel_config.workers} workers"
-            )
+        session = self._initialize_or_resume_session()
 
         result = ExtractionResult(session_id=session.id, total_items=0)
 
         try:
-            # Expand folder hierarchy BEFORE any content type extraction
-            if self.config.folder_ids and self.config.recursive_folders:
-                # Check for cached resolved folder hierarchy on resume
-                if self.config.resume and session.metadata:
-                    cached_folder_ids = session.metadata.get("resolved_folder_ids")
-                    if cached_folder_ids:
-                        logger.info(
-                            f"Resume: Using cached folder hierarchy from session metadata "
-                            f"({len(cached_folder_ids)} folders)"
-                        )
-                        self.config.folder_ids = set(cached_folder_ids)
-                    else:
-                        # No cache - need to expand
-                        self._expand_folder_hierarchy_early(session)
-                else:
-                    # Not resuming or no metadata - expand from DB or extract folders first
-                    self._expand_folder_hierarchy_early(session)
-
-            # Process each content type with appropriate strategy
-            for content_type in self.config.content_types:
-                content_type_name = ContentType(content_type).name.lower()
-                logger.info(f"Processing {content_type_name}")
-
-                # Check for existing checkpoint if resume enabled
-                if self.config.resume:
-                    existing_checkpoint = self.repository.get_latest_checkpoint(
-                        content_type, session.id
-                    )
-                    if existing_checkpoint and existing_checkpoint.completed_at:
-                        # Checkpoint already complete - skip this content type
-                        logger.info(
-                            f"Skipping {content_type_name} - "
-                            f"found complete checkpoint from {existing_checkpoint.completed_at.isoformat()} "
-                            f"({existing_checkpoint.item_count} items)"
-                        )
-                        continue
-                    elif existing_checkpoint and not existing_checkpoint.completed_at:
-                        # Partial checkpoint exists - warn and re-extract
-                        logger.warning(
-                            f"Found incomplete checkpoint for {content_type_name} "
-                            f"from {existing_checkpoint.started_at.isoformat()}. "
-                            f"Re-extracting (upserts will handle duplicates)."
-                        )
-
-                # Determine extraction strategy based on content type
-                is_paginated = content_type in [
-                    ContentType.DASHBOARD.value,
-                    ContentType.LOOK.value,
-                    ContentType.USER.value,
-                    ContentType.GROUP.value,
-                    ContentType.ROLE.value,
-                ]
-
-                # Determine timestamp for incremental extraction
-                updated_after = None
-                if self.config.incremental:
-                    updated_after = self.repository.get_last_sync_timestamp(content_type)
-                    if updated_after:
-                        logger.info(
-                            f"Incremental mode: {content_type_name} "
-                            f"updated after {updated_after.isoformat()}"
-                        )
-
-                # Route to appropriate strategy
-                if is_paginated and self.parallel_config.workers > 1:
-                    # Use parallel fetch workers for paginated content types
-                    logger.info(
-                        f"Using parallel fetch strategy for {content_type_name} "
-                        f"({self.parallel_config.workers} workers)"
-                    )
-                    self._extract_parallel(
-                        content_type=content_type,
-                        session_id=session.id,
-                        fields=self.config.fields,
-                        updated_after=updated_after,
-                    )
-                else:
-                    # Use sequential extraction for non-paginated content types
-                    # or single-worker mode
-                    strategy_reason = (
-                        "non-paginated type" if not is_paginated else "single-worker mode"
-                    )
-                    logger.info(
-                        f"Using sequential strategy for {content_type_name} ({strategy_reason})"
-                    )
-                    self._extract_sequential(
-                        content_type=content_type,
-                        session_id=session.id,
-                        fields=self.config.fields,
-                        updated_after=updated_after,
-                    )
-
-            # Get final metrics snapshot
-            final_metrics = self.metrics.snapshot()
-            result.total_items = final_metrics["total"]
-            result.items_by_type = final_metrics["by_type"]
-            result.errors = final_metrics["errors"]
-
-            # Mark session as complete
-            session.status = SessionStatus.COMPLETED
-            session.completed_at = datetime.now()
-            session.total_items = result.total_items
-            session.error_count = result.errors
-            self.repository.update_session(session)
-
-            # Calculate duration
-            result.duration_seconds = (datetime.now() - start_time).total_seconds()
-
-            # Log final memory usage
-            current_mem, peak_mem = self.batch_processor.get_memory_usage()
-            current_mb = current_mem / (1024 * 1024)
-            peak_mb = peak_mem / (1024 * 1024)
-
-            logger.info(
-                f"Parallel extraction complete: {result.total_items} items "
-                f"in {result.duration_seconds:.1f}s "
-                f"({final_metrics['items_per_second']:.1f} items/sec)"
-            )
-
-            if self.batch_processor.enable_monitoring and current_mem > 0:
-                logger.info(
-                    f"Memory usage: {current_mb:.1f} MB current, {peak_mb:.1f} MB peak "
-                    f"({self.parallel_config.workers} workers, "
-                    f"queue_size={self.parallel_config.queue_size})"
-                )
-
-            return result
+            self._prepare_folder_hierarchy(session)
+            self._process_all_content_types(session)
+            return self._complete_extraction(session, result, start_time)
 
         except Exception as e:
-            # Mark session as failed
-            session.status = SessionStatus.FAILED
-            session.error_count = result.errors + 1
-            self.repository.update_session(session)
+            self._handle_extraction_failure(session, result, e)
+            raise
 
-            logger.error(f"Parallel extraction failed: {e}")
-            raise OrchestrationError(f"Parallel extraction failed: {e}") from e
+    def _initialize_or_resume_session(self) -> ExtractionSession:
+        """Initialize new session or resume existing session.
+
+        Returns:
+            Configured and saved extraction session
+        """
+        # Try to find existing session for resume
+        session = None
+        if self.config.resume:
+            session = self._find_existing_session()
+
+        # Create new session if not resuming or no existing session found
+        if session is None:
+            session = self._create_new_session()
+        else:
+            self._resume_existing_session(session)
+
+        return session
+
+    def _find_existing_session(self) -> ExtractionSession | None:
+        """Find existing session from checkpoints.
+
+        Returns:
+            Existing session if found, None otherwise
+        """
+        for content_type in self.config.content_types:
+            checkpoint = self.repository.get_latest_checkpoint(content_type, session_id=None)
+            if checkpoint and checkpoint.session_id:
+                session = self.repository.get_extraction_session(checkpoint.session_id)
+                if session:
+                    logger.info(
+                        f"Resume: Found existing session {session.id} "
+                        f"from checkpoint (started {session.started_at.isoformat()})"
+                    )
+                    return session
+        return None
+
+    def _create_new_session(self) -> ExtractionSession:
+        """Create and save new extraction session.
+
+        Returns:
+            Newly created session
+        """
+        session = ExtractionSession(
+            status=SessionStatus.RUNNING,
+            config={
+                "content_types": self.config.content_types,
+                "batch_size": self.config.batch_size,
+                "fields": self.config.fields,
+                "workers": self.parallel_config.workers,
+                "queue_size": self.parallel_config.queue_size,
+            },
+            metadata={},
+        )
+        self.repository.create_session(session)
+        logger.info(
+            f"Starting new extraction session {session.id} with {self.parallel_config.workers} workers"
+        )
+        return session
+
+    def _resume_existing_session(self, session: ExtractionSession) -> None:
+        """Resume existing extraction session.
+
+        Args:
+            session: Existing session to resume
+        """
+        session.status = SessionStatus.RUNNING
+        self.repository.update_session(session)
+        logger.info(
+            f"Resuming extraction session {session.id} with {self.parallel_config.workers} workers"
+        )
+
+    def _prepare_folder_hierarchy(self, session: ExtractionSession) -> None:
+        """Prepare folder hierarchy before content extraction.
+
+        Args:
+            session: Current extraction session
+        """
+        if not self.config.folder_ids or not self.config.recursive_folders:
+            return
+
+        # Check for cached resolved folder hierarchy on resume
+        if self.config.resume and session.metadata:
+            cached_folder_ids = session.metadata.get("resolved_folder_ids")
+            if cached_folder_ids:
+                logger.info(
+                    f"Resume: Using cached folder hierarchy from session metadata "
+                    f"({len(cached_folder_ids)} folders)"
+                )
+                self.config.folder_ids = set(cached_folder_ids)
+                return
+
+        # No cache - need to expand
+        self._expand_folder_hierarchy_early(session)
+
+    def _process_all_content_types(self, session: ExtractionSession) -> None:
+        """Process all configured content types.
+
+        Args:
+            session: Current extraction session
+        """
+        for content_type in self.config.content_types:
+            self._process_single_content_type(content_type, session)
+
+    def _process_single_content_type(self, content_type: int, session: ExtractionSession) -> None:
+        """Process a single content type with appropriate strategy.
+
+        Args:
+            content_type: ContentType enum value
+            session: Current extraction session
+        """
+        content_type_name = ContentType(content_type).name.lower()
+        logger.info(f"Processing {content_type_name}")
+
+        # Skip if checkpoint already complete
+        if self._should_skip_content_type(content_type, content_type_name, session.id):
+            return
+
+        # Determine extraction strategy
+        is_paginated = self._is_paginated_type(content_type)
+        updated_after = self._get_incremental_timestamp(content_type, content_type_name)
+
+        # Route to appropriate strategy
+        self._route_to_extraction_strategy(
+            content_type, content_type_name, is_paginated, session.id, updated_after
+        )
+
+    def _should_skip_content_type(
+        self, content_type: int, content_type_name: str, session_id: str
+    ) -> bool:
+        """Check if content type should be skipped due to complete checkpoint.
+
+        Args:
+            content_type: ContentType enum value
+            content_type_name: Human-readable content type name
+            session_id: Current session ID
+
+        Returns:
+            True if content type should be skipped
+        """
+        if not self.config.resume:
+            return False
+
+        existing_checkpoint = self.repository.get_latest_checkpoint(content_type, session_id)
+        if not existing_checkpoint:
+            return False
+
+        if existing_checkpoint.completed_at:
+            logger.info(
+                f"Skipping {content_type_name} - "
+                f"found complete checkpoint from {existing_checkpoint.completed_at.isoformat()} "
+                f"({existing_checkpoint.item_count} items)"
+            )
+            return True
+
+        # Partial checkpoint exists - warn and re-extract
+        logger.warning(
+            f"Found incomplete checkpoint for {content_type_name} "
+            f"from {existing_checkpoint.started_at.isoformat()}. "
+            f"Re-extracting (upserts will handle duplicates)."
+        )
+        return False
+
+    def _is_paginated_type(self, content_type: int) -> bool:
+        """Check if content type supports pagination.
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            True if content type is paginated
+        """
+        return content_type in [
+            ContentType.DASHBOARD.value,
+            ContentType.LOOK.value,
+            ContentType.USER.value,
+            ContentType.GROUP.value,
+            ContentType.ROLE.value,
+        ]
+
+    def _get_incremental_timestamp(
+        self, content_type: int, content_type_name: str
+    ) -> datetime | None:
+        """Get timestamp for incremental extraction.
+
+        Args:
+            content_type: ContentType enum value
+            content_type_name: Human-readable content type name
+
+        Returns:
+            Timestamp for incremental filtering, or None
+        """
+        if not self.config.incremental:
+            return None
+
+        updated_after = self.repository.get_last_sync_timestamp(content_type)
+        if updated_after:
+            logger.info(
+                f"Incremental mode: {content_type_name} updated after {updated_after.isoformat()}"
+            )
+        return updated_after
+
+    def _route_to_extraction_strategy(
+        self,
+        content_type: int,
+        content_type_name: str,
+        is_paginated: bool,
+        session_id: str,
+        updated_after: datetime | None,
+    ) -> None:
+        """Route content type to appropriate extraction strategy.
+
+        Args:
+            content_type: ContentType enum value
+            content_type_name: Human-readable content type name
+            is_paginated: Whether content type supports pagination
+            session_id: Current session ID
+            updated_after: Timestamp for incremental filtering
+        """
+        if is_paginated and self.parallel_config.workers > 1:
+            logger.info(
+                f"Using parallel fetch strategy for {content_type_name} "
+                f"({self.parallel_config.workers} workers)"
+            )
+            self._extract_parallel(
+                content_type=content_type,
+                session_id=session_id,
+                fields=self.config.fields,
+                updated_after=updated_after,
+            )
+        else:
+            strategy_reason = "non-paginated type" if not is_paginated else "single-worker mode"
+            logger.info(f"Using sequential strategy for {content_type_name} ({strategy_reason})")
+            self._extract_sequential(
+                content_type=content_type,
+                session_id=session_id,
+                fields=self.config.fields,
+                updated_after=updated_after,
+            )
+
+    def _complete_extraction(
+        self, session: ExtractionSession, result: ExtractionResult, start_time: datetime
+    ) -> ExtractionResult:
+        """Complete extraction and finalize results.
+
+        Args:
+            session: Current extraction session
+            result: Result object to populate
+            start_time: Extraction start timestamp
+
+        Returns:
+            Completed extraction result
+        """
+        # Get final metrics snapshot
+        final_metrics = self.metrics.snapshot()
+        result.total_items = final_metrics["total"]
+        result.items_by_type = final_metrics["by_type"]
+        result.errors = final_metrics["errors"]
+
+        # Mark session as complete
+        session.status = SessionStatus.COMPLETED
+        session.completed_at = datetime.now()
+        session.total_items = result.total_items
+        session.error_count = result.errors
+        self.repository.update_session(session)
+
+        # Calculate duration
+        result.duration_seconds = (datetime.now() - start_time).total_seconds()
+
+        self._log_completion_summary(result, final_metrics)
+
+        return result
+
+    def _log_completion_summary(self, result: ExtractionResult, final_metrics: dict) -> None:
+        """Log extraction completion summary.
+
+        Args:
+            result: Extraction result
+            final_metrics: Final metrics snapshot
+        """
+        logger.info(
+            f"Parallel extraction complete: {result.total_items} items "
+            f"in {result.duration_seconds:.1f}s "
+            f"({final_metrics['items_per_second']:.1f} items/sec)"
+        )
+
+        current_mem, peak_mem = self.batch_processor.get_memory_usage()
+        if self.batch_processor.enable_monitoring and current_mem > 0:
+            current_mb = current_mem / (1024 * 1024)
+            peak_mb = peak_mem / (1024 * 1024)
+            logger.info(
+                f"Memory usage: {current_mb:.1f} MB current, {peak_mb:.1f} MB peak "
+                f"({self.parallel_config.workers} workers, "
+                f"queue_size={self.parallel_config.queue_size})"
+            )
+
+    def _handle_extraction_failure(
+        self, session: ExtractionSession, result: ExtractionResult, error: Exception
+    ) -> None:
+        """Handle extraction failure and update session.
+
+        Args:
+            session: Current extraction session
+            result: Result object with error count
+            error: Exception that caused failure
+        """
+        session.status = SessionStatus.FAILED
+        session.error_count = result.errors + 1
+        self.repository.update_session(session)
+
+        logger.error(f"Parallel extraction failed: {error}")
+        raise OrchestrationError(f"Parallel extraction failed: {error}") from error
 
     def _extract_parallel(
         self,
@@ -487,13 +631,61 @@ class ParallelOrchestrator:
         content_type_name = ContentType(content_type).name.lower()
 
         # Determine extraction strategy
-        is_multi_folder = (
+        is_multi_folder = self._is_multi_folder_extraction(content_type)
+
+        # Create checkpoint
+        checkpoint = self._create_parallel_checkpoint(
+            content_type, content_type_name, session_id, is_multi_folder
+        )
+
+        # Choose coordinator based on folder configuration
+        coordinator = self._create_coordinator(content_type_name, is_multi_folder)
+
+        # Launch workers and collect results
+        total_items = self._launch_parallel_workers(
+            content_type=content_type,
+            coordinator=coordinator,
+            fields=fields,
+            updated_after=updated_after,
+            content_type_name=content_type_name,
+        )
+
+        # Mark checkpoint complete
+        self._complete_parallel_checkpoint(checkpoint, total_items, content_type_name)
+
+    def _is_multi_folder_extraction(self, content_type: int) -> bool:
+        """Check if extraction should use multi-folder coordinator.
+
+        Args:
+            content_type: ContentType enum value
+
+        Returns:
+            True if multi-folder coordinator should be used
+        """
+        return (
             self.config.folder_ids
             and len(self.config.folder_ids) > 1
             and content_type in [ContentType.DASHBOARD.value, ContentType.LOOK.value]
         )
 
-        # Create checkpoint
+    def _create_parallel_checkpoint(
+        self,
+        content_type: int,
+        content_type_name: str,
+        session_id: str,
+        is_multi_folder: bool,
+    ) -> Checkpoint:
+        """Create checkpoint for parallel extraction.
+
+        Args:
+            content_type: ContentType enum value
+            content_type_name: Human-readable content type name
+            session_id: Current session ID
+            is_multi_folder: Whether using multi-folder coordinator
+
+        Returns:
+            Created checkpoint with ID
+        """
         checkpoint = Checkpoint(
             session_id=session_id,
             content_type=content_type,
@@ -508,8 +700,23 @@ class ParallelOrchestrator:
             },
         )
         checkpoint_id = self.repository.save_checkpoint(checkpoint)
+        checkpoint.id = checkpoint_id
+        return checkpoint
 
-        # Choose coordinator based on folder configuration
+    def _create_coordinator(
+        self,
+        content_type_name: str,
+        is_multi_folder: bool,
+    ) -> "OffsetCoordinator | MultiFolderOffsetCoordinator":
+        """Create appropriate coordinator for parallel extraction.
+
+        Args:
+            content_type_name: Human-readable content type name
+            is_multi_folder: Whether to create multi-folder coordinator
+
+        Returns:
+            Configured coordinator instance
+        """
         if is_multi_folder:
             # Multi-folder: Use MultiFolderOffsetCoordinator for parallel SDK calls
             coordinator = MultiFolderOffsetCoordinator(
@@ -533,7 +740,28 @@ class ParallelOrchestrator:
             else:
                 logger.info(f"Using standard parallel extraction for {content_type_name}")
 
-        # Launch parallel fetch workers
+        return coordinator
+
+    def _launch_parallel_workers(
+        self,
+        content_type: int,
+        coordinator: "OffsetCoordinator | MultiFolderOffsetCoordinator",
+        fields: str | None,
+        updated_after: datetime | None,
+        content_type_name: str,
+    ) -> int:
+        """Launch parallel workers and aggregate results.
+
+        Args:
+            content_type: ContentType enum value
+            coordinator: Shared coordinator instance
+            fields: Fields to retrieve
+            updated_after: Incremental filter timestamp
+            content_type_name: Human-readable content type name
+
+        Returns:
+            Total items processed by all workers
+        """
         logger.info(
             f"Launching {self.parallel_config.workers} parallel fetch workers "
             f"for {content_type_name}"
@@ -553,19 +781,43 @@ class ParallelOrchestrator:
                 for i in range(self.parallel_config.workers)
             ]
 
-            # Wait for all workers to complete
-            total_items = 0
-            for i, future in enumerate(as_completed(futures)):
-                try:
-                    items_processed = future.result()
-                    total_items += items_processed
-                    logger.info(f"Parallel fetch worker {i} completed: {items_processed} items")
-                except Exception as e:
-                    logger.error(f"Parallel fetch worker {i} failed: {e}")
-                    self.metrics.record_error("main", f"Worker {i} error: {e}")
+            # Wait for all workers to complete and aggregate results
+            return self._aggregate_worker_results(futures)
 
-        # Mark checkpoint complete
-        checkpoint.id = checkpoint_id
+    def _aggregate_worker_results(self, futures: list) -> int:
+        """Aggregate results from parallel workers.
+
+        Args:
+            futures: List of Future objects from workers
+
+        Returns:
+            Total items processed
+        """
+        total_items = 0
+        for i, future in enumerate(as_completed(futures)):
+            try:
+                items_processed = future.result()
+                total_items += items_processed
+                logger.info(f"Parallel fetch worker {i} completed: {items_processed} items")
+            except Exception as e:
+                logger.error(f"Parallel fetch worker {i} failed: {e}")
+                self.metrics.record_error("main", f"Worker {i} error: {e}")
+
+        return total_items
+
+    def _complete_parallel_checkpoint(
+        self,
+        checkpoint: Checkpoint,
+        total_items: int,
+        content_type_name: str,
+    ) -> None:
+        """Mark parallel extraction checkpoint as complete.
+
+        Args:
+            checkpoint: Checkpoint to update
+            total_items: Total items processed
+            content_type_name: Human-readable content type name
+        """
         checkpoint.completed_at = datetime.now()
         checkpoint.item_count = total_items
         checkpoint.checkpoint_data["total_items"] = total_items
@@ -807,108 +1059,57 @@ class ParallelOrchestrator:
                     )
                     break
 
-                # Handle multi-folder coordinator (returns tuple of 3)
-                if isinstance(coordinator, MultiFolderOffsetCoordinator):
-                    folder_id, offset, limit = claimed_range  # type: ignore[misc]
-                    logger.info(
-                        f"Worker {worker_id} claimed range: folder_id={folder_id}, "
-                        f"offset={offset}, limit={limit}"
-                    )
-                else:
-                    # Single-folder or no-folder coordinator (returns tuple of 2)
-                    offset, limit = claimed_range  # type: ignore[misc]
-                    folder_id = (
-                        list(self.config.folder_ids)[0]
-                        if self.config.folder_ids and len(self.config.folder_ids) == 1
-                        else None
-                    )
-                    logger.info(
-                        f"Worker {worker_id} claimed range: offset={offset}, limit={limit}"
-                        + (f", folder_id={folder_id}" if folder_id else "")
-                    )
+                # Parse claimed range and extract folder_id, offset, limit
+                folder_id, offset, limit = self._parse_claimed_range(
+                    claimed_range, coordinator, worker_id
+                )
 
-                # Fetch data from Looker API with SDK-level folder filtering
-                try:
-                    items = self.extractor.extract_range(
-                        ContentType(content_type),
-                        offset=offset,
-                        limit=limit,
-                        fields=fields,
-                        updated_after=updated_after,
-                        folder_id=folder_id,  # SDK-level filtering (None or specific folder_id)
-                    )
-                except Exception as e:
-                    logger.error(f"Worker {worker_id} API fetch failed at offset {offset}: {e}")
-                    self.metrics.record_error(thread_name, f"API fetch error: {e}")
-                    continue  # Skip this range, try next
+                # Fetch data from Looker API
+                items = self._fetch_items_from_api(
+                    worker_id=worker_id,
+                    thread_name=thread_name,
+                    content_type=content_type,
+                    offset=offset,
+                    limit=limit,
+                    folder_id=folder_id,
+                    fields=fields,
+                    updated_after=updated_after,
+                )
 
-                # Check if we hit end of data
+                # Return early if fetch failed
+                if items is None:
+                    continue
+
+                # Check for end of data
                 if not items or len(items) == 0:
-                    should_break, should_continue = self._handle_end_of_data(
-                        coordinator=coordinator,
-                        folder_id=folder_id,
-                        worker_id=worker_id,
-                        offset=offset,
-                        reason="empty response",
-                    )
-                    if should_break:
+                    if self._check_end_of_data(
+                        coordinator, folder_id, worker_id, offset, "empty response"
+                    ):
                         break
-                    if should_continue:
-                        continue
+                    continue
 
                 # Process items: convert and save to database
-                # NO in-memory filtering needed - SDK handles filtering via folder_id parameter
-                for item_dict in items:
-                    try:
-                        # Convert to ContentItem
-                        content_item = self._dict_to_content_item(item_dict, content_type)
-
-                        # Save to database (uses thread-local connection)
-                        self.repository.save_content(content_item)
-
-                        # Update metrics
-                        self.metrics.increment_processed(content_type, count=1)
-                        items_processed += 1
-
-                    except Exception as e:
-                        # Item-level error - log and continue
-                        import traceback
-
-                        item_id = item_dict.get("id", "UNKNOWN")
-                        error_msg = f"Failed to process item {item_id}: {e}"
-                        logger.warning(f"Worker {worker_id}: {error_msg}")
-
-                        tb = traceback.format_exc()
-                        logger.warning(
-                            f"Worker {worker_id}: Detailed error context\n"
-                            f"  Item ID: {item_id}\n"
-                            f"  Content Type: {content_type}\n"
-                            f"  Exception: {type(e).__name__}: {e}\n"
-                            f"  Traceback:\n{tb}"
-                        )
-                        self.metrics.record_error(thread_name, error_msg)
+                items_in_batch = self._process_items_batch(
+                    items=items,
+                    content_type=content_type,
+                    worker_id=worker_id,
+                    thread_name=thread_name,
+                )
+                items_processed += items_in_batch
 
                 # Check if we got fewer items than requested (end of data)
                 if len(items) < limit:
-                    should_break, should_continue = self._handle_end_of_data(
-                        coordinator=coordinator,
-                        folder_id=folder_id,
-                        worker_id=worker_id,
-                        offset=offset,
-                        reason=f"received {len(items)} < {limit} items",
-                    )
-                    if should_break:
+                    if self._check_end_of_data(
+                        coordinator,
+                        folder_id,
+                        worker_id,
+                        offset,
+                        f"received {len(items)} < {limit} items",
+                    ):
                         break
-                    if should_continue:
-                        continue
 
                 # Periodic progress update
-                if items_processed > 0 and items_processed % 500 == 0:
-                    snapshot = self.metrics.snapshot()
-                    logger.info(
-                        f"Worker {worker_id}: {items_processed} items processed, "
-                        f"total: {snapshot['total']} ({snapshot['items_per_second']:.1f} items/sec)"
-                    )
+                self._log_worker_progress(worker_id, items_processed)
 
             logger.info(f"Worker {worker_id} completed: {items_processed} items processed")
 
@@ -927,6 +1128,200 @@ class ParallelOrchestrator:
             )
 
         return items_processed
+
+    def _parse_claimed_range(
+        self,
+        claimed_range: tuple,
+        coordinator: "OffsetCoordinator | MultiFolderOffsetCoordinator",
+        worker_id: int,
+    ) -> tuple[str | None, int, int]:
+        """Parse claimed range from coordinator.
+
+        Args:
+            claimed_range: Range tuple from coordinator
+            coordinator: Coordinator instance
+            worker_id: Worker ID for logging
+
+        Returns:
+            Tuple of (folder_id, offset, limit)
+        """
+        # Handle multi-folder coordinator (returns tuple of 3)
+        if isinstance(coordinator, MultiFolderOffsetCoordinator):
+            folder_id, offset, limit = claimed_range  # type: ignore[misc]
+            logger.info(
+                f"Worker {worker_id} claimed range: folder_id={folder_id}, "
+                f"offset={offset}, limit={limit}"
+            )
+            return folder_id, offset, limit
+
+        # Single-folder or no-folder coordinator (returns tuple of 2)
+        offset, limit = claimed_range  # type: ignore[misc]
+        folder_id = (
+            list(self.config.folder_ids)[0]
+            if self.config.folder_ids and len(self.config.folder_ids) == 1
+            else None
+        )
+        logger.info(
+            f"Worker {worker_id} claimed range: offset={offset}, limit={limit}"
+            + (f", folder_id={folder_id}" if folder_id else "")
+        )
+        return folder_id, offset, limit
+
+    def _fetch_items_from_api(
+        self,
+        worker_id: int,
+        thread_name: str,
+        content_type: int,
+        offset: int,
+        limit: int,
+        folder_id: str | None,
+        fields: str | None,
+        updated_after: datetime | None,
+    ) -> list[dict[str, Any]] | None:
+        """Fetch items from Looker API.
+
+        Args:
+            worker_id: Worker ID for logging
+            thread_name: Thread name for error recording
+            content_type: ContentType enum value
+            offset: Pagination offset
+            limit: Page size limit
+            folder_id: Folder ID for filtering
+            fields: Fields to retrieve
+            updated_after: Incremental filter timestamp
+
+        Returns:
+            List of item dictionaries, or None if fetch failed
+        """
+        try:
+            items = self.extractor.extract_range(
+                ContentType(content_type),
+                offset=offset,
+                limit=limit,
+                fields=fields,
+                updated_after=updated_after,
+                folder_id=folder_id,  # SDK-level filtering (None or specific folder_id)
+            )
+            return items
+
+        except Exception as e:
+            logger.error(f"Worker {worker_id} API fetch failed at offset {offset}: {e}")
+            self.metrics.record_error(thread_name, f"API fetch error: {e}")
+            return None  # Signal to skip this range
+
+    def _check_end_of_data(
+        self,
+        coordinator: "OffsetCoordinator | MultiFolderOffsetCoordinator",
+        folder_id: str | None,
+        worker_id: int,
+        offset: int,
+        reason: str,
+    ) -> bool:
+        """Check if we've reached end of data.
+
+        Args:
+            coordinator: Shared coordinator
+            folder_id: Current folder ID
+            worker_id: Worker ID for logging
+            offset: Current offset for logging
+            reason: Reason for reaching end
+
+        Returns:
+            True if should break from main loop
+        """
+        should_break, should_continue = self._handle_end_of_data(
+            coordinator=coordinator,
+            folder_id=folder_id,
+            worker_id=worker_id,
+            offset=offset,
+            reason=reason,
+        )
+        return should_break
+
+    def _process_items_batch(
+        self,
+        items: list[dict[str, Any]],
+        content_type: int,
+        worker_id: int,
+        thread_name: str,
+    ) -> int:
+        """Process a batch of items and save to database.
+
+        Args:
+            items: List of item dictionaries
+            content_type: ContentType enum value
+            worker_id: Worker ID for logging
+            thread_name: Thread name for error recording
+
+        Returns:
+            Number of items successfully processed
+        """
+        items_processed = 0
+
+        for item_dict in items:
+            try:
+                # Convert to ContentItem
+                content_item = self._dict_to_content_item(item_dict, content_type)
+
+                # Save to database (uses thread-local connection)
+                self.repository.save_content(content_item)
+
+                # Update metrics
+                self.metrics.increment_processed(content_type, count=1)
+                items_processed += 1
+
+            except Exception as e:
+                # Item-level error - log and continue
+                self._log_item_error(item_dict, content_type, worker_id, thread_name, e)
+
+        return items_processed
+
+    def _log_item_error(
+        self,
+        item_dict: dict[str, Any],
+        content_type: int,
+        worker_id: int,
+        thread_name: str,
+        error: Exception,
+    ) -> None:
+        """Log item processing error.
+
+        Args:
+            item_dict: Item dictionary that failed
+            content_type: ContentType enum value
+            worker_id: Worker ID for logging
+            thread_name: Thread name for error recording
+            error: Exception that occurred
+        """
+        import traceback
+
+        item_id = item_dict.get("id", "UNKNOWN")
+        error_msg = f"Failed to process item {item_id}: {error}"
+        logger.warning(f"Worker {worker_id}: {error_msg}")
+
+        tb = traceback.format_exc()
+        logger.warning(
+            f"Worker {worker_id}: Detailed error context\n"
+            f"  Item ID: {item_id}\n"
+            f"  Content Type: {content_type}\n"
+            f"  Exception: {type(error).__name__}: {error}\n"
+            f"  Traceback:\n{tb}"
+        )
+        self.metrics.record_error(thread_name, error_msg)
+
+    def _log_worker_progress(self, worker_id: int, items_processed: int) -> None:
+        """Log periodic worker progress.
+
+        Args:
+            worker_id: Worker ID for logging
+            items_processed: Total items processed by this worker
+        """
+        if items_processed > 0 and items_processed % 500 == 0:
+            snapshot = self.metrics.snapshot()
+            logger.info(
+                f"Worker {worker_id}: {items_processed} items processed, "
+                f"total: {snapshot['total']} ({snapshot['items_per_second']:.1f} items/sec)"
+            )
 
     @staticmethod
     def _get_item_id(item_dict: dict[str, Any], content_type: int) -> str | None:
@@ -992,39 +1387,16 @@ class ParallelOrchestrator:
         Raises:
             ValueError: If required fields missing
         """
-        # Extract required fields - some content types use 'name' instead of 'id'
-        item_id = self._get_item_id(item_dict, content_type)
-        if not item_id:
-            # Fallback to "unknown" like orchestrator.py does
-            item_id = "unknown"
-            logger.warning(
-                f"Item missing identifier field for {ContentType(content_type).name}: {item_dict}"
-            )
-
-        item_id = str(item_id)  # Ensure string
-        name = item_dict.get("title") or item_dict.get("name") or f"Untitled {item_id}"
+        # Extract and validate item ID
+        item_id = self._extract_item_id(item_dict, content_type)
+        name = self._extract_item_name(item_dict, item_id)
 
         # Serialize content data
         content_data = self.serializer.serialize(item_dict)
 
         # Extract metadata
-        owner_id = item_dict.get("user_id")
-        # Convert owner_id to int if present (Looker API may return as string)
-        if owner_id is not None:
-            try:
-                owner_id = int(owner_id)
-            except (ValueError, TypeError):
-                logger.warning(f"Could not convert owner_id '{owner_id}' to int for item {item_id}")
-                owner_id = None
-
-        owner_email = None
-        if "user" in item_dict and isinstance(item_dict["user"], dict):
-            owner_email = item_dict["user"].get("email")
-
-        # Extract folder_id if present (dashboards, looks, boards)
-        folder_id = None
-        if "folder_id" in item_dict and item_dict["folder_id"] is not None:
-            folder_id = str(item_dict["folder_id"])
+        owner_id, owner_email = self._extract_owner_info(item_dict, item_id)
+        folder_id = self._extract_folder_id(item_dict)
 
         # Parse timestamps
         created_at = parse_timestamp(item_dict.get("created_at"), "created_at", item_id)
@@ -1044,6 +1416,78 @@ class ParallelOrchestrator:
             content_data=content_data,
             folder_id=folder_id,
         )
+
+    def _extract_item_id(self, item_dict: dict[str, Any], content_type: int) -> str:
+        """Extract and validate item ID from dictionary.
+
+        Args:
+            item_dict: Raw API response dictionary
+            content_type: ContentType enum value
+
+        Returns:
+            Validated item ID as string
+        """
+        item_id = self._get_item_id(item_dict, content_type)
+        if not item_id:
+            # Fallback to "unknown" like orchestrator.py does
+            item_id = "unknown"
+            logger.warning(
+                f"Item missing identifier field for {ContentType(content_type).name}: {item_dict}"
+            )
+
+        return str(item_id)
+
+    def _extract_item_name(self, item_dict: dict[str, Any], item_id: str) -> str:
+        """Extract item name from dictionary.
+
+        Args:
+            item_dict: Raw API response dictionary
+            item_id: Item ID for fallback
+
+        Returns:
+            Item name or fallback
+        """
+        return item_dict.get("title") or item_dict.get("name") or f"Untitled {item_id}"
+
+    def _extract_owner_info(
+        self, item_dict: dict[str, Any], item_id: str
+    ) -> tuple[int | None, str | None]:
+        """Extract owner information from item dictionary.
+
+        Args:
+            item_dict: Raw API response dictionary
+            item_id: Item ID for logging
+
+        Returns:
+            Tuple of (owner_id, owner_email)
+        """
+        owner_id = item_dict.get("user_id")
+        # Convert owner_id to int if present (Looker API may return as string)
+        if owner_id is not None:
+            try:
+                owner_id = int(owner_id)
+            except (ValueError, TypeError):
+                logger.warning(f"Could not convert owner_id '{owner_id}' to int for item {item_id}")
+                owner_id = None
+
+        owner_email = None
+        if "user" in item_dict and isinstance(item_dict["user"], dict):
+            owner_email = item_dict["user"].get("email")
+
+        return owner_id, owner_email
+
+    def _extract_folder_id(self, item_dict: dict[str, Any]) -> str | None:
+        """Extract folder ID from item dictionary.
+
+        Args:
+            item_dict: Raw API response dictionary
+
+        Returns:
+            Folder ID as string, or None
+        """
+        if "folder_id" in item_dict and item_dict["folder_id"] is not None:
+            return str(item_dict["folder_id"])
+        return None
 
     def _expand_folder_hierarchy_early(self, session: ExtractionSession) -> None:
         """Expand folder hierarchy BEFORE content extraction.

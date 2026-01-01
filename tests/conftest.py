@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, Mock
 
+import msgspec.msgpack
 import pytest
 
 from lookervault.config.models import (
@@ -380,9 +381,13 @@ def create_test_dashboard(
         ContentItem: Dashboard content item.
     """
     if content_data is None:
-        content_data = (
-            b'{"id": "' + dashboard_id.encode() + b'", "title": "' + title.encode() + b'"}'
-        )
+        # Use msgpack encoding for consistency with storage layer
+        dashboard_dict = {
+            "id": dashboard_id,
+            "title": title,
+            "folder_id": folder_id,
+        }
+        content_data = msgspec.msgpack.encode(dashboard_dict)  # type: ignore[unresolved-attribute]
 
     return create_test_content_item(
         content_id=dashboard_id,
@@ -413,7 +418,14 @@ def create_test_look(
         ContentItem: Look content item.
     """
     if content_data is None:
-        content_data = b'{"id": "' + look_id.encode() + b'", "title": "' + title.encode() + b'"}'
+        # Use msgpack encoding for consistency with storage layer
+        look_dict = {
+            "id": look_id,
+            "title": title,
+            "folder_id": folder_id,
+            "query_id": query_id,
+        }
+        content_data = msgspec.msgpack.encode(look_dict)  # type: ignore[unresolved-attribute]
 
     return create_test_content_item(
         content_id=look_id,

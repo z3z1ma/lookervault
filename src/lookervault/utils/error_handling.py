@@ -12,7 +12,7 @@ logger = getLogger(__name__)
 T = TypeVar("T")
 
 
-def suppress_and_log(
+def suppress_and_log[T](
     message: str,
     default_return: T | None = None,
     log_level: str = "error",

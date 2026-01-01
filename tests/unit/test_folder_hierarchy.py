@@ -144,47 +144,8 @@ def circular_hierarchy(mock_repository: MagicMock, encoder: msgspec.msgpack.Enco
 class TestFolderHierarchyResolverBasics:
     """Test basic FolderHierarchyResolver functionality."""
 
-    def test_initialization(self, mock_repository: MagicMock) -> None:
-        """Test resolver initializes with empty cache."""
-        resolver = FolderHierarchyResolver(mock_repository)
-
-        assert resolver.repository == mock_repository
-        assert resolver._folder_cache == {}
-        assert not resolver._cache_loaded
-
-    def test_load_folder_cache(self, simple_hierarchy: MagicMock) -> None:
-        """Test folder cache loads and builds parent-child map."""
-        resolver = FolderHierarchyResolver(simple_hierarchy)
-        resolver._load_folder_cache()
-
-        assert resolver._cache_loaded
-        assert len(resolver._folder_cache) == 5
-
-        # Check folder metadata cached correctly
-        assert resolver._folder_cache["1"]["name"] == "Root"
-        assert resolver._folder_cache["2"]["name"] == "Sales"
-
-        # Check parent-child map built correctly
-        assert "2" in resolver._parent_to_children["1"]  # Sales is child of Root
-        assert "5" in resolver._parent_to_children["1"]  # Marketing is child of Root
-        assert "3" in resolver._parent_to_children["2"]  # Regional is child of Sales
-        assert "4" in resolver._parent_to_children["2"]  # National is child of Sales
-
-    def test_load_folder_cache_only_once(self, simple_hierarchy: MagicMock) -> None:
-        """Test cache loads only once even with multiple calls."""
-        resolver = FolderHierarchyResolver(simple_hierarchy)
-
-        resolver._load_folder_cache()
-        first_cache = resolver._folder_cache
-
-        resolver._load_folder_cache()
-        second_cache = resolver._folder_cache
-
-        assert first_cache is second_cache
-        assert simple_hierarchy.list_content.call_count == 1
-
     def test_get_folder_metadata(self, simple_hierarchy: MagicMock) -> None:
-        """Test getting folder metadata by ID."""
+        """Test getting folder metadata by ID via public API."""
         resolver = FolderHierarchyResolver(simple_hierarchy)
 
         metadata = resolver.get_folder_metadata("2")
@@ -544,21 +505,6 @@ class TestEdgeCases:
         result = resolver.get_all_descendant_ids(["9"])
 
         assert result == {"9"}
-
-    def test_parent_child_relationship_consistency(self, simple_hierarchy: MagicMock) -> None:
-        """Test parent-child relationships are consistent."""
-        resolver = FolderHierarchyResolver(simple_hierarchy)
-        resolver._load_folder_cache()
-
-        # Verify every child's parent exists in cache
-        for parent_id, child_ids in resolver._parent_to_children.items():
-            if parent_id is not None:
-                assert parent_id in resolver._folder_cache
-
-            for child_id in child_ids:
-                assert child_id in resolver._folder_cache
-                child_metadata = resolver._folder_cache[child_id]
-                assert child_metadata["parent_id"] == parent_id
 
 
 class TestRealWorldScenarios:

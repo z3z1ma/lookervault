@@ -189,18 +189,6 @@ def test_restore_bulk_dry_run(restorer, mock_repository, mock_config):
         assert mock_restore_single.call_args_list[0][1]["dry_run"] is True
 
 
-def test_restore_bulk_error_type_extraction(restorer):
-    """Test error type extraction from error messages."""
-    # Test various error types
-    assert restorer._extract_error_type("Content not found") == "NotFoundError"
-    assert restorer._extract_error_type("Validation failed: 422") == "ValidationError"
-    assert restorer._extract_error_type("Rate limit exceeded: 429") == "RateLimitError"
-    assert restorer._extract_error_type("Authentication failed: 401") == "AuthenticationError"
-    assert restorer._extract_error_type("Authorization failed: 403") == "AuthorizationError"
-    assert restorer._extract_error_type("Connection timeout") == "TimeoutError"
-    assert restorer._extract_error_type("Some other error") == "APIError"
-
-
 def test_restore_bulk_skipped_items(restorer, mock_repository, mock_config):
     """Test restore_bulk with skipped items."""
     # Setup
