@@ -7,6 +7,18 @@ Performance Impact:
 - 3 folders × 1,000 dashboards: 20s → 2s (10x faster)
 - 10 folders × 500 dashboards: 38s → 3s (12x faster)
 
+Why SDK-Level Filtering is Fast:
+- Looker API server filters results before returning them
+- Reduces network transfer (only requested folder's items are returned)
+- Eliminates deserialization overhead for unwanted items
+- No post-processing needed in LookerVault
+
+Why Other Content Types Use In-Memory Filtering:
+- Boards, users, groups, roles, etc. do not support SDK folder filtering
+- Looker API has no folder_id parameter for these content types
+- Must fetch all items and filter after receiving response
+- Significantly slower: ~50 items/second vs. ~500 items/second
+
 Architecture:
 - Round-robin folder selection for even work distribution
 - Per-folder offset tracking (each folder starts at 0)

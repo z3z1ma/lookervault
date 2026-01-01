@@ -11,12 +11,74 @@ from lookervault.exceptions import ValidationError
 
 
 class YamlValidator:
-    """Multi-stage validator for YAML content.
+    """Multi-stage validator for YAML content with categorized error reporting.
 
-    Provides validation pipeline:
+    The validator performs multiple validation stages and categorizes errors to help
+    users understand and fix issues efficiently.
+
+    **Validation Pipeline:**
     1. Syntax validation (YAML parsing)
     2. Schema validation (future: Pydantic models)
     3. SDK conversion validation (future: Looker SDK types)
+
+    **Error Categories:**
+
+    The validator uses two main error categories to help users prioritize fixes:
+
+    1. **Structure Errors** (``structure_errors``):
+       Critical structural problems that prevent content from being processed.
+       These must be fixed before the content can be imported.
+
+       Examples:
+       - Missing required ``_metadata`` section
+       - Content type mismatch (e.g., file claims to be DASHBOARD but metadata says LOOK)
+       - Missing required fields (e.g., dashboard missing ``id`` or ``title``)
+       - Invalid metadata structure (e.g., ``_metadata`` is not a dictionary)
+
+       **User Impact:** High - Content cannot be processed until these are fixed.
+
+    2. **Field Errors** (``field_errors``):
+       Issues with individual field values that may prevent proper content display
+       or functionality. These are validation failures for specific field values
+       rather than structural problems.
+
+       Examples:
+       - ``title`` field is empty or exceeds 255 characters
+       - Dashboard ``filters`` field is not a dictionary
+       - Look ``model`` field is not a string
+       - Fields with incorrect data types
+
+       **User Impact:** Medium to High - Content may import but fail to work correctly.
+
+    **Error Categorization Logic:**
+
+    Errors are categorized based on their nature:
+
+    - **Structure Errors**: Missing sections, type mismatches at the section level,
+      required fields that are absent, and structural incompatibilities that prevent
+      basic processing.
+
+    - **Field Errors**: Individual field validation failures where the structure is
+      correct but field values don't meet requirements (type, format, length, etc.).
+
+    **Usage Pattern:**
+
+    The ``validate_content_structure()`` method returns a dictionary with categorized
+    errors that can be processed separately::
+
+        errors = validator.validate_content_structure(data, "DASHBOARD")
+
+        # Handle critical structure errors first
+        if errors["structure_errors"]:
+            print("CRITICAL: Fix these structural issues first:")
+            for error in errors["structure_errors"]:
+                print(f"  - {error}")
+
+        # Then handle field-level errors
+        if errors["field_errors"]:
+            print("ISSUES: Fix these field-level problems:")
+            for error in errors["field_errors"]:
+                print(f"  - {error}")
     """
 
     def __init__(self) -> None:
@@ -70,16 +132,53 @@ class YamlValidator:
         return self.validate_syntax(content, yaml_file)
 
     def validate_metadata_section(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Validate _metadata section in YAML content.
+        """Validate the required _metadata section in YAML content.
+
+        The ``_metadata`` section is mandatory for all YAML files exported by LookerVault.
+        It contains critical information about the content including database ID,
+        content type, export timestamp, size, and checksum.
+
+        **Required Fields:**
+
+        - ``db_id``: Database/unique identifier for the content
+        - ``content_type``: Type of content (e.g., "DASHBOARD", "LOOK")
+        - ``exported_at``: ISO timestamp of when content was exported
+        - ``content_size``: Size in bytes of the original content
+        - ``checksum``: Checksum/hash for data integrity verification
+
+        **Error Categorization:**
+
+        Errors from this method (missing or invalid ``_metadata``) are classified as
+        ``structure_errors`` because they represent critical structural problems that
+        prevent content processing. When called from ``validate_content_structure``,
+        exceptions raised here are caught and converted to structure error messages.
 
         Args:
-            data: Parsed YAML dictionary
+            data: Parsed YAML dictionary to validate
 
         Returns:
-            Metadata section dictionary
+            The metadata section dictionary if validation succeeds
 
         Raises:
-            ValidationError: If _metadata section is missing or invalid
+            ValidationError: If ``_metadata`` section is missing, not a dictionary,
+                or missing required fields. These errors are caught by
+                ``validate_content_structure`` and converted to structure_errors.
+
+        **Example:**
+
+            >>> data = {
+            ...     "title": "My Dashboard",
+            ...     "_metadata": {
+            ...         "db_id": "123",
+            ...         "content_type": "DASHBOARD",
+            ...         "exported_at": "2025-12-14T10:00:00",
+            ...         "content_size": 1024,
+            ...         "checksum": "sha256:abc123",
+            ...     },
+            ... }
+            >>> metadata = validator.validate_metadata_section(data)
+            >>> print(metadata["content_type"])
+            "DASHBOARD"
         """
         if "_metadata" not in data:
             raise ValidationError("Missing required _metadata section in YAML content")
@@ -104,16 +203,46 @@ class YamlValidator:
         file_path: Path | None = None,
         content_type: str | None = None,
     ) -> list[str]:
-        """Validate individual fields with Looker SDK type hints.
+        """Validate individual field values with Looker SDK type hints.
+
+        This method performs field-level validation and returns error messages that
+        are collected into the ``field_errors`` category by ``validate_content_structure``.
+        These errors represent issues with specific field values rather than structural
+        problems.
+
+        **Validated Fields:**
+
+        Common fields:
+        - ``title``: Must be a non-empty string, max 255 characters
+
+        Dashboard-specific (``content_type="DASHBOARD"``):
+        - ``filters``: Must be a dictionary if present
+
+        Look-specific (``content_type="LOOK"``):
+        - ``model``: Must be a string
+
+        **Error Messages:**
+
+        Returned error messages include the file path when provided, making it easy
+        to locate the source of the problem. Errors are returned as a list to allow
+        multiple validation issues for a single field.
 
         Args:
-            field_name: Name of the field being validated
-            field_value: Value to validate
-            file_path: Optional file path for detailed error reporting
-            content_type: Optional content type for more specific validation
+            field_name: Name of the field being validated (e.g., "title", "model")
+            field_value: Value to validate (can be any type)
+            file_path: Optional file path to include in error messages for context
+            content_type: Optional content type for field-specific validation rules
 
         Returns:
-            List of error messages (empty if no validation errors)
+            List of validation error messages. Empty list if the field value passes
+            all validation rules. Each error message includes context about what
+            went wrong and the file path (if provided).
+
+        **Example:**
+
+            >>> errors = validator.validate_field("title", "", Path("dashboard.yaml"), "DASHBOARD")
+            >>> print(errors)
+            ["Field 'title' cannot be empty in dashboard.yaml"]
         """
         errors = []
         file_info = f" in {file_path}" if file_path else ""
@@ -151,19 +280,56 @@ class YamlValidator:
     def validate_content_structure(
         self, data: dict[str, Any], content_type: str, file_path: Path | None = None
     ) -> dict[str, list[str]]:
-        """Enhanced content structure validation with detailed error reporting.
+        """Enhanced content structure validation with categorized error reporting.
+
+        This method performs comprehensive validation and categorizes errors into
+        two types: structure_errors (critical structural problems) and field_errors
+        (individual field value issues). This categorization helps users prioritize
+        which errors to fix first.
+
+        **Error Categories Returned:**
+
+        - ``structure_errors``: Critical problems that prevent content processing.
+          Examples include missing required sections, content type mismatches, or
+          absent required fields. These must be fixed before import.
+
+        - ``field_errors``: Issues with specific field values. Examples include
+          empty titles, incorrect data types, or fields exceeding length limits.
+          These should be fixed to ensure content works correctly after import.
+
+        **Validation Order:**
+
+        1. Metadata section validation (required fields, structure)
+        2. Content type verification (matches expected type)
+        3. Required field presence check
+        4. Individual field value validation
 
         Args:
-            data: Parsed YAML dictionary
+            data: Parsed YAML dictionary to validate
             content_type: Expected content type (e.g., "DASHBOARD", "LOOK")
-            file_path: Optional file path for error reporting
+            file_path: Optional file path for detailed error reporting in messages
 
         Returns:
-            Dictionary of validation errors, keyed by error type
-            Empty dictionary if no errors found
+            Dictionary with two keys:
+            - ``structure_errors``: List of critical structural error messages
+            - ``field_errors``: List of field-level validation error messages
+
+            Returns empty lists for both keys if no errors found.
 
         Raises:
-            ValidationError: If critical structural validation fails
+            ValidationError: Not raised directly; all errors are collected and
+                returned in the categorized dictionary for caller to handle.
+
+        **Example:**
+
+            >>> validator = YamlValidator()
+            >>> errors = validator.validate_content_structure(
+            ...     data, "DASHBOARD", Path("/path/to/file.yaml")
+            ... )
+            >>> if errors["structure_errors"]:
+            ...     print(f"Critical: {errors['structure_errors']}")
+            >>> if errors["field_errors"]:
+            ...     print(f"Fix: {errors['field_errors']}")
         """
         all_errors: dict[str, list[str]] = {
             "structure_errors": [],

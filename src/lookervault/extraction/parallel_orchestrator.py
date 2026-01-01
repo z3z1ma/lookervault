@@ -160,7 +160,9 @@ class ParallelOrchestrator:
         # Parallel execution state
         # Thread-safe: metrics uses internal lock for all operations
         self.metrics = ThreadSafeMetrics()
-        self._last_progress_print = 0  # Track when we last printed progress (single-writer: main thread only)
+        self._last_progress_print = (
+            0  # Track when we last printed progress (single-writer: main thread only)
+        )
 
         # Create shared rate limiter for all workers
         # Thread-safe: rate_limiter uses internal lock for sliding window updates
