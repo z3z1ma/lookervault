@@ -498,6 +498,43 @@ class ParallelOrchestrator:
             f"Producer completed {content_type_name}: {items_processed} items (sequential strategy)"
         )
 
+    def _handle_end_of_data(
+        self,
+        coordinator: "OffsetCoordinator | MultiFolderOffsetCoordinator",
+        folder_id: str | None,
+        worker_id: int,
+        offset: int,
+        reason: str,
+    ) -> tuple[bool, bool]:
+        """Handle end-of-data condition for a worker/folder.
+
+        Args:
+            coordinator: Shared offset coordinator (single or multi-folder)
+            folder_id: Folder ID (if multi-folder mode)
+            worker_id: Worker thread identifier
+            offset: Current offset for logging
+            reason: Reason for end-of-data (e.g., "empty response", "fewer items than requested")
+
+        Returns:
+            Tuple of (should_break, should_continue) for control flow:
+            - (True, False): Break from the main loop (single-folder mode, all work done)
+            - (False, True): Continue to next iteration (multi-folder mode, try next folder)
+        """
+        if isinstance(coordinator, MultiFolderOffsetCoordinator) and folder_id:
+            logger.info(
+                f"Worker {worker_id} hit end-of-data ({reason}) "
+                f"for folder {folder_id} at offset {offset}, marking folder complete"
+            )
+            coordinator.mark_folder_complete(folder_id)
+            return False, True  # Continue to next folder
+        else:
+            logger.info(
+                f"Worker {worker_id} hit end-of-data ({reason}) at offset {offset}, "
+                f"marking complete"
+            )
+            coordinator.mark_worker_complete()
+            return True, False  # Break from main loop
+
     def _parallel_fetch_worker(
         self,
         worker_id: int,
@@ -585,19 +622,17 @@ class ParallelOrchestrator:
 
                 # Check if we hit end of data
                 if not items or len(items) == 0:
-                    if isinstance(coordinator, MultiFolderOffsetCoordinator) and folder_id:
-                        logger.info(
-                            f"Worker {worker_id} hit end-of-data for folder {folder_id} "
-                            f"at offset {offset}, marking folder complete"
-                        )
-                        coordinator.mark_folder_complete(folder_id)
-                    elif isinstance(coordinator, OffsetCoordinator):
-                        logger.info(
-                            f"Worker {worker_id} hit end-of-data at offset {offset}, marking complete"
-                        )
-                        coordinator.mark_worker_complete()
+                    should_break, should_continue = self._handle_end_of_data(
+                        coordinator=coordinator,
+                        folder_id=folder_id,
+                        worker_id=worker_id,
+                        offset=offset,
+                        reason="empty response",
+                    )
+                    if should_break:
                         break
-                    continue  # Try next folder (multi-folder mode) or break (single-folder mode)
+                    if should_continue:
+                        continue
 
                 # Process items: convert and save to database
                 # NO in-memory filtering needed - SDK handles filtering via folder_id parameter
@@ -633,20 +668,17 @@ class ParallelOrchestrator:
 
                 # Check if we got fewer items than requested (end of data)
                 if len(items) < limit:
-                    if isinstance(coordinator, MultiFolderOffsetCoordinator) and folder_id:
-                        logger.info(
-                            f"Worker {worker_id} received {len(items)} < {limit} items "
-                            f"for folder {folder_id} at offset {offset}, marking folder complete"
-                        )
-                        coordinator.mark_folder_complete(folder_id)
-                    elif isinstance(coordinator, OffsetCoordinator):
-                        logger.info(
-                            f"Worker {worker_id} received {len(items)} < {limit} items at offset {offset}, "
-                            f"marking complete"
-                        )
-                        coordinator.mark_worker_complete()
+                    should_break, should_continue = self._handle_end_of_data(
+                        coordinator=coordinator,
+                        folder_id=folder_id,
+                        worker_id=worker_id,
+                        offset=offset,
+                        reason=f"received {len(items)} < {limit} items",
+                    )
+                    if should_break:
                         break
-                    continue  # Try next folder (multi-folder mode) or break (single-folder mode)
+                    if should_continue:
+                        continue
 
                 # Periodic progress update
                 if items_processed > 0 and items_processed % 500 == 0:

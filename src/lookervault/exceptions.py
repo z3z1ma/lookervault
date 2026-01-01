@@ -4,43 +4,29 @@
 class LookerVaultError(Exception):
     """Base exception for all LookerVault errors."""
 
-    pass
-
 
 class ConfigError(LookerVaultError):
     """Exception raised for configuration errors."""
-
-    pass
 
 
 class ConnectionError(LookerVaultError):
     """Exception raised for Looker connection errors."""
 
-    pass
-
 
 class StorageError(LookerVaultError):
     """Exception raised for storage layer errors."""
-
-    pass
 
 
 class NotFoundError(StorageError):
     """Exception raised when content is not found."""
 
-    pass
-
 
 class SerializationError(LookerVaultError):
     """Exception raised for serialization/deserialization errors."""
 
-    pass
-
 
 class ExtractionError(LookerVaultError):
     """Exception raised for content extraction errors."""
-
-    pass
 
 
 class RateLimitError(ExtractionError):
@@ -62,19 +48,13 @@ class RateLimitError(ExtractionError):
 class OrchestrationError(LookerVaultError):
     """Exception raised for orchestration workflow errors."""
 
-    pass
-
 
 class ProcessingError(LookerVaultError):
     """Exception raised for batch processing errors."""
 
-    pass
-
 
 class RestorationError(LookerVaultError):
     """Base exception for content restoration errors."""
-
-    pass
 
 
 class DeserializationError(RestorationError):
@@ -85,8 +65,6 @@ class DeserializationError(RestorationError):
     - JSON/msgpack format is malformed
     - Content schema doesn't match expected structure
     """
-
-    pass
 
 
 class ValidationError(LookerVaultError):
@@ -99,8 +77,6 @@ class ValidationError(LookerVaultError):
     - YAML syntax or structure is invalid
     """
 
-    pass
-
 
 class DependencyError(RestorationError):
     """Exception raised when content dependencies cannot be resolved.
@@ -111,8 +87,6 @@ class DependencyError(RestorationError):
     - Dependency ordering violation during bulk restoration
     """
 
-    pass
-
 
 class IDMappingError(RestorationError):
     """Exception raised when ID mapping fails during cross-instance restoration.
@@ -122,5 +96,3 @@ class IDMappingError(RestorationError):
     - ID mapping table is inconsistent or corrupted
     - Foreign key references cannot be translated
     """
-
-    pass

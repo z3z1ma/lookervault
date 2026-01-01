@@ -148,7 +148,7 @@ class RichProgressTracker:
             event: Event type
             **data: Event payload
         """
-        pass  # Rich tracker uses visual progress, not events
+        # Rich tracker uses visual progress, not events
 
 
 class JsonProgressTracker:
