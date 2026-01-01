@@ -264,9 +264,24 @@ lookervault pack [OPTIONS]
 - `--verbose` / `-v` - Enable verbose logging
 - `--debug` - Enable debug logging
 
-**Examples**:
+#### Normal Mode vs. Force Mode
+
+**Normal Mode** (default):
+- Updates existing database items from YAML files
+- Creates new database items from new YAML files
+- **Leaves database items unchanged** if their YAML files are missing
+- Safe default - prevents accidental data loss
+
+**Force Mode** (`--force`):
+- Same as normal mode for existing YAML files
+- **Deletes database items** if their YAML files are missing
+- Useful for intentional content cleanup
+- **Warning**: Can cause permanent data loss if used incorrectly
+
+#### Usage Examples
+
 ```bash
-# Basic pack
+# Basic pack (normal mode)
 lookervault pack --input-dir export/
 
 # Dry run (validation only)
@@ -281,6 +296,85 @@ lookervault pack --input-dir export/ --db-path looker_modified.db
 # JSON output
 lookervault pack --input-dir export/ --json
 ```
+
+#### When to Use --force
+
+**Use --force when**:
+- You intentionally deleted YAML files to remove content
+- You want to clean up unwanted dashboards/looks from the database
+- You're curating a subset of content from a larger export
+
+**Example: Remove specific dashboards**
+```bash
+# 1. Export to YAML
+lookervault unpack --output-dir export/
+
+# 2. Delete unwanted dashboards
+rm export/dashboards/unwanted_dashboard_1.yaml
+rm export/dashboards/unwanted_dashboard_2.yaml
+
+# 3. Pack with --force to delete them from database
+lookervault pack --input-dir export/ --force
+
+# Output:
+# Deleted 2 database items for missing YAML files
+#   - dashboards/unwanted_dashboard_1.yaml
+#   - dashboards/unwanted_dashboard_2.yaml
+```
+
+**Example: Curate content subset**
+```bash
+# 1. Start with full export
+lookervault unpack --output-dir full_export/
+
+# 2. Create curated subset
+mkdir curated_export/
+cp full_export/metadata.json curated_export/
+mkdir curated_export/dashboards/
+cp full_export/dashboards/dashboard_1.yaml curated_export/dashboards/
+cp full_export/dashboards/dashboard_2.yaml curated_export/dashboards/
+# Only copy the dashboards you want to keep
+
+# 3. Pack curated subset with --force
+# (Removes all other dashboards from database)
+lookervault pack --input-dir curated_export/ --force
+```
+
+#### Warnings About --force
+
+**WARNING**: The `--force` flag can cause permanent data loss.
+
+**Risks**:
+- Accidentally deleted YAML files will result in deleted database items
+- No undo - deleted items must be re-extracted from Looker
+- Can break dependencies (e.g., deleting a dashboard that a look references)
+
+**Best practices**:
+1. **Always backup before using --force**:
+   ```bash
+   cp looker.db looker-backup-$(date +%Y%m%d).db
+   lookervault pack --input-dir export/ --force
+   ```
+
+2. **Use --dry-run first to preview**:
+   ```bash
+   # Preview what would be deleted
+   lookervault pack --input-dir export/ --dry-run --verbose
+
+   # Check output for warnings about missing files
+   # Only use --force if you're sure
+   ```
+
+3. **Check for missing files before packing**:
+   ```bash
+   # List all YAML files that should exist
+   cat export/metadata.json | jq '.content_counts'
+
+   # Count actual YAML files
+   find export/ -name "*.yaml" | wc -l
+
+   # If counts don't match, investigate before using --force
+   ```
 
 **Exit codes**:
 - `0` - Success

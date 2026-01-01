@@ -3,10 +3,106 @@
 This module provides infrastructure for restoring nested sub-resources within
 parent content items (e.g., dashboard elements, filters, and layouts within dashboards).
 
-The restoration strategy follows a three-phase approach:
-1. Fetch existing sub-resources from destination
-2. Categorize backup items into CREATE/UPDATE/DELETE operations
-3. Execute in dependency order with best-effort error handling
+Three-Phase Restoration Strategy
+=================================
+
+The restoration follows a three-phase approach to ensure safe, idempotent restoration
+of nested sub-resources while preserving data integrity and supporting partial failure recovery.
+
+Phase 1: Discovery (Fetch Existing State)
+------------------------------------------
+**Purpose**: Establish the current state of sub-resources in the destination instance.
+
+**What happens**:
+- Fetch all existing sub-resources of the current type from the destination instance
+- Build a mapping by ID for efficient lookup during categorization
+- Example: For dashboard filters, call `sdk.dashboard_dashboard_filters(dashboard_id)`
+
+**Why this phase is needed**:
+- We cannot determine CREATE/UPDATE/DELETE operations without knowing what exists
+- Same-instance restoration matches items by ID (not by name or other attributes)
+- Avoids duplicate creation errors and ensures idempotent restores
+
+**Error handling**:
+- If the fetch fails, the entire sub-resource type restoration is aborted
+- The error is logged and added to the result object for DLQ tracking
+- Other sub-resource types (e.g., elements vs filters) are unaffected
+
+Phase 2: Categorization (Determine Operations)
+-----------------------------------------------
+**Purpose**: Classify each backup sub-resource into CREATE, UPDATE, or DELETE operations.
+
+**What happens**:
+- Extract IDs from backup items (e.g., `{f.get("id") for f in backup_filters}`)
+- Compare backup IDs against existing destination IDs from Phase 1
+- Categorize each item:
+  * **CREATE**: Item exists in backup but not in destination (new sub-resource)
+  * **UPDATE**: Item exists in both backup and destination (modify existing)
+  * **DELETE**: Item exists in destination but not in backup (orphan cleanup)
+
+**Why this phase is needed**:
+- Enables precise synchronization between backup and destination
+- Prevents accidental data loss by explicitly categorizing operations
+- Supports incremental updates (only modified items need API calls)
+- Enables cleanup of orphaned items created outside LookerVault
+
+**Error handling**:
+- Categorization is deterministic and has no external dependencies
+- Errors during categorization indicate data integrity issues (e.g., missing IDs)
+- Items with missing IDs are logged and skipped with a warning
+
+Phase 3: Execution (Apply Changes in Dependency Order)
+-------------------------------------------------------
+**Purpose**: Execute the categorized operations in the correct dependency order.
+
+**What happens**:
+- Execute operations sequentially within each sub-resource type
+- For dashboard sub-resources, the dependency order is:
+  1. Filters (no dependencies)
+  2. Elements (may reference filters)
+  3. Layouts (reference elements via layout components)
+  4. Layout components (positioning for elements within layouts)
+- For each operation type (UPDATE/CREATE/DELETE):
+  * Call the appropriate SDK method (create/update/delete)
+  * Track success/failure in result counters
+  * Record ID mappings for CREATE operations (old_id -> new_id)
+  * Continue on individual item failures (best-effort strategy)
+
+**Why this phase is needed**:
+- Dependency order prevents foreign key constraint violations
+- Best-effort error handling maximizes successful restoration
+- ID mapping tracks changes when Looker assigns new IDs on CREATE
+- Granular error tracking enables DLQ processing for manual review
+
+**Error handling**:
+- Individual item failures are logged but do NOT stop the restoration
+- Failed items increment `error_count` and append to `errors` list
+- Successful operations continue, maximizing restoration completeness
+- Rate limit errors (429) trigger automatic retries with exponential backoff
+- SDK errors are wrapped in domain-specific exceptions (RestorationError, RateLimitError)
+
+Best-Effort Error Handling
+---------------------------
+The three-phase strategy uses "best-effort" error handling to maximize successful
+restoration:
+
+1. **Phase failures are isolated**: Failure in one sub-resource type (e.g., filters)
+   does not prevent restoration of other types (e.g., elements).
+
+2. **Item failures are isolated**: Failure to restore one item (e.g., filter #123)
+   does not prevent restoration of other items (e.g., filter #456).
+
+3. **Errors are aggregated**: All errors are collected in the result object
+   for comprehensive reporting and DLQ processing.
+
+4. **Partial success is possible**: A restoration with 10 failures out of 100 items
+   is considered a partial success, not a total failure.
+
+This approach is particularly important for:
+- Large dashboards with hundreds of elements
+- Partial corruption in backup data
+- Temporary API failures or rate limiting
+- Permission issues on specific items only
 """
 
 import logging
@@ -175,21 +271,44 @@ class SubResourceRestorer(Protocol):
 class DashboardSubResourceRestorer:
     """Restores dashboard elements, filters, and layouts.
 
-    This class handles the complete restoration of all dashboard sub-resources:
+    This class implements the three-phase restoration strategy for dashboard sub-resources:
     - Dashboard filters (filter controls)
     - Dashboard elements (tiles, visualizations, text boxes)
     - Dashboard layouts (responsive layout definitions)
     - Dashboard layout components (element positioning within layouts)
 
-    Restoration follows dependency order:
+    Three-Phase Strategy Implementation
+    ====================================
+
+    The restoration methods (_restore_dashboard_filters, _restore_dashboard_elements,
+    _restore_dashboard_layouts) each implement the three-phase pattern:
+
+    **Phase 1 - Discovery**: Call _fetch_existing_*() to get current state from destination
+    **Phase 2 - Categorization**: Compare backup IDs vs. destination IDs to determine operations
+    **Phase 3 - Execution**: Call _create_*/_update_*/_delete_* methods in dependency order
+
+    Dependency Order
+    ================
+    Sub-resources are restored in dependency order to prevent foreign key violations:
     1. Filters (no dependencies)
     2. Elements (may reference filters)
     3. Layouts (reference elements via layout components)
-    4. Layout components (positioning for elements)
+    4. Layout components (positioning for elements within layouts)
 
-    For same-instance restoration, matching is done by ID. Each sub-resource is
-    categorized into CREATE/UPDATE/DELETE operations and executed with best-effort
-    error handling (continues on partial failures, tracks errors for DLQ).
+    Error Handling
+    ===============
+    - Best-effort restoration: individual item failures don't stop the process
+    - Errors are aggregated in SubResourceResult for DLQ processing
+    - Rate limit errors trigger automatic retries via @retry_on_rate_limit decorator
+    - Failures in one sub-resource type don't affect other types
+
+    Same-Instance Matching
+    ======================
+    For same-instance restoration, items are matched by ID (not name or other attributes).
+    Each sub-resource is categorized into CREATE/UPDATE/DELETE operations:
+    - CREATE: Item in backup but not in destination (assigns new ID)
+    - UPDATE: Item exists in both (preserves ID)
+    - DELETE: Item in destination but not in backup (orphan cleanup)
     """
 
     def __init__(
@@ -345,6 +464,11 @@ class DashboardSubResourceRestorer:
     ) -> SubResourceResult:
         """Restore dashboard filters with UPDATE/CREATE/DELETE logic.
 
+        Implements the three-phase restoration strategy:
+        1. Discovery: Fetch existing filters from destination
+        2. Categorization: Determine CREATE/UPDATE/DELETE operations
+        3. Execution: Apply operations with best-effort error handling
+
         Args:
             dashboard_id: Dashboard ID in destination instance
             backup_filters: List of dashboard filter dicts from backup
@@ -358,7 +482,8 @@ class DashboardSubResourceRestorer:
             f"Restoring {len(backup_filters)} dashboard filters for dashboard {dashboard_id}"
         )
 
-        # Fetch existing filters from destination
+        # ========== PHASE 1: DISCOVERY ==========
+        # Fetch existing filters from destination to establish current state
         try:
             existing_filters = self._fetch_existing_filters(dashboard_id)
             existing_by_id = {f["id"]: f for f in existing_filters}
@@ -369,8 +494,13 @@ class DashboardSubResourceRestorer:
             )
             return result
 
-        # Categorize and execute operations
+        # ========== PHASE 2: CATEGORIZATION ==========
+        # Extract backup IDs for categorization (CREATE vs UPDATE vs DELETE)
         backup_ids = {f.get("id") for f in backup_filters if f.get("id")}
+
+        # ========== PHASE 3: EXECUTION ==========
+        # Execute operations in order: UPDATE (existing), CREATE (new), DELETE (orphans)
+        # Use best-effort error handling: continue on individual failures
 
         # UPDATE: Filters that exist in both backup and destination
         for backup_filter in backup_filters:
@@ -564,6 +694,11 @@ class DashboardSubResourceRestorer:
     ) -> SubResourceResult:
         """Restore dashboard elements (tiles/visualizations).
 
+        Implements the three-phase restoration strategy:
+        1. Discovery: Fetch existing elements from destination
+        2. Categorization: Determine CREATE/UPDATE/DELETE operations
+        3. Execution: Apply operations with best-effort error handling
+
         Dashboard elements include:
         - Query visualizations (reference query_id)
         - Look references (reference look_id)
@@ -583,7 +718,8 @@ class DashboardSubResourceRestorer:
             f"Restoring {len(backup_elements)} dashboard elements for dashboard {dashboard_id}"
         )
 
-        # Fetch existing elements from destination
+        # ========== PHASE 1: DISCOVERY ==========
+        # Fetch existing elements from destination to establish current state
         try:
             existing_elements = self._fetch_existing_elements(dashboard_id)
             existing_by_id = {e["id"]: e for e in existing_elements}
@@ -594,8 +730,13 @@ class DashboardSubResourceRestorer:
             )
             return result
 
-        # Categorize and execute operations
+        # ========== PHASE 2: CATEGORIZATION ==========
+        # Extract backup IDs for categorization (CREATE vs UPDATE vs DELETE)
         backup_ids = {e.get("id") for e in backup_elements if e.get("id")}
+
+        # ========== PHASE 3: EXECUTION ==========
+        # Execute operations in order: UPDATE (existing), CREATE (new), DELETE (orphans)
+        # Use best-effort error handling: continue on individual failures
 
         # UPDATE: Elements that exist in both backup and destination
         for backup_element in backup_elements:

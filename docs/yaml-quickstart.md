@@ -178,6 +178,52 @@ lookervault pack --input-dir export/ --db-path modified.db
   New queries created: 0
 ```
 
+#### Pack Mode: Normal vs. Force
+
+**Normal Mode** (default - safe):
+- Updates database items from YAML files
+- **Keeps database items** if YAML files are missing
+- Use this when you want to preserve existing database content
+
+**Force Mode** (`--force` - advanced):
+- Updates database items from YAML files
+- **Deletes database items** if YAML files are missing
+- Use this when you intentionally deleted YAML files to remove content
+
+**When to use each mode**:
+
+```bash
+# Normal mode: Preserve existing database content
+# (Use this by default)
+lookervault pack --input-dir export/
+
+# Force mode: Delete items for missing YAML files
+# (Use this when you intentionally deleted YAML files)
+lookervault pack --input-dir export/ --force
+```
+
+**Force mode example** - Removing unwanted dashboards:
+
+```bash
+# 1. Export to YAML
+lookervault unpack --output-dir export/
+
+# 2. Delete unwanted dashboards from YAML
+rm export/dashboards/old_dashboard_1.yaml
+rm export/dashboards/old_dashboard_2.yaml
+
+# 3. Pack with --force to delete them from database
+lookervault pack --input-dir export/ --force
+
+# Output:
+# Deleted 2 database items for missing YAML files
+```
+
+**Warning**: Force mode can cause permanent data loss! Always:
+1. Backup database before using `--force`: `cp looker.db looker-backup.db`
+2. Use `--dry-run` first to preview what will be deleted
+3. Only use `--force` when you understand what will be deleted
+
 ### Step 5: Restore to Looker
 
 Upload the modified dashboards back to Looker:
