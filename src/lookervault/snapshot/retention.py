@@ -51,19 +51,17 @@ class AuditLogger:
     Each log entry contains: timestamp, action, snapshot_filename, reason, user.
     """
 
-    def __init__(self, log_path: str | None = None, gcs_bucket: str | None = None) -> None:
+    def __init__(self, log_path: str | None = None) -> None:
         """
         Initialize audit logger.
 
         Args:
             log_path: Path to local audit log file (default: ~/.lookervault/audit.log)
-            gcs_bucket: Optional GCS bucket name for centralized audit logs
         """
         if log_path is None:
             log_path = str(Path.home() / ".lookervault" / "audit.log")
 
         self.log_path = Path(log_path).expanduser()
-        self.gcs_bucket = gcs_bucket
 
         # Ensure audit log directory exists
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,9 +107,6 @@ class AuditLogger:
         logger.info(
             f"Audit log: {log_entry['action']} {snapshot_metadata.filename} (reason: {reason})"
         )
-
-        # TODO: Optionally upload to GCS bucket for centralized logging
-        # This would require implementing GCS upload logic (deferred for now)
 
 
 def evaluate_retention_policy(

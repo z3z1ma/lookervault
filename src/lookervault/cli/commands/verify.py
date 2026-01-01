@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 def run(
     db: str = "looker.db",
     content_type: str | None = None,
-    compare_live: bool = False,
     verbose: bool = False,
     debug: bool = False,
 ) -> None:
@@ -27,7 +26,6 @@ def run(
     Args:
         db: Database path to verify
         content_type: Specific content type to verify (default: all)
-        compare_live: Compare with current Looker state
         verbose: Enable verbose logging
         debug: Enable debug logging
     """
@@ -114,12 +112,6 @@ def run(
                         console.print(f"  - {error}")
                     if len(errors) > 5:
                         console.print(f"  ... and {len(errors) - 5} more errors")
-
-        # Live comparison if requested
-        if compare_live:
-            console.print("\n[cyan]Comparing with live Looker instance...[/cyan]")
-            # This would require loading config and comparing
-            console.print("[yellow]Live comparison not yet implemented[/yellow]")
 
         # Clean exit
         repository.close()

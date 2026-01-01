@@ -191,10 +191,6 @@ def verify(
         str | None,
         typer.Option("--type", "-t", help="Specific content type to verify"),
     ] = None,
-    compare_live: Annotated[
-        bool,
-        typer.Option("--compare-live", help="Compare with current Looker state"),
-    ] = False,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -207,7 +203,7 @@ def verify(
     """Verify integrity of extracted content."""
     from .commands import verify as verify_module
 
-    verify_module.run(db, content_type, compare_live, verbose, debug)
+    verify_module.run(db, content_type, verbose, debug)
 
 
 @app.command(name="list")
