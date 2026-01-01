@@ -27,7 +27,7 @@ from rich.progress import (
 
 from lookervault.export.checksum import compute_export_checksum
 from lookervault.export.folder_tree import FolderTreeBuilder, FolderTreeNode
-from lookervault.export.metadata import ExportStrategy, MetadataManager
+from lookervault.export.metadata import ExportStrategy, FolderInfo, MetadataManager
 from lookervault.export.yaml_serializer import YamlSerializer
 from lookervault.storage.models import ContentItem, ContentType
 from lookervault.storage.repository import ContentRepository
@@ -275,21 +275,20 @@ class ContentUnpacker:
         else:
             export_types = [ContentType.DASHBOARD, ContentType.LOOK]
 
-        # Build folder map for metadata
+        # Build folder map for metadata - include ALL nodes, not just root_nodes
+        all_nodes = tree_builder.get_all_nodes(root_nodes)
         folder_map = {
-            node.id: {
-                "id": node.id,
-                "name": node.name,
-                "parent_id": node.parent_id,
-                "path": node.filesystem_path,
-                "depth": node.depth,
-                "child_count": len(node.children),
-                "dashboard_count": node.dashboard_count,
-                "look_count": node.look_count,
-                "original_name": node.name if node.name != node.sanitized_name else None,
-                "sanitized": node.name != node.sanitized_name,
-            }
-            for node in root_nodes
+            node.id: FolderInfo(
+                id=node.id,
+                name=node.name,
+                parent_id=node.parent_id,
+                path=node.filesystem_path,
+                depth=node.depth,
+                child_count=len(node.children),
+                original_name=node.name if node.name != node.sanitized_name else None,
+                sanitized=node.name != node.sanitized_name,
+            )
+            for node in all_nodes.values()
         }
 
         # Tracking variables
@@ -310,9 +309,9 @@ class ContentUnpacker:
                 total=len(export_types),
             )
 
-            # Tracking node for content type
+            # Tracking node for content type - include ALL nodes
             content_nodes: dict[str, dict[str, FolderTreeNode]] = {
-                content_type.name: {node.id: node for node in root_nodes}
+                content_type.name: all_nodes.copy()
                 for content_type in export_types
             }
 

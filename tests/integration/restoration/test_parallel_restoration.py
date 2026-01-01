@@ -400,7 +400,6 @@ class TestThreadSafeDatabaseOperations:
 class TestParallelRestorationPerformance:
     """Test performance characteristics of parallel restoration."""
 
-    @pytest.mark.slow
     def test_parallel_throughput_exceeds_sequential(
         self, repository, mock_client, rate_limiter, metrics, dlq
     ):
@@ -483,7 +482,6 @@ class TestParallelRestorationPerformance:
         # In real implementation, parallel should be significantly faster
         assert result_parallel.total_items == result_sequential.total_items
 
-    @pytest.mark.slow
     def test_memory_usage_scales_with_workers_not_dataset(self, repository, mock_client):
         """Test memory usage scales with worker count, not dataset size."""
         # Setup: Insert 1000 items

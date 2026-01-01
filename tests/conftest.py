@@ -4,6 +4,7 @@ This module provides reusable test data and mock objects to reduce boilerplate
 across tests and maintain consistency.
 """
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,13 +13,49 @@ from unittest.mock import MagicMock, Mock
 import msgspec.msgpack
 import pytest
 
-from lookervault.config.models import (
+#
+# Test Mode Setup
+#
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest before test collection.
+
+    This runs before any modules are imported, ensuring that the LOOKERVAULT_TEST_MODE
+    environment variable is set when retry decorators are evaluated at import time.
+
+    Additionally, monkeypatches tenacity to use zero-wait retries in tests.
+
+    Args:
+        config: Pytest config object.
+    """
+    # Set environment variable to enable fast retry mode for all tests
+    os.environ["LOOKERVAULT_TEST_MODE"] = "1"
+
+    # Monkeypatch tenacity.wait_exponential to use zero wait time in tests
+    # This ensures that retry logic is exercised without wasting time
+    import tenacity
+
+    def fast_wait_exponential(
+        multiplier: int = 1,
+        min: float = 0,  # noqa: A002
+        max: float = 0,  # noqa: A002
+    ) -> tenacity.wait_none:
+        """Return zero-wait object for fast test execution."""
+        # Return wait_none to skip all waiting while preserving retry logic
+        return tenacity.wait_none()
+
+    tenacity.wait_exponential = fast_wait_exponential  # type: ignore[assignment]
+
+
+# Imports must come after pytest_configure to set test mode first
+from lookervault.config.models import (  # noqa: E402
     Configuration,
     LookerConfig,
     ParallelConfig,
     RestorationConfig,
 )
-from lookervault.storage.models import (
+from lookervault.storage.models import (  # noqa: E402
     ContentItem,
     ContentType,
     DeadLetterItem,
@@ -382,10 +419,12 @@ def create_test_dashboard(
     """
     if content_data is None:
         # Use msgpack encoding for consistency with storage layer
+        # Include required 'elements' field for validation
         dashboard_dict = {
             "id": dashboard_id,
             "title": title,
             "folder_id": folder_id,
+            "elements": [],  # Required field for DASHBOARD validation
         }
         content_data = msgspec.msgpack.encode(dashboard_dict)  # type: ignore[unresolved-attribute]
 
@@ -419,11 +458,17 @@ def create_test_look(
     """
     if content_data is None:
         # Use msgpack encoding for consistency with storage layer
+        # Include required 'query' field for validation
         look_dict = {
             "id": look_id,
             "title": title,
             "folder_id": folder_id,
             "query_id": query_id,
+            "query": {  # Required field for LOOK validation
+                "id": str(query_id),
+                "model": "test_model",
+                "view": "test_view",
+            },
         }
         content_data = msgspec.msgpack.encode(look_dict)  # type: ignore[unresolved-attribute]
 
@@ -748,9 +793,9 @@ def create_test_restoration_task(
 #
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def all_content_types() -> list[ContentType]:
-    """List of all ContentType enum values.
+    """List of all ContentType enum values (session-scoped for performance).
 
     Returns:
         list[ContentType]: All available content types.
@@ -771,9 +816,9 @@ def all_content_types() -> list[ContentType]:
     ]
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def restorable_content_types() -> list[ContentType]:
-    """List of restorable ContentType enum values.
+    """List of restorable ContentType enum values (session-scoped for performance).
 
     Excludes EXPLORE which is read-only via API.
 
@@ -910,3 +955,93 @@ def create_test_restoration_summary(
         content_type_breakdown=content_type_breakdown,
         error_breakdown=error_breakdown,
     )
+
+
+#
+# Session-Scoped Cached Fixtures (for performance)
+#
+
+
+@pytest.fixture(scope="session")
+def cached_dashboard() -> ContentItem:
+    """Cached single dashboard for performance testing.
+
+    Returns:
+        ContentItem: Pre-created dashboard content item.
+    """
+    return create_test_dashboard(
+        dashboard_id="cached_dashboard",
+        title="Cached Dashboard",
+        folder_id="cached_folder",
+    )
+
+
+@pytest.fixture(scope="session")
+def cached_look() -> ContentItem:
+    """Cached single look for performance testing.
+
+    Returns:
+        ContentItem: Pre-created look content item.
+    """
+    return create_test_look(
+        look_id="cached_look",
+        title="Cached Look",
+        folder_id="cached_folder",
+        query_id=100,
+    )
+
+
+@pytest.fixture(scope="session")
+def cached_user() -> ContentItem:
+    """Cached single user for performance testing.
+
+    Returns:
+        ContentItem: Pre-created user content item.
+    """
+    return create_test_user(
+        user_id="cached_user",
+        email="cached@example.com",
+        first_name="Cached",
+        last_name="User",
+    )
+
+
+@pytest.fixture(scope="session")
+def cached_folder() -> ContentItem:
+    """Cached single folder for performance testing.
+
+    Returns:
+        ContentItem: Pre-created folder content item.
+    """
+    return create_test_folder(
+        folder_id="cached_folder",
+        name="Cached Folder",
+        parent_id=None,
+    )
+
+
+@pytest.fixture(scope="session")
+def cached_sample_content_items() -> list[ContentItem]:
+    """Cached batch of 100 content items for performance testing.
+
+    Returns:
+        list[ContentItem]: Pre-created list of 100 dashboard items.
+    """
+    items = []
+    for i in range(100):
+        item = ContentItem(
+            id=str(i),
+            content_type=ContentType.DASHBOARD.value,
+            name=f"Cached Dashboard {i}",
+            owner_id=1,
+            owner_email="test@example.com",
+            created_at=None,
+            updated_at=None,
+            synced_at=None,
+            deleted_at=None,
+            content_size=100,
+            content_data=b'{"test": "data"}',
+            folder_id=None,
+        )
+        items.append(item)
+    return items

@@ -573,8 +573,7 @@ class SQLiteContentRepository:
                             created_at, updated_at, synced_at, deleted_at,
                             content_size, content_data, folder_id
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(id) DO UPDATE SET
-                            content_type = excluded.content_type,
+                        ON CONFLICT(id, content_type) DO UPDATE SET
                             name = excluded.name,
                             owner_id = excluded.owner_id,
                             owner_email = excluded.owner_email,

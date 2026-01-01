@@ -57,7 +57,8 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --cov=lookervault --cov-report=term-missing"
+# Exclude slow tests by default; run with `pytest -m slow` to include them
+addopts = "-v -m 'not slow' --cov=lookervault --cov-report=term-missing"
 
 [tool.ruff]
 line-length = 100
@@ -124,6 +125,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
+    "pytest-xdist>=3.0.0",
     "ruff>=0.8.0",
     "ipython>=8.37.0",
     "ipdb>=0.13.13",

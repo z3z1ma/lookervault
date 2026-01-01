@@ -408,7 +408,9 @@ class YamlValidator:
                 # Validate query structure using Looker SDK models
                 # This will raise an exception for invalid structures
                 # Note: We've already verified model and view fields exist above
-                looker_models.WriteQuery(**query)  # type: ignore[misc]
+                # Filter out fields not accepted by WriteQuery (e.g., 'id')
+                write_query_fields = {k: v for k, v in query.items() if k != "id"}
+                looker_models.WriteQuery(**write_query_fields)  # type: ignore[misc]
             except Exception as e:
                 validation_errors.append(f"Query validation failed{file_info}: {str(e)}")
 

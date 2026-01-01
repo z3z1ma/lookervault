@@ -25,7 +25,7 @@ class YamlSerializer:
         self.yaml = YAML()
         self.yaml.preserve_quotes = True  # Keep original quote style
         self.yaml.default_flow_style = False  # Use block style (readable)
-        self.yaml.indent(mapping=2, sequence=2, offset=2)  # Consistent indentation
+        self.yaml.indent(mapping=2, sequence=2)  # Consistent indentation
         self.yaml.width = 100  # Line wrapping (matches ruff config)
 
     def serialize(self, data: dict[str, Any]) -> str:

@@ -15,7 +15,7 @@ from datetime import datetime
 
 from lookervault.storage.models import ContentType
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -41,7 +41,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
     # Create content_items table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS content_items (
-            id TEXT PRIMARY KEY NOT NULL,
+            id TEXT NOT NULL,
             content_type INTEGER NOT NULL,
             name TEXT NOT NULL,
             owner_id INTEGER,
@@ -52,7 +52,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
             deleted_at TEXT DEFAULT NULL,
             content_size INTEGER NOT NULL,
             content_data BLOB NOT NULL,
-            folder_id TEXT DEFAULT NULL
+            folder_id TEXT DEFAULT NULL,
+            PRIMARY KEY (id, content_type)
         )
     """)
 
@@ -256,6 +257,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
 
     # Run migrations after all tables are created
     _migrate_to_version_3(conn)
+    _migrate_to_version_4(conn)
 
     # Record schema version if not already recorded
     cursor.execute(
@@ -454,6 +456,122 @@ def _migrate_to_version_3(conn: sqlite3.Connection) -> None:
             3,
             datetime.now().isoformat(),
             "Added unique constraints for idempotent upsert operations",
+        ),
+    )
+
+    conn.commit()
+
+
+def _migrate_to_version_4(conn: sqlite3.Connection) -> None:
+    """Migrate existing databases from version 3 to version 4.
+
+    Changes content_items table PRIMARY KEY from (id) to (id, content_type)
+    to allow different content types to have the same ID without conflicts.
+
+    Args:
+        conn: SQLite connection
+    """
+    cursor = conn.cursor()
+
+    # Check current schema version
+    cursor.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+    current_version = cursor.fetchone()
+    current_version = current_version[0] if current_version else 0
+
+    if current_version >= 4:
+        return  # Already migrated
+
+    # Check if content_items table exists
+    cursor.execute("""
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='content_items'
+    """)
+    if not cursor.fetchone():
+        return  # Fresh database, table will be created with correct schema
+
+    # Check if the table already has the composite primary key
+    cursor.execute("PRAGMA table_info(content_items)")
+    columns = cursor.fetchall()
+    # Check if there's a primary key on both id and content_type
+    pk_columns = [col[1] for col in columns if col[5] > 0]  # col[5] is pk column index
+    if len(pk_columns) == 2:
+        return  # Already has composite primary key
+
+    # Need to migrate: recreate content_items table with composite primary key
+    cursor.execute("""
+        CREATE TABLE content_items_new (
+            id TEXT NOT NULL,
+            content_type INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            owner_id INTEGER,
+            owner_email TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            synced_at TEXT NOT NULL,
+            deleted_at TEXT DEFAULT NULL,
+            content_size INTEGER NOT NULL,
+            content_data BLOB NOT NULL,
+            folder_id TEXT DEFAULT NULL,
+            PRIMARY KEY (id, content_type)
+        )
+    """)
+
+    # Copy data from old table to new table
+    cursor.execute("""
+        INSERT INTO content_items_new
+        SELECT id, content_type, name, owner_id, owner_email,
+               created_at, updated_at, synced_at, deleted_at,
+               content_size, content_data, folder_id
+        FROM content_items
+    """)
+
+    # Drop old table and rename new table
+    cursor.execute("DROP TABLE content_items")
+    cursor.execute("ALTER TABLE content_items_new RENAME TO content_items")
+
+    # Recreate indexes
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_content_type
+        ON content_items(content_type)
+        WHERE deleted_at IS NULL
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_owner_id
+        ON content_items(owner_id)
+        WHERE deleted_at IS NULL
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_updated_at
+        ON content_items(updated_at DESC)
+        WHERE deleted_at IS NULL
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_deleted_at
+        ON content_items(deleted_at)
+        WHERE deleted_at IS NOT NULL
+    """)
+
+    cursor.execute(f"""
+        CREATE INDEX IF NOT EXISTS idx_folder_id
+        ON content_items(folder_id)
+        WHERE deleted_at IS NULL
+          AND folder_id IS NOT NULL
+          AND content_type IN ({ContentType.DASHBOARD.value}, {ContentType.LOOK.value}, {ContentType.BOARD.value}, {ContentType.FOLDER.value})
+    """)
+
+    # Record migration
+    cursor.execute(
+        """
+        INSERT INTO schema_version (version, applied_at, description)
+        VALUES (?, ?, ?)
+        """,
+        (
+            4,
+            datetime.now().isoformat(),
+            "Changed content_items PRIMARY KEY to (id, content_type) composite key",
         ),
     )
 

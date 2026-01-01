@@ -240,3 +240,25 @@ class FolderTreeBuilder:
         # Recursively create children
         for child in node.children:
             self._create_directory_recursive(child, base_path)
+
+    def get_all_nodes(self, root_nodes: list[FolderTreeNode]) -> dict[str, FolderTreeNode]:
+        """Get all nodes in the tree as a flat dict keyed by node ID.
+
+        Args:
+            root_nodes: Root FolderTreeNode objects
+
+        Returns:
+            Dictionary mapping node ID to FolderTreeNode for all nodes in tree
+        """
+        all_nodes: dict[str, FolderTreeNode] = {}
+
+        def collect_nodes(node: FolderTreeNode) -> None:
+            """Recursively collect all nodes from a subtree."""
+            all_nodes[node.id] = node
+            for child in node.children:
+                collect_nodes(child)
+
+        for root in root_nodes:
+            collect_nodes(root)
+
+        return all_nodes

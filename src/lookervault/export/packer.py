@@ -167,10 +167,7 @@ class ContentPacker:
             ContentItem ready for import or None if validation fails
         """
         try:
-            # 1. Validate syntax
-            self._yaml_serializer.deserialize(yaml_file)
-
-            # 2. Validate schema and Looker SDK rules
+            # 1. Validate syntax and schema (validate_file reads the file and returns parsed dict)
             validated_dict = self._validator.validate_file(yaml_file)
 
             # 3. Enhanced validation with field-level checks
@@ -225,12 +222,11 @@ class ContentPacker:
                     # If we can't determine modification status, assume modified
                     is_modified = True
 
-            # Track modification status in result
-            if not is_modified:
-                result.unchanged += 1
-
-            # 7. Convert to ContentItem
+            # 7. Get existing item to preserve owner metadata
             content_type = ContentType[content_type_str]
+            existing = self._repository.get_content(db_id)
+
+            # 8. Convert to ContentItem
             content_data = msgspec.msgpack.encode(content_without_metadata)
 
             return ContentItem(
@@ -240,6 +236,8 @@ class ContentPacker:
                 name=name,
                 created_at=created_at,
                 updated_at=updated_at,
+                owner_id=existing.owner_id if existing else None,
+                owner_email=existing.owner_email if existing else None,
             )
 
         except Exception as e:
@@ -263,50 +261,57 @@ class ContentPacker:
             yaml_file: Path to source YAML file (for metadata extraction)
         """
         try:
-            # Single item within IMMEDIATE transaction
-            with self._repository.transaction():
-                existing = self._repository.get_content_item(
-                    content_item.id, content_item.content_type
+            # Get existing item to check if this is an update
+            existing = self._repository.get_content(content_item.id)
+
+            # Perform query validation and modification detection for dashboards
+            if content_item.content_type == ContentType.DASHBOARD.value:
+                # Validate and process dashboard queries
+                dashboard_dict = msgspec.msgpack.decode(content_item.content_data)
+                dashboard_elements = dashboard_dict.get("elements", [])
+                query_validation_errors = []
+
+                for dashboard_element in dashboard_elements:
+                    if "query" in dashboard_element:
+                        query_def = dashboard_element["query"]
+
+                        # Validate query definition
+                        query_errors = self._validator.validate_query(
+                            query_def, file_path=yaml_file, content_type="DASHBOARD"
+                        )
+
+                        # Add any validation errors
+                        if query_errors:
+                            query_validation_errors.extend(query_errors)
+
+                # If query validation errors, report them and prevent saving
+                if query_validation_errors:
+                    error_msg = f"Query validation failed for {content_item.id}:\n" + "\n".join(
+                        query_validation_errors
+                    )
+                    raise ValueError(error_msg)
+
+                # Handle query modifications
+                result.modified_queries_count += self._handle_dashboard_query_modifications(
+                    content_item
                 )
 
-                # Perform query validation and modification detection for dashboards
-                if content_item.content_type == ContentType.DASHBOARD.value:
-                    # Validate and process dashboard queries
-                    dashboard_dict = msgspec.msgpack.decode(content_item.content_data)
-                    dashboard_elements = dashboard_dict.get("elements", [])
-                    query_validation_errors = []
+            # Update tracking counters - check if content actually changed
+            if existing:
+                # Check if content has changed (compare content_data)
+                existing_data = existing.content_data
+                new_data = content_item.content_data
+                has_changed = existing_data != new_data
 
-                    for dashboard_element in dashboard_elements:
-                        if "query" in dashboard_element:
-                            query_def = dashboard_element["query"]
-
-                            # Validate query definition
-                            query_errors = self._validator.validate_query(
-                                query_def, file_path=yaml_file, content_type="DASHBOARD"
-                            )
-
-                            # Add any validation errors
-                            if query_errors:
-                                query_validation_errors.extend(query_errors)
-
-                    # If query validation errors, report them and prevent saving
-                    if query_validation_errors:
-                        error_msg = f"Query validation failed for {content_item.id}:\n" + "\n".join(
-                            query_validation_errors
-                        )
-                        raise ValueError(error_msg)
-
-                    # Handle query modifications
-                    result.modified_queries_count += self._handle_dashboard_query_modifications(
-                        content_item
-                    )
-
-                if existing:
+                if has_changed:
                     result.updated += 1
                 else:
-                    result.created += 1
+                    result.unchanged += 1
+            else:
+                result.created += 1
 
-                self._repository.save_content(content_item)
+            # Save to database (save_content is already transactional)
+            self._repository.save_content(content_item)
 
         except Exception as e:
             result.errors.append(f"Save failed for {content_item}: {str(e)}")
@@ -316,7 +321,10 @@ class ContentPacker:
         batch_items: list[tuple[ContentItem, Path | None]],
         result: PackResult,
     ) -> None:
-        """Save a batch of content items to database in a single transaction.
+        """Save a batch of content items to database.
+
+        Each save_content() call is already atomic and transactional.
+        The batch grouping is for progress tracking and error reporting.
 
         Args:
             batch_items: List of (ContentItem, yaml_file_path) tuples
@@ -325,54 +333,58 @@ class ContentPacker:
         if not batch_items:
             return
 
-        try:
-            # Single transaction for entire batch
-            with self._repository.transaction():
-                for content_item, yaml_file in batch_items:
-                    # Check if item exists
-                    existing = self._repository.get_content_item(
-                        content_item.id, content_item.content_type
+        for content_item, yaml_file in batch_items:
+            try:
+                # Check if item exists
+                existing = self._repository.get_content(content_item.id)
+
+                # Perform query validation for dashboards
+                if content_item.content_type == ContentType.DASHBOARD.value:
+                    dashboard_dict = msgspec.msgpack.decode(content_item.content_data)
+                    dashboard_elements = dashboard_dict.get("elements", [])
+                    query_validation_errors = []
+
+                    for dashboard_element in dashboard_elements:
+                        if "query" in dashboard_element:
+                            query_def = dashboard_element["query"]
+                            query_errors = self._validator.validate_query(
+                                query_def, file_path=yaml_file, content_type="DASHBOARD"
+                            )
+                            if query_errors:
+                                query_validation_errors.extend(query_errors)
+
+                    if query_validation_errors:
+                        error_msg = (
+                            f"Query validation failed for {content_item.id}:\n"
+                            + "\n".join(query_validation_errors)
+                        )
+                        raise ValueError(error_msg)
+
+                    # Handle query modifications
+                    result.modified_queries_count += self._handle_dashboard_query_modifications(
+                        content_item
                     )
 
-                    # Perform query validation for dashboards
-                    if content_item.content_type == ContentType.DASHBOARD.value:
-                        dashboard_dict = msgspec.msgpack.decode(content_item.content_data)
-                        dashboard_elements = dashboard_dict.get("elements", [])
-                        query_validation_errors = []
+                # Update tracking counters - check if content actually changed
+                if existing:
+                    # Check if content has changed (compare content_data)
+                    existing_data = existing.content_data
+                    new_data = content_item.content_data
+                    has_changed = existing_data != new_data
 
-                        for dashboard_element in dashboard_elements:
-                            if "query" in dashboard_element:
-                                query_def = dashboard_element["query"]
-                                query_errors = self._validator.validate_query(
-                                    query_def, file_path=yaml_file, content_type="DASHBOARD"
-                                )
-                                if query_errors:
-                                    query_validation_errors.extend(query_errors)
-
-                        if query_validation_errors:
-                            error_msg = (
-                                f"Query validation failed for {content_item.id}:\n"
-                                + "\n".join(query_validation_errors)
-                            )
-                            raise ValueError(error_msg)
-
-                        # Handle query modifications
-                        result.modified_queries_count += self._handle_dashboard_query_modifications(
-                            content_item
-                        )
-
-                    # Update tracking counters
-                    if existing:
+                    if has_changed:
                         result.updated += 1
                     else:
-                        result.created += 1
+                        result.unchanged += 1
+                else:
+                    result.created += 1
 
-                    # Save to database
-                    self._repository.save_content(content_item)
+                # Save to database (save_content is already transactional)
+                self._repository.save_content(content_item)
 
-        except Exception as e:
-            # Report batch error
-            result.errors.append(f"Batch save failed: {str(e)}")
+            except Exception as e:
+                # Report individual item error, continue with next item
+                result.errors.append(f"Save failed for {content_item.id}: {str(e)}")
 
     def _handle_dashboard_query_modifications(self, dashboard_item: ContentItem) -> int:
         """Detect and remap queries within a dashboard item.
@@ -458,11 +470,8 @@ class ContentPacker:
 
                     # Delete from database (force mode)
                     try:
-                        with self._repository.transaction():
-                            # Note: This assumes repository has a delete method
-                            # If not, we would need to use raw SQL or skip deletion
-                            # For now, we just track missing files
-                            result.deleted += 1
+                        self._repository.delete_content(item.id, soft=False)
+                        result.deleted += 1
                     except Exception as e:
                         result.errors.append(f"Failed to delete missing item {item.id}: {str(e)}")
 
